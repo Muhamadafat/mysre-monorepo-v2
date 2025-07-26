@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
     const dbUser =
       user?.id != null
       ? await prisma.user.findUnique({
+        main
         where: { id: user.id },
         select: {
           id: true,

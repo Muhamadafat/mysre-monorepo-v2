@@ -178,21 +178,41 @@ export default function StudentAssignmentPage() {
   }
 
   const loadData = async () => {
-    if (!user) return
-    setLoading(true)
-    try {
-      await Promise.all([loadActiveAssignments(), loadMySubmissions()])
-    } catch (error) {
-      console.error("Error loading data:", error)
-      notifications.show({
-        title: "Error",
-        message: "Gagal memuat data assignment",
-        color: "red",
-      })
-    } finally {
-      setLoading(false)
+  if (!user) return
+  setLoading(true)
+  try {
+    const [assignmentsRes, submissionsRes] = await Promise.all([
+      fetch("/api/assignments/active"),
+      fetch(`/api/assignments/submissions/${user.id}`),
+    ])
+
+    if (!assignmentsRes.ok || !submissionsRes.ok) {
+      throw new Error("Gagal memuat data assignment atau submission")
     }
+
+    const assignmentsData = await assignmentsRes.json()
+    const submissionsData = await submissionsRes.json()
+
+    if (!assignmentsData.success || !submissionsData.success) {
+      throw new Error("Gagal memuat data assignment/submission")
+    }
+
+    setAssignments(assignmentsData.assignments || [])
+    setSubmissions(submissionsData.submissions || [])
+
+    calculateStats(assignmentsData.assignments || [], submissionsData.submissions || [])
+  } catch (error) {
+    console.error("Error loading data:", error)
+    notifications.show({
+      title: "Error",
+      message: "Gagal memuat data assignment",
+      color: "red",
+    })
+  } finally {
+    setLoading(false)
   }
+}
+
 
   const loadActiveAssignments = async () => {
     try {
