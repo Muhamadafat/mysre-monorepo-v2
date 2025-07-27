@@ -40,7 +40,7 @@ export async function POST(req: NextRequest){
                 },
                 id: 1
             }),
-            signal: AbortSignal.timeout(30000)
+            signal: AbortSignal.timeout(60000)
         });
 
         const mcpResponse = await pythonResponse.json();

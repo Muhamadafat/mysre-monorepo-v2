@@ -178,7 +178,7 @@ let articleIdsForVectorDB: string[] = [];
                     },
                     id: 1
                 }),
-                signal: AbortSignal.timeout(30000)
+                signal: AbortSignal.timeout(80000)
                 });
 
             if (!ragAnswer.ok) {
@@ -276,7 +276,7 @@ let articleIdsForVectorDB: string[] = [];
                         session_id: sessionId,
                         force_web: true
                     }),
-                    signal: AbortSignal.timeout(30000)
+                    signal: AbortSignal.timeout(80000)
                 });
 
                 if (!ragAnswer.ok) {
@@ -309,7 +309,7 @@ let articleIdsForVectorDB: string[] = [];
                     },
                     id: 1
                 }),
-                signal: AbortSignal.timeout(30000)
+                signal: AbortSignal.timeout(80000)
                 });
 
             if (!ragAnswer.ok) {

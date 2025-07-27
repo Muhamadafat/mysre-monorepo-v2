@@ -38,7 +38,7 @@ export async function POST(req: Request) {
         },
         id: 1
       }),
-      signal: AbortSignal.timeout(30000)
+      signal: AbortSignal.timeout(60000)
     });
   
     //mcp
