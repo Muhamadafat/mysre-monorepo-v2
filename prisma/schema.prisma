@@ -167,6 +167,7 @@ model BrainstormingSession {
   user                   User          @relation(fields: [userId], references: [id])
   chatMessages           ChatMessage[]
   tokenUsages            TokenUsage[]
+  writerSessions         WriterSession[]
 }
 
 model ChatMessage {
@@ -186,12 +187,14 @@ model WriterSession {
   title        String
   description  String?
   userId       String
+  brainstormingSessionId String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   lastActivity DateTime @default(now())
   coverColor   String   @default("#4c6ef5")
   drafts       Draft[]
   user         User     @relation(fields: [userId], references: [id])
+  brainstormingSession  BrainstormingSession? @relation(fields: [brainstormingSessionId], references: [id])
 }
 
 model Document {
