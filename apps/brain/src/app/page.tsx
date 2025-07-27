@@ -787,12 +787,9 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
                           setButtonLoading(`draft-${project.id}`, false);
                           return;
                         }
-                        
-                        // Cross-subdomain navigation ke writer app
-                        const writerUrl = `${process.env.NEXT_PUBLIC_WRITER_APP_URL}/project/${project.id}/draft?sessionId=${sessionId}`;
-                        
-                        // Redirect ke writer app
-                        window.location.href = writerUrl;
+                        const writerUrl = `${process.env.NEXT_PUBLIC_WRITER_APP_URL}/project/${project.id}/draft?sessionId=${sessionId}`
+                        window.open(writerUrl, "_blank")
+                        setButtonLoading(`draft-${project.id}`, false)
                       }}
                       loading={loadingStates[`draft-${project.id}`]}
                       disabled={loadingStates[`project-${project.id}`] || loadingStates[`draft-${project.id}`]}
