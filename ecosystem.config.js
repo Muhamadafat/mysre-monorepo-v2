@@ -27,6 +27,15 @@ module.exports = {
         PORT: 6002
       }
     },
+    {
+      name: "writer",
+      cwd: "./apps/writer",
+      script: "npm",
+      args: "run start:writer",
+      env: {
+        PORT: 6003
+      }
+    },
     
   ]
 };
