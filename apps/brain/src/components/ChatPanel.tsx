@@ -1228,7 +1228,6 @@ export default function ChatPanel({
           {loadingMore && <LoadingMoreIndicator />}
 
           {/* Debug button - remove in production */}
-          <ScrollTestButton />
 
           {/* Info if reached beginning of chat */}
           {!hasMore && messages.length > 0 && (
