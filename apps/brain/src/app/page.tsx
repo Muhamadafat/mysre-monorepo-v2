@@ -53,6 +53,7 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 import { useRouter } from 'next/navigation';
 import { eventBus } from '@sre-monorepo/lib';
 import { DebugAuth } from '@/components/DebugAuth';
+import { createClient } from '@sre-monorepo/lib';
 
 interface BrainstormingProject {
   id: string;
@@ -91,6 +92,7 @@ export default function ProjectDashboard() {
 
   const [mounted, setMounted] = useState(false);
   const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean;}>({});
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const router = useRouter();
   
@@ -127,6 +129,34 @@ export default function ProjectDashboard() {
   useEffect(() => {
       setMounted(true);
   }, []);
+
+  useEffect(() => {
+  const getSessionId = async () => {
+    console.log('🔍 Getting sessionId from existing API...');
+    try {
+      const response = await fetch('/api/session');
+      const data = await response.json();
+      
+      if (response.ok && data.sessionId) {
+        console.log('✅ Got sessionId from API:', data.sessionId);
+        console.log('📋 Session data:', {
+          userId: data.user?.id,
+          email: data.user?.email,
+          expiresAt: data.expires_at
+        });
+        setSessionId(data.sessionId);
+      } else {
+        console.error('❌ Failed to get sessionId:', data.error || 'No sessionId in response');
+        setSessionId(null);
+      }
+    } catch (error) {
+      console.error('❌ Error calling session API:', error);
+      setSessionId(null);
+    }
+  };
+
+  getSessionId();
+}, []);
 
   // Form states
   const [newProject, setNewProject] = useState({
@@ -750,7 +780,19 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
                       onClick={(e) => {
                         e.stopPropagation();
                         setButtonLoading(`draft-${project.id}`, true);
-                        router.push(`/projects/${project.id}/draft`);
+
+                        // router.push(`/projects/${project.id}/draft`);
+                        if (!sessionId) {
+                          console.error('SessionId not available');
+                          setButtonLoading(`draft-${project.id}`, false);
+                          return;
+                        }
+                        
+                        // Cross-subdomain navigation ke writer app
+                        const writerUrl = `${process.env.NEXT_PUBLIC_WRITER_APP_URL}/project/${project.id}/draft?sessionId=${sessionId}`;
+                        
+                        // Redirect ke writer app
+                        window.location.href = writerUrl;
                       }}
                       loading={loadingStates[`draft-${project.id}`]}
                       disabled={loadingStates[`project-${project.id}`] || loadingStates[`draft-${project.id}`]}
