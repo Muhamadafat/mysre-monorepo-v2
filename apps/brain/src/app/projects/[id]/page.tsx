@@ -1474,7 +1474,7 @@ export default function Home() {
                         variant="gradient" 
                         gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
                         size="lg"
-                        rightSection={<IconChevronRight size={12} />}
+                        // rightSection={<IconChevronRight size={12} />}
                         style={{
                           animation: 'pulse 2s infinite'
                         }}
