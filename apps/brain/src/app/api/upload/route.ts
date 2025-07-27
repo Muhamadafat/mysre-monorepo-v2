@@ -226,6 +226,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const generatedArticleNodeData: GeneratedArticleNodeResponse | null = parsedPythonResult?.generated_article_node || null;
         console.log("DEBUG: extracted generatedArticleNodeData:", generatedArticleNodeData); // <-- Tambahkan ini
 
+        const tokenUsage = parsedPythonResult?.token_usage || null;
+
+        console.log("DEBUG: extracted generatedArticleNodeData:", generatedArticleNodeData); // <-- Tambahkan ini
+        console.log("DEBUG: token usage information:", tokenUsage);
+
 
         if (!generatedArticleNodeData) {
             throw new Error("Python did not return article node data.");
@@ -250,6 +255,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const createdChildNodes: any[] = [];
 
         let createdEdges: any[] = [];
+        let edgeTokenUsage: any = null;
         if (sessionId){
           const articleInSession = await prisma.article.findMany({
             where: {
@@ -345,7 +351,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                   rawEdgeResultString = JSON.stringify(edgePythonResult.result); // This is a bit of a hack if it's already parsed JSON directly
               }
 
-if (!rawEdgeResultString) {
+              if (!rawEdgeResultString) {
                   console.warn("Python did not return a valid string for edges.");
                   generatedEdgesData = [];
               } else {
@@ -353,12 +359,35 @@ if (!rawEdgeResultString) {
                   const parsedEdgePythonResult = JSON.parse(rawEdgeResultString);
                   console.log("DEBUG: parsedEdgePythonResult for edges:", parsedEdgePythonResult); // Add this log!
 
+                  // TAMBAHKAN pengecekan nested structure:
+                  let actualEdgeResult = parsedEdgePythonResult;
+
+                  // Check if there's double nesting
+                  if (parsedEdgePythonResult.edges && 
+                      typeof parsedEdgePythonResult.edges === 'object' && 
+                      parsedEdgePythonResult.edges.edges) {
+                      // Handle double nested case
+                      actualEdgeResult = parsedEdgePythonResult.edges;
+                      console.log("DEBUG: Found double nested structure, using inner edges");
+                  }
+
                   // The main fix: the result *is* the array, not an object with an 'edges' key.
-                  if (Array.isArray(parsedEdgePythonResult)) {
-                      generatedEdgesData = parsedEdgePythonResult;
+                  // if (Array.isArray(parsedEdgePythonResult)) {
+                  //     generatedEdgesData = parsedEdgePythonResult;
+                  // } else {
+                  //     // Fallback if the structure is unexpected (e.g., if it came as { "edges": [...] })
+                  //     generatedEdgesData = (parsedEdgePythonResult as any)?.edges || [];
+                  // }
+
+                  if (actualEdgeResult.edges && Array.isArray(actualEdgeResult.edges)) {
+                    generatedEdgesData = actualEdgeResult.edges;
+                    edgeTokenUsage = actualEdgeResult.token_usage || null;
+                  } else if (Array.isArray(actualEdgeResult)) {
+                    // Fallback for old structure
+                    generatedEdgesData = actualEdgeResult;
                   } else {
-                      // Fallback if the structure is unexpected (e.g., if it came as { "edges": [...] })
-                      generatedEdgesData = (parsedEdgePythonResult as any)?.edges || [];
+                    generatedEdgesData = (actualEdgeResult as any)?.edges || [];
+                    edgeTokenUsage = (actualEdgeResult as any)?.token_usage || null;
                   }
               }
 
@@ -366,6 +395,11 @@ if (!rawEdgeResultString) {
                   console.warn("Python did not return an array for edges.");
                   generatedEdgesData = [];
               }
+
+              if (edgeTokenUsage) {
+                console.log(`Edge generation token usage - Input: ${edgeTokenUsage.input_tokens}, Output: ${edgeTokenUsage.output_tokens}, Total: ${edgeTokenUsage.total_tokens}`);
+              }
+
             } catch (parseErr) {
               console.error("Error parsing edge Python response:", parseErr);
             };
@@ -402,6 +436,38 @@ if (!rawEdgeResultString) {
           } else {
             console.log("Only one node in session, no edges to generate.");
           }
+
+          // Combine token usage from both node generation and edge generation
+          const combinedTokenUsage = {
+            node_generation: tokenUsage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+            edge_generation: edgeTokenUsage || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+            total: {
+              input_tokens: (tokenUsage?.input_tokens || 0) + (edgeTokenUsage?.input_tokens || 0),
+              output_tokens: (tokenUsage?.output_tokens || 0) + (edgeTokenUsage?.output_tokens || 0),
+              total_tokens: (tokenUsage?.total_tokens || 0) + (edgeTokenUsage?.total_tokens || 0)
+            }
+          };
+
+          console.log("DEBUG: Combined token usage:", combinedTokenUsage);
+
+          await prisma.tokenUsage.create({
+          data: {
+            userId: userId, // dari session/auth
+            sessionId: sessionId,
+            tokensUsed: combinedTokenUsage.total.total_tokens,
+            inputTokens: combinedTokenUsage.total.input_tokens,
+            outputTokens: combinedTokenUsage.total.output_tokens,
+            model: 'gemini-flash',
+            purpose: 'upload-analysis',
+            metadata: {
+              articleId: article.id,
+              articleTitle: article.title,
+              breakdown: combinedTokenUsage // simpan detail breakdown di metadata
+            }
+          }
+        });
+
+        console.log(`✅ Saved ${combinedTokenUsage.total.total_tokens} tokens to database`);
           
           resolve(
           NextResponse.json({
