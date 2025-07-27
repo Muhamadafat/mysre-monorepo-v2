@@ -96,7 +96,40 @@ let articleIdsForVectorDB: string[] = [];
       .filter((id): id is string => typeof id === "string")
   ),
 ];
+}
 
+    async function saveTokenUsage(
+    sessionId: string, 
+    usageMetadata: any, 
+    purpose: string = 'chat'
+    ) {
+        if (!usageMetadata) return;
+        
+        try {
+            // Get userId from session (adjust based on your auth system)
+            const session = await prisma.brainstormingSession.findUnique({
+                where: { id: sessionId },
+                select: { userId: true }
+            });
+            
+            if (!session?.userId) return;
+            
+            await prisma.tokenUsage.create({
+                data: {
+                    userId: session.userId,
+                    sessionId: sessionId,
+                    tokensUsed: usageMetadata.total_tokens || 0,
+                    inputTokens: usageMetadata.input_tokens || 0,
+                    outputTokens: usageMetadata.output_tokens || 0,
+                    model: usageMetadata.model_name || 'gemini-2.0-flash',
+                    purpose: purpose,
+                    metadata: usageMetadata
+                }
+            });
+        } catch (error) {
+            console.error('Error saving token usage:', error);
+            // Don't throw error to avoid breaking the main flow
+        }
     }
 
     let answer: any;
@@ -166,18 +199,25 @@ let articleIdsForVectorDB: string[] = [];
 
             let parsedAnswer: any = answerText;
             let references: any[] = [];
+            let usageMetadata: any = null;
+
             try {
-            parsedAnswer = JSON.parse(answerText);
-            // Jika hasil parsing punya references, ambil
-            if (parsedAnswer && parsedAnswer.references) {
-                references = parsedAnswer.references;
-                // Jika ingin, bisa juga ambil jawaban utama dari parsedAnswer.response atau parsedAnswer.answer
-                answerText = parsedAnswer.response || parsedAnswer.answer || answerText;
+                parsedAnswer = JSON.parse(answerText);
+                // Jika hasil parsing punya references, ambil
+                if (parsedAnswer && parsedAnswer.references) {
+                    references = parsedAnswer.references;
+                    // Jika ingin, bisa juga ambil jawaban utama dari parsedAnswer.response atau parsedAnswer.answer
+                    answerText = parsedAnswer.response || parsedAnswer.answer || answerText;
+                }
+                if (parsedAnswer && parsedAnswer.usage_metadata) {
+                    usageMetadata = parsedAnswer.usage_metadata;
             }
             } catch (e) {
                 // answerText memang plain text, references tetap []
                 console.warn("Answer text is not JSON, treating as plain text.");
             }
+
+            await saveTokenUsage(sessionId, usageMetadata, 'node_chat');
 
             await prisma.chatMessage.create({
                 data: {
@@ -290,19 +330,26 @@ let articleIdsForVectorDB: string[] = [];
 
             let parsedAnswer: any = answerText;
             let references: any[] = [];
+            let usageMetadata: any = null;
+
             try {
-            parsedAnswer = JSON.parse(answerText);
-            // Jika hasil parsing punya references, ambil
-            if (parsedAnswer && parsedAnswer.references) {
-                references = parsedAnswer.references;
-                // Jika ingin, bisa juga ambil jawaban utama dari parsedAnswer.response atau parsedAnswer.answer
-                answerText = parsedAnswer.response || parsedAnswer.answer || answerText;
-            }
+                parsedAnswer = JSON.parse(answerText);
+                // Jika hasil parsing punya references, ambil
+                if (parsedAnswer && parsedAnswer.references) {
+                    references = parsedAnswer.references;
+                    // Jika ingin, bisa juga ambil jawaban utama dari parsedAnswer.response atau parsedAnswer.answer
+                    answerText = parsedAnswer.response || parsedAnswer.answer || answerText;
+                }
+                if (parsedAnswer && parsedAnswer.usage_metadata) {
+                    usageMetadata = parsedAnswer.usage_metadata;
+                }
             }   catch(error){
                 console.error('Error calling Python API:', error);
                 return NextResponse.json({ error: 'Failed to get response from AI service'}, {status: 502});
             }
 
+            await saveTokenUsage(sessionId, usageMetadata, 'general_chat');
+            
             await prisma.chatMessage.create({
                 data: {
                     sessionId,
