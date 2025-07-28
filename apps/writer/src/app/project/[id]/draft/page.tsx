@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { notifications } from '@mantine/notifications';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ExtendedEdge, ExtendedNode } from '@/types'
 import type { BlockNoteEditorRef } from '@/components/BlockNoteEditor';
 import AnnotationPanel from '@/components/AnnotationPanel';
@@ -88,6 +88,7 @@ import classes from '../../../container.module.css';
 import Split from 'react-split';
 import { useSearchParams } from 'next/navigation';
 import { useParams, useRouter } from 'next/navigation';
+import WebViewer from '@/components/WebViewer2';
 
 interface Article {
     id: string,
@@ -182,6 +183,22 @@ interface User {
   group: string,
 }
 
+export const handleAnalytics = async (analyticsData: any) => {
+  try {
+    await fetch('/api/annotation', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        ...analyticsData,
+        userId: 'current_user_id',
+        sessionId: 'uniqueSessionId',
+      }),
+    });
+  } catch (error) {
+    console.error(error);
+  }
+};
+
 export default function Home() {
   const [navUser, setNavUser] = useState<User | null>(null); // untuk navbar
   const [dropdownUser, setDropdownUser] = useState<User | null>(null); // untuk dropdown menu
@@ -202,6 +219,21 @@ export default function Home() {
     message: '', 
     assignment: null as any
   });
+
+  const [opened, setOpened] = useState(false);
+const [selectedPDF, setSelectedPDF] = useState<string | null>(null);
+
+// 2. Handler untuk membuka modal PDF
+const handlePdfOpen = (pdfUrl: string) => {
+  setSelectedPDF(pdfUrl);
+  setOpened(true);
+};
+
+// 3. Handler untuk menutup modal PDF
+const handlePdfClose = () => {
+  setOpened(false);
+  setSelectedPDF(null);
+};
 
   
 
@@ -394,6 +426,8 @@ const loadDrafts = async () => {
       console.error('Error loading drafts:', error);
     }
   };
+
+  
 
 useEffect(() => {
     if (sessionId) {
@@ -995,12 +1029,17 @@ const handleSubmitToTeacher = async () => {
   };
 
   const handleDeleteBibliography = (itemToDelete: Bibliography) => {
-    const numberToDelete = itemToDelete.number;
-    // Hapus semua sitasi dengan nomor tersebut dari konten
-    const regex = new RegExp(`\\[${numberToDelete}\\]`, "g");
-    const newContent = content.replace(regex, "");
-    setContent(newContent);
-  };
+  const numberToDelete = itemToDelete.number;
+  
+  // Hapus sitasi dari konten  
+  const regex = new RegExp(`\\[${numberToDelete}\\]`, "g");
+  const newContent = content.replace(regex, "");
+  setContent(newContent);
+
+  // Hapus dari daftar pustaka
+  setBibliographyList((prev) => prev.filter((item) => item.id !== itemToDelete.id));
+};
+
 
   //Perlu diperhatikan
   const insertCitationNumber = (number: number) => {
@@ -1096,6 +1135,9 @@ const handleSubmitToTeacher = async () => {
     editorRef.current?.insertCitation?.(`[${nextNumber}]`);
     setNextNumber((n) => n + 1);
   };
+
+// PERBAIKAN 4: Sinkronkan ref dengan state (jika ref masih diperlukan)
+
 
   /**
    * Fungsi untuk jump ke heading tertentu (placeholder)
@@ -1520,7 +1562,7 @@ const handleSubmitToTeacher = async () => {
                       color: dark ? 'white' : '#1c1c1c',
                     }}
                   >
-                    Halo, {navUser.name} — Selamat datang di MySRE
+                    Halo, {(dropdownUser!.name).split('@')[0]} — Selamat datang di MySRE
                   </Text>
                   <Text size="sm" c="dimmed" style={{ marginTop: 2 }}>
                     Group {navUser.group}
@@ -1573,7 +1615,7 @@ const handleSubmitToTeacher = async () => {
                     </Group>
                   </Menu.Label>
                   <Menu.Item>
-                    <Text size="sm" fw={600}>{(navUser?.name)?.split('@')[0]}</Text>
+                    <Text size="sm" fw={600}>{(dropdownUser?.name)?.split('@')[0]}</Text>
                     <Text size="xs" c="dimmed">{dropdownUser?.email}</Text>
                   </Menu.Item>
                   <Menu.Divider />
@@ -2240,11 +2282,21 @@ const handleSubmitToTeacher = async () => {
                                     leftSection={<IconExternalLink size={14} />}
                                     style={{ padding: 0, height: "auto" }}
                                     onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (item.att_url) {
-                                        window.open(item.att_url, "_blank");
-                                      }
-                                    }}
+                            e.stopPropagation();
+                            if (item.att_url) {
+                              // Cek apakah URL adalah PDF
+                              const isPDF = item.att_url.toLowerCase().includes('.pdf') || 
+                                          item.att_url.includes('pdf');
+                              
+                              if (isPDF) {
+                                // Jika PDF, buka di modal
+                                handlePdfOpen(item.att_url);
+                              } else {
+                                // Jika bukan PDF, buka di tab baru
+                                window.open(item.att_url, "_blank");
+                              }
+                            }
+                          }}
                                   >
                                     View
                                   </Button>
@@ -3402,6 +3454,40 @@ const handleSubmitToTeacher = async () => {
             </Group>
           </Stack>
         </Modal>
+
+        <Modal
+  opened={opened}
+  onClose={handlePdfClose}
+  title="Lihat Artikel"
+  size="90%"
+  padding="sm"
+  centered
+  overlayProps={{ blur: 3 }}
+  styles={{
+    content: {
+      height: '90vh',
+      display: 'flex',
+      flexDirection: 'column',
+      padding: 0,
+      position: 'relative',
+    },
+    body: {
+      flex: 1,
+      overflow: 'hidden',
+      padding: 0,
+      position: 'relative',
+    },
+  }}
+>
+  {selectedPDF && (
+    <div style={{ height: '100%', position: 'relative' }}>
+      <WebViewer
+        fileUrl={selectedPDF} 
+        onAnalytics={handleAnalytics} 
+      />
+    </div>
+  )}
+</Modal>
 
         {/* ============================
             CSS ANIMATIONS
