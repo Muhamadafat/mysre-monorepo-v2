@@ -3,11 +3,35 @@ import { prisma } from '@sre-monorepo/lib';
 import { createServerSupabaseClient } from '@sre-monorepo/lib';
 
 export async function POST(req: NextRequest) {
+ 
+
+  console.log('🔍 Environment Check:');
+  console.log('- SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+  console.log('- PROJECT_REF:', process.env.NEXT_PUBLIC_SUPABASE_PROJECT_REF);
+  console.log('- COOKIE_DOMAIN:', process.env.NEXT_PUBLIC_COOKIE_DOMAIN);
+
+  console.log('🔍 Request Headers:');
+  console.log('- Cookie header:', req.headers.get('cookie'));
+  console.log('- User Agent:', req.headers.get('user-agent'));
+  console.log('- Origin:', req.headers.get('origin'));
+
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
 
+  console.log('🔍 Supabase Auth Result:');
+  console.log('- User:', user ? `${user.email} (${user.id})` : 'NULL');
+  console.log('- Error:', error?.message || 'No error');
+
   if (!user) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ 
+      message: "Unauthorized",
+      debug: {
+        cookieHeader: req.headers.get('cookie'),
+        hasProjectRef: !!process.env.NEXT_PUBLIC_SUPABASE_PROJECT_REF,
+        projectRef: process.env.NEXT_PUBLIC_SUPABASE_PROJECT_REF,
+        supabaseError: error?.message
+      }
+    }, { status: 401 });
   }
 
   const { sessionId, projectId } = await req.json(); // Terima kedua parameter
