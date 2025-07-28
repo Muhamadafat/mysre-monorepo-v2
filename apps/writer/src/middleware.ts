@@ -5,8 +5,13 @@ import { createServerSupabaseClient } from "@sre-monorepo/lib"
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Pastikan baris ini TIDAK ADA: pathname.startsWith('/api/')
-  if (pathname.startsWith("/_next/") || pathname.startsWith("/static/") || pathname.includes(".")) {
+  // FIXED: Skip API routes sama seperti brain middleware
+  if (
+    pathname.startsWith('/api/') ||        // <-- TAMBAHKAN INI!
+    pathname.startsWith("/_next/") || 
+    pathname.startsWith("/static/") || 
+    pathname.includes(".")
+  ) {
     return NextResponse.next()
   }
 
@@ -50,5 +55,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|public).*)"],
+  // FIXED: Matcher yang sama dengan brain
+  matcher: [
+    '/((?!api|_next/static|_next/image|favicon.ico|public).*)',
+  ],
 }
