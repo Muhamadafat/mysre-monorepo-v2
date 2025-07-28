@@ -44,7 +44,7 @@ import {
   IconPencilPlus,
 } from "@tabler/icons-react";
 import { generateText } from "ai";
-import React, { forwardRef, useImperativeHandle, useRef } from "react";
+import React, { forwardRef, useCallback, useImperativeHandle, useRef } from "react";
 
 // Interfaces
 interface BlockNoteEditorRef {
@@ -859,48 +859,74 @@ INSTRUKSI:
     }
   };
 
-  // Handle selection change
-  const handleSelectionChange = React.useCallback(() => {
-    try {
-      const cursorPosition = editor.getTextCursorPosition();
-      if (!cursorPosition) {
-        setContinueState(prev => ({ ...prev, isVisible: false }));
-        setInlineAIState(prev => ({ ...prev, isVisible: false }));
-        return;
-      }
+  const handleSelectionChange = useCallback(() => {
+  const selection = editor.getTextCursorPosition();
+  
+  if (!selection) {
+    setTimeout(() => setContinueState(prev => ({ ...prev, isVisible: false })), 0);
+    return;
+  }
 
-      const currentBlock = cursorPosition.block;
+  const currentBlock = selection.block;
+  const rect = editor.domElement?.getBoundingClientRect();
+  
+  if (!rect) return;
+
+  const contextText = extractContextFromCursor();
+
+  // 👇 Defer setState dengan setTimeout
+  setTimeout(() => {
+    setContinueState({
+      isVisible: true,
+      position: { x: rect.right + 10, y: rect.bottom + 5 },
+      currentBlock,
+      contextText,
+    });
+  }, 0);
+}, [editor, extractContextFromCursor]);
+
+  // Handle selection change
+  // const handleSelectionChange = React.useCallback(() => {
+  //   try {
+  //     const cursorPosition = editor.getTextCursorPosition();
+  //     if (!cursorPosition) {
+  //       setContinueState(prev => ({ ...prev, isVisible: false }));
+  //       setInlineAIState(prev => ({ ...prev, isVisible: false }));
+  //       return;
+  //     }
+
+  //     const currentBlock = cursorPosition.block;
       
-      if (shouldShowContinueButton(currentBlock)) {
-        const selection = window.getSelection();
-        if (selection && selection.rangeCount > 0) {
-          const range = selection.getRangeAt(0);
-          const rect = range.getBoundingClientRect();
-          const contextText = extractContextFromCursor();
+  //     if (shouldShowContinueButton(currentBlock)) {
+  //       const selection = window.getSelection();
+  //       if (selection && selection.rangeCount > 0) {
+  //         const range = selection.getRangeAt(0);
+  //         const rect = range.getBoundingClientRect();
+  //         const contextText = extractContextFromCursor();
           
-          setContinueState({
-            isVisible: true,
-            position: { x: rect.right + 10, y: rect.bottom + 5 },
-            currentBlock,
-            contextText
-          });
+  //         setContinueState({
+  //           isVisible: true,
+  //           position: { x: rect.right + 10, y: rect.bottom + 5 },
+  //           currentBlock,
+  //           contextText
+  //         });
           
-          setInlineAIState(prev => ({ 
-            ...prev, 
-            currentBlock,
-            isVisible: false
-          }));
-        }
-      } else {
-        setContinueState(prev => ({ ...prev, isVisible: false }));
-        setInlineAIState(prev => ({ ...prev, isVisible: false }));
-      }
-    } catch (error) {
-      console.error("Error handling selection change:", error);
-      setContinueState(prev => ({ ...prev, isVisible: false }));
-      setInlineAIState(prev => ({ ...prev, isVisible: false }));
-    }
-  }, [editor]);
+  //         setInlineAIState(prev => ({ 
+  //           ...prev, 
+  //           currentBlock,
+  //           isVisible: false
+  //         }));
+  //       }
+  //     } else {
+  //       setContinueState(prev => ({ ...prev, isVisible: false }));
+  //       setInlineAIState(prev => ({ ...prev, isVisible: false }));
+  //     }
+  //   } catch (error) {
+  //     console.error("Error handling selection change:", error);
+  //     setContinueState(prev => ({ ...prev, isVisible: false }));
+  //     setInlineAIState(prev => ({ ...prev, isVisible: false }));
+  //   }
+  // }, [editor]);
 
   // Setup selection change listener
   React.useEffect(() => {
