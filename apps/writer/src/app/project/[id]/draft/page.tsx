@@ -302,7 +302,7 @@ const handlePdfClose = () => {
   const fetchDropdownUser = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/user/profile', {
+      const res = await fetch(`/api/user/profile?sessionId=${sessionId}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
