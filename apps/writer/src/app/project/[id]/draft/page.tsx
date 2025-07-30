@@ -183,21 +183,6 @@ interface User {
   group: string,
 }
 
-export const handleAnalytics = async (analyticsData: any) => {
-  try {
-    await fetch('/api/annotation', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        ...analyticsData,
-        userId: 'current_user_id',
-        sessionId: 'uniqueSessionId',
-      }),
-    });
-  } catch (error) {
-    console.error(error);
-  }
-};
 
 export default function Home() {
   const [navUser, setNavUser] = useState<User | null>(null); // untuk navbar
@@ -246,7 +231,7 @@ const handlePdfClose = () => {
 
     setWriterSessionLoading(true);
     try {
-      const res = await fetch('/api/writer-sessions/create', {
+      const res = await fetch(`/api/writer-sessions/create?sessionId=${sessionId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -322,6 +307,22 @@ const handlePdfClose = () => {
       setLoading(false);
     }
   };
+
+ const handleAnalytics = async (analyticsData: any) => {
+  try {
+    await fetch(`/api/annotation?sessionId=${sessionId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        ...analyticsData,
+        userId: 'current_user_id',
+        sessionId: 'uniqueSessionId',
+      }),
+    });
+  } catch (error) {
+    console.error(error);
+  }
+};
   
   const { colorScheme, setColorScheme } = useMantineColorScheme();
   const computedColorScheme = useComputedColorScheme("light", {
@@ -1337,7 +1338,7 @@ const handleSubmitToTeacher = async () => {
     setLoading(true); // Assuming you have loading state
     
     // Save to database
-    const response = await fetch('/api/draft/save', {
+    const response = await fetch(`/api/draft/save?sessionId=${sessionId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1391,7 +1392,7 @@ const handleSubmitToTeacher = async () => {
 
   const fetchNavbarUser = async () => {
     try {
-      const res = await fetch('/api/user/profile', {
+      const res = await fetch(`/api/user/profile?sessionId=${sessionId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
