@@ -24,8 +24,8 @@ async function authenticateUser(req: NextRequest): Promise<{
   error?: string;
 }> {
   const url = new URL(req.url);
-  const sessionId = url.searchParams.get('sessionId');
-  const requestedUserId = url.searchParams.get('userId'); // Support untuk query specific user
+  const sessionId = req.nextUrl.searchParams.get('sessionId');
+  const requestedUserId = req.nextUrl.searchParams.get('userId'); // Support untuk query specific user
   
   console.log('🔍 Profile auth attempt with sessionId:', sessionId);
   console.log('🔍 Requested userId:', requestedUserId);
