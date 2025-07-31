@@ -480,7 +480,7 @@ export default function ProjectDashboard() {
         sidebarOpened={sidebarOpened}
         onToggleSidebar={handleToogleSidebar}
         mounted={mounted}
-        onSessionCreated={handleSessionCreatedFromSidebar}
+        // onSessionCreated={handleSessionCreatedFromSidebar}
         // chatHistory={[]}
         // onChatSelect={handleChatSelect}
         // onNewChat={handleNewChat}
