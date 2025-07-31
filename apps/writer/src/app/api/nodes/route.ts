@@ -1,130 +1,116 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@sre-monorepo/lib";
 
-/*
-export async function GET(req: NextRequest){
-    try {
-        const nodes = await prisma.node.findMany();
-        return NextResponse.json(nodes);
-    } catch (error) {
-        console.error("Error fetching nodes: ", error);
-        return NextResponse.json({error : 'Failed to fetch node'}, {status: 500});
-    };
-}
-*/
-
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const sessionId = searchParams.get("sessionId");
+    const sessionId = searchParams.get("sessionId"); // userId (bisa dari URL atau current user)
+    const projectId = searchParams.get("projectId"); // brainstormingSessionId atau writerSessionId
     
-    console.log('=== DEBUGGING START ===');
-    console.log('1. Raw sessionId dari URL:', sessionId);
-    console.log('2. Type of sessionId:', typeof sessionId);
-    console.log('3. SessionId length:', sessionId?.length);
+    console.log('=== NODES API DEBUG ===');
+    console.log('1. Raw sessionId (userId):', sessionId);
+    console.log('2. Raw projectId:', projectId);
 
     if (!sessionId) {
-        return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
+      return NextResponse.json({ error: "Missing sessionId (userId)" }, { status: 400 });
     }
 
-    // Kemungkinan sessionId perlu diparsing jika ada format khusus
-    let cleanSessionId = sessionId;
-    
-    // Jika sessionId mengandung underscore, ambil bagian sebelum underscore
+    if (!projectId) {
+      return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
+    }
+
+    // Clean sessionId jika mengandung underscore
+    let cleanUserId = sessionId;
     if (sessionId.includes('_')) {
-      cleanSessionId = sessionId.split('_')[0];
-      console.log('4. Cleaned sessionId (before underscore):', cleanSessionId);
+      cleanUserId = sessionId.split('_')[0];
+      console.log('3. Cleaned userId:', cleanUserId);
     }
 
-    // Debug: Cek semua artikel dan sessionId yang ada
-    const allArticles = await prisma.article.findMany({
-      select: { 
-        id: true, 
-        sessionId: true, 
-        userId: true,
-        title: true 
+    // STRATEGY: Coba dua pendekatan untuk mendapatkan brainstormingSessionId
+
+    let targetBrainstormingSessionId = null;
+
+    // STEP 1: Coba langsung sebagai brainstormingSessionId
+    console.log('4. Step 1: Trying projectId as brainstormingSessionId...');
+    const brainstormingSession = await prisma.brainstormingSession.findFirst({
+      where: {
+        id: projectId,
+        userId: cleanUserId
       }
     });
-    console.log('5. All articles in database:');
-    allArticles.forEach((article, index) => {
-      console.log(`   Article ${index + 1}:`, {
-        id: article.id,
-        sessionId: article.sessionId,
-        userId: article.userId,
-        title: article.title
+
+    if (brainstormingSession) {
+      console.log('   ✅ Found as brainstormingSession');
+      targetBrainstormingSessionId = projectId;
+    } else {
+      // STEP 2: Coba sebagai writerSessionId, ambil brainstormingSessionId-nya
+      console.log('5. Step 2: Trying projectId as writerSessionId...');
+      const writerSession = await prisma.writerSession.findFirst({
+        where: {
+          id: projectId,
+          userId: cleanUserId
+        },
+        select: {
+          brainstormingSessionId: true
+        }
       });
-    });
 
-    // Coba berbagai variasi query
-    console.log('6. Trying different query variations...');
+      if (writerSession?.brainstormingSessionId) {
+        console.log('   ✅ Found as writerSession, brainstormingSessionId:', writerSession.brainstormingSessionId);
+        targetBrainstormingSessionId = writerSession.brainstormingSessionId;
+      }
+    }
 
-    // Variasi 1: sessionId original
-    const nodes1 = await prisma.node.findMany({
+    if (!targetBrainstormingSessionId) {
+      console.log('6. ❌ No valid brainstormingSessionId found');
+      return NextResponse.json([]);
+    }
+
+    // STEP 3: Query nodes berdasarkan brainstormingSessionId yang ditemukan
+    console.log('7. Querying nodes for brainstormingSessionId:', targetBrainstormingSessionId);
+    const nodes = await prisma.node.findMany({
       where: {
         article: {
-          sessionId: sessionId
-        },
+          userId: cleanUserId,
+          sessionId: targetBrainstormingSessionId  // sessionId di Article = brainstormingSessionId
+        }
       },
-    });
-    console.log('   Query 1 (original sessionId):', nodes1.length, 'nodes found');
-
-    // Variasi 2: sessionId yang sudah dibersihkan
-    const nodes2 = await prisma.node.findMany({
-      where: {
+      include: {
         article: {
-          sessionId: cleanSessionId
-        },
-      },
+          select: {
+            id: true,
+            title: true,
+            userId: true,
+            sessionId: true,
+            session: {
+              select: {
+                id: true,
+                title: true
+              }
+            }
+          }
+        }
+      }
     });
-    console.log('   Query 2 (cleaned sessionId):', nodes2.length, 'nodes found');
 
-    // Variasi 3: userId
-    const nodes3 = await prisma.node.findMany({
-      where: {
-        article: {
-          userId: sessionId
-        },
-      },
-    });
-    console.log('   Query 3 (as userId):', nodes3.length, 'nodes found');
+    console.log('8. Nodes found:', nodes.length);
+    if (nodes.length > 0) {
+      console.log('9. Sample node:', {
+        id: nodes[0].id,
+        label: nodes[0].label,
+        articleTitle: nodes[0].article?.title,
+        sessionTitle: nodes[0].article?.session?.title
+      });
+    }
+    console.log('=== END DEBUG ===');
 
-    // Variasi 4: userId cleaned
-    const nodes4 = await prisma.node.findMany({
-      where: {
-        article: {
-          userId: cleanSessionId
-        },
-      },
-    });
-    console.log('   Query 4 (as cleaned userId):', nodes4.length, 'nodes found');
-
-    // Variasi 5: Contains/partial match jika diperlukan
-    const nodes5 = await prisma.node.findMany({
-      where: {
-        article: {
-          OR: [
-            { sessionId: { contains: cleanSessionId } },
-            { userId: { contains: cleanSessionId } }
-          ]
-        },
-      },
-    });
-    console.log('   Query 5 (contains match):', nodes5.length, 'nodes found');
-
-    console.log('=== DEBUGGING END ===');
-
-    // Return hasil yang paling cocok
-    if (nodes1.length > 0) return NextResponse.json(nodes1);
-    if (nodes2.length > 0) return NextResponse.json(nodes2);
-    if (nodes3.length > 0) return NextResponse.json(nodes3);
-    if (nodes4.length > 0) return NextResponse.json(nodes4);
-    if (nodes5.length > 0) return NextResponse.json(nodes5);
-
-    // Jika tidak ada yang cocok, return empty array
-    return NextResponse.json([]);
+    return NextResponse.json(nodes);
 
   } catch (error: any) {
     console.error("Error fetching nodes: ", error);
-    return NextResponse.json({ error: 'Failed to fetch node', details: error.message }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Failed to fetch nodes', 
+      details: error.message 
+    }, { status: 500 });
   }
 }
