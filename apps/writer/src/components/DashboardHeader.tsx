@@ -1,5 +1,4 @@
-// components/DashboardHeader.tsx
-'use client';
+"use client"
 
 import {
   Container,
@@ -14,88 +13,73 @@ import {
   Burger,
   ThemeIcon,
   useMantineColorScheme,
-} from '@mantine/core';
-import {
-  IconNetwork,
-  IconSettings,
-  IconSun,
-  IconMoon,
-  IconUser,
-  IconLogout,
-} from '@tabler/icons-react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+  Image
+} from "@mantine/core"
+import { IconNetwork, IconSettings, IconSun, IconMoon, IconUser, IconLogout } from "@tabler/icons-react"
+import { useState, useEffect } from "react"
 
 interface DashboardHeaderProps {
-  sidebarOpened: boolean;
-  onToggleSidebar: () => void;
-  mounted: boolean;
+  sidebarOpened: boolean
+  onToggleSidebar: () => void
+  mounted: boolean
 }
 
-interface User {
-  id: string,
-  email: string,
-  name: string,
-}
+export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: DashboardHeaderProps) {
+  const { colorScheme, toggleColorScheme } = useMantineColorScheme()
+  const dark = mounted ? colorScheme === "dark" : false
 
-export function DashboardHeader({ 
-  sidebarOpened, 
-  onToggleSidebar, 
-  mounted 
-}: DashboardHeaderProps) {
-  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
-  const dark = mounted ? colorScheme === 'dark' : false;
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  
-  const fetchUser = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/auth/signin', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-      });
+  // SOLUSI SEDERHANA: State lokal untuk user data
+  const [userData, setUserData] = useState<{ name: string; email: string } | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-      const data = await res.json();
-
-      if (!data){
-        setUser(null);
-        throw new Error('There is no user authenticated');
-      }else{
-        console.log(data);
-        setUser(data.user);
-      }
-    } catch (error: any) {
-        console.error(error.message); 
-        setUser(null);
-    } finally {
-        setLoading(false);
-    }
-  };
-
+  // Fetch user data langsung di component ini
   useEffect(() => {
-    fetchUser();
-  }, []);
+    if (!mounted) return
+
+    const fetchUserData = async () => {
+      try {
+        const response = await fetch("/api/user/profile")
+        if (response.ok) {
+          const data = await response.json()
+          setUserData({
+            name: data.user?.name || "Unknown User",
+            email: data.user?.email || "No email",
+          })
+        }
+      } catch (error) {
+        console.error("Failed to fetch user:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchUserData()
+  }, [mounted])
 
   const handleLogout = async () => {
-    const res = await fetch('/api/auth/signout',{
-      method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'Content-Type': 'application/json'
-      }
-    })
+    try {
+      setIsLoading(true)
 
-    if (res.ok){
-      console.log('Berhasil logout');
-      router.push('signin');
-    }else{
-      console.error('Tidak berhasil logout');
+      // Call logout API
+      const response = await fetch("/api/auth/signout", {
+        method: "POST",
+      })
+
+      if (response.ok) {
+        // Clear user data lokal
+        setUserData(null)
+
+        // Redirect ke main app signin
+        const loginUrl = `${process.env.NEXT_PUBLIC_MAIN_APP_URL || "http://main.lvh.me:3000"}/signin`
+        window.location.href = loginUrl
+      } else {
+        console.error("Logout API failed")
+      }
+    } catch (error) {
+      console.error("Logout failed:", error)
+      setIsLoading(false)
     }
-  };
+  }
 
   if (!mounted) {
     return (
@@ -104,24 +88,16 @@ export function DashboardHeader({
           <Group gap="md">
             <Burger opened={false} onClick={() => {}} size="sm" />
             <Group gap="xs">
-              <ThemeIcon
-                variant="gradient"
-                gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
-                size="lg"
-                radius="md"
-              >
+              <ThemeIcon variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }} size="lg" radius="md">
                 <IconNetwork size={20} />
               </ThemeIcon>
               <Box>
-                <Text 
-                  fw={800} 
-                  size="xl" 
-                  variant="gradient"
-                  gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
-                >
+                <Text fw={800} size="xl" variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }}>
                   mySRE
                 </Text>
-                <Text size="xs" c="dimmed">Knowledge Visualization Platform</Text>
+                <Text size="xs" c="dimmed">
+                  Knowledge Visualization Platform
+                </Text>
               </Box>
             </Group>
           </Group>
@@ -132,46 +108,42 @@ export function DashboardHeader({
           </Group>
         </Flex>
       </Container>
-    );
+    )
   }
 
   return (
     <Container fluid h="100%" px="xl">
       <Flex h="100%" justify="space-between" align="center">
         <Group gap="md">
-          <Burger
-            opened={sidebarOpened}
-            onClick={onToggleSidebar}
-            size="sm"
-          />
+          <Burger opened={sidebarOpened} onClick={onToggleSidebar} size="sm" />
           <Group gap="xs">
-            <ThemeIcon
-              variant="gradient"
-              gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
-              size="lg"
-              radius="md"
-            >
+            {/* <ThemeIcon variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }} size="lg" radius="md">
               <IconNetwork size={20} />
-            </ThemeIcon>
+            </ThemeIcon> */}
             <Box>
-              <Text 
-                fw={800} 
-                size="xl" 
-                variant="gradient"
-                gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
-              >
+              {/* <Text fw={800} size="xl" variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }}>
                 mySRE
               </Text>
-              <Text size="xs" c="dimmed">Knowledge Visualization Platform</Text>
+              <Text size="xs" c="dimmed">
+                Knowledge Visualization Platform
+              </Text> */}
+              <Image
+                src='/images/LogoSRE_Fix.png'
+                alt="My-SRE Logo"
+                width={160}
+                height={50}
+                fit="contain"
+                style={{ alignSelf: "flex-start" }}
+              />
             </Box>
           </Group>
         </Group>
 
         <Group gap="sm">
-          <Tooltip label={dark ? 'Light mode' : 'Dark mode'}>
+          <Tooltip label={dark ? "Light mode" : "Dark mode"}>
             <ActionIcon
               variant="light"
-              color={dark ? 'yellow' : 'blue'}
+              color={dark ? "yellow" : "blue"}
               onClick={toggleColorScheme}
               size="lg"
               radius="md"
@@ -185,7 +157,7 @@ export function DashboardHeader({
               <IconSettings size={18} />
             </ActionIcon>
           </Tooltip>
-          
+
           <Menu shadow="lg" width={220} position="bottom-end" offset={10}>
             <Menu.Target>
               <ActionIcon variant="light" size="lg" radius="xl">
@@ -193,10 +165,10 @@ export function DashboardHeader({
                   size="sm"
                   radius="xl"
                   variant="gradient"
-                  gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
-                  style={{ cursor: 'pointer' }}
+                  gradient={{ from: "blue", to: "cyan", deg: 45 }}
+                  style={{ cursor: "pointer" }}
                 >
-                  <IconUser size={16} />
+                  {isLoading ? "..." : userData?.name?.charAt(0).toUpperCase() || <IconUser size={16} />}
                 </Avatar>
               </ActionIcon>
             </Menu.Target>
@@ -204,20 +176,25 @@ export function DashboardHeader({
             <Menu.Dropdown>
               <Menu.Label>
                 <Group gap="xs">
-                  <Avatar size="xs" color="blue">U</Avatar>
+                  <Avatar size="xs" color="blue">
+                    {userData?.name?.charAt(0).toUpperCase() || "U"}
+                  </Avatar>
                   <Text size="sm">Signed in as</Text>
                 </Group>
               </Menu.Label>
+
               <Menu.Item>
-                <Text size="sm" fw={600}>{(user?.name)?.split('@')[0]}</Text>
-                <Text size="xs" c="dimmed">{user?.email}</Text>
+                <Text size="sm" fw={600}>
+                  {isLoading ? "Loading..." : userData?.name || "Unknown User"}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {isLoading ? "Loading..." : userData?.email || "No email"}
+                </Text>
               </Menu.Item>
+
               <Menu.Divider />
-              <Menu.Item 
-                leftSection={<IconLogout size={16} />}
-                color="red" 
-                onClick={handleLogout}
-              >
+
+              <Menu.Item leftSection={<IconLogout size={16} />} color="red" onClick={handleLogout} disabled={isLoading}>
                 Sign out
               </Menu.Item>
             </Menu.Dropdown>
@@ -225,5 +202,5 @@ export function DashboardHeader({
         </Group>
       </Flex>
     </Container>
-  );
+  )
 }
