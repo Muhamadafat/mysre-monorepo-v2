@@ -1534,7 +1534,7 @@ const handleSubmitToTeacher = async () => {
             <Group align="center" gap="sm" style={{ flexShrink: 0}}>
               <Image
                 // component={NextImage}
-                src='/images/LogoSRE_FIX.png'
+                src='/images/LogoSRE_TULIS.png'
                 alt="Logo"
                 width={200}  // Tambahkan ini
                 height={50}  // Tambahkan ini
