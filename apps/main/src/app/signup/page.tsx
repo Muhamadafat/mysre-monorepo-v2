@@ -123,7 +123,7 @@ export default function SignUpPage() {
         >
           <Image
             component={NextImage}
-            src='/images/LogoSRE_Fix.png'
+            src='/images/LogoSRE.png'
             alt="My-SRE Logo"
             width={170}
             height={50}
