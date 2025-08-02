@@ -7,7 +7,7 @@ import { Notifications } from '@mantine/notifications';
 import type { ReactNode } from 'react';
 
 export const metadata = {
-  title: "My-SRE - AI-Powered Research Platform",
+  title: "My-SRE IDE - AI-Powered Research Platform",
   description:
     "Transform your research workflow with intelligent writing assistance and visual knowledge mapping. Design better research drafts with AI-powered tools.",
 }
