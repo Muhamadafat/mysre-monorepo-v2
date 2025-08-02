@@ -13,6 +13,7 @@ import {
   Avatar,
   Burger,
   ThemeIcon,
+  Image,
   useMantineColorScheme,
 } from '@mantine/core';
 import {
@@ -104,14 +105,14 @@ export function DashboardHeader({
           <Group gap="md">
             <Burger opened={false} onClick={() => {}} size="sm" />
             <Group gap="xs">
-              <ThemeIcon
-                variant="gradient"
-                gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
-                size="lg"
-                radius="md"
-              >
-                <IconNetwork size={20} />
-              </ThemeIcon>
+              <Image
+                src='/images/LogoSRE_TULIS.png'
+                alt="My-SRE Logo"
+                width={160}
+                height={50}
+                fit="contain"
+                style={{ alignSelf: "flex-start" }}
+              />
               <Box>
                 <Text 
                   fw={800} 
