@@ -128,7 +128,7 @@ export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: Das
                 Knowledge Visualization Platform
               </Text> */}
               <Image
-                src='/images/LogoSRE_Fix.png'
+                src='/images/LogoSRE_IDE.png'
                 alt="My-SRE Logo"
                 width={160}
                 height={50}
