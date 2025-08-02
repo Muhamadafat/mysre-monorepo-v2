@@ -236,7 +236,7 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
             <Group gap="sm" style={{ display: "flex", alignItems: "center" }}>
               <Image
-                src="/images/LogoSRE_Fix.png"
+                src="/images/LogoSRE_Profile.png"
                 alt="MySRE Logo"
                 height={45}
                 width="auto"
