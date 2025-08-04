@@ -103,7 +103,7 @@ const relationColors = {
   'background': 'blue',
   'method': 'green',
   'gap': 'red',
-  'future': 'violet',
+  'future': 'purple',
   'goal': 'orange'
 };
 
@@ -849,10 +849,19 @@ export default function Home() {
       const nodesData = await nodesRes.json();
       const edgesData = await edgesRes.json();
 
-      const mappedNodes = nodesData.map((node: any) =>({
+      const mappedNodes = nodesData.map((node: any) => {
+        const fullLabel = node.title || node.label || `Node ${node.id}`;
+        const truncatedLabel = fullLabel.length > 30 
+          ? fullLabel.substring(0, 10) + '...' 
+          : fullLabel;
+
+      return {
         ...node,
-        label: node.title || node.label || `Node ${node.id}`, // PERBAIKAN: Fallback label
-      }))
+        // label: node.title || node.label || `Node ${node.id}`, // PERBAIKAN: Fallback label
+        label: truncatedLabel,
+        title: fullLabel,
+      }
+      });
 
       setNodes(mappedNodes);
 
@@ -862,7 +871,7 @@ export default function Home() {
         to: edge.toId,
         label: edge.label,
         relation: edge.relation || 'unknown',
-        arrows: 'to, from',
+        // arrows: 'to, from',
         color: { color: getRelationColor(edge.relation) || 'gray' },
         font: { color: 'black', background: 'white' },
       }));
