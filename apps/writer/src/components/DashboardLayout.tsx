@@ -29,7 +29,7 @@ interface ChatHistoryItem {
   active: boolean;
 };
 
-interface BrainstormingSessionItem {
+interface WriterSessionItem {
   id: string,
   title: string,
   description?: string,
@@ -62,7 +62,7 @@ export function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
 
-  const [brainstormingSessions, setBrainstormingSessions ] = useState<BrainstormingSessionItem[]>([]);
+  const [brainstormingSessions, setBrainstormingSessions ] = useState<WriterSessionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
@@ -75,11 +75,11 @@ export function DashboardLayout({
   const fetchBrainstormingSessions = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/brainstorming-sessions');
+      const res = await fetch('/api/writer-sessions');
       const data = await res.json();
 
       if (res.ok){
-        const formatted: BrainstormingSessionItem[] = data.map((session: any) => ({
+        const formatted: WriterSessionItem[] = data.map((session: any) => ({
           id: session.id,
           title: session.title,
           description: session.description || '',
@@ -134,7 +134,7 @@ export function DashboardLayout({
     if (!newSession.title.trim()) return;
 
     try {
-      const res = await fetch('/api/brainstorming-sessions', {
+      const res = await fetch('/api/writer-sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
