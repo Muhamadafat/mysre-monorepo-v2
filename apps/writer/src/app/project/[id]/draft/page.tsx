@@ -183,7 +183,7 @@ interface User {
   group: string,
 }
 
-export const handleAnalytics = async (analyticsData: any) => {
+const handleAnalytics = async (analyticsData: any) => {
   try {
     await fetch('/api/annotation', {
       method: 'POST',
