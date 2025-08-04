@@ -233,7 +233,7 @@ export default function LoginPage() {
         >
           <Image
             component={NextImage}
-            src='/images/LogoSRE.png'
+            src='/images/logoSRE.png'
             alt="My-SRE Logo"
             width={160}
             height={50}
