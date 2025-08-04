@@ -183,6 +183,21 @@ interface User {
   group: string,
 }
 
+export const handleAnalytics = async (analyticsData: any) => {
+  try {
+    await fetch('/api/annotation', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        ...analyticsData,
+        userId: 'current_user_id',
+        sessionId: 'uniqueSessionId',
+      }),
+    });
+  } catch (error) {
+    console.error(error);
+  }
+};
 
 export default function Home() {
   const [navUser, setNavUser] = useState<User | null>(null); // untuk navbar
@@ -192,10 +207,19 @@ export default function Home() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
-  const sessionId = searchParams.get('sessionId');
+  const [getSessionId, setGetSessionId]= useState(null);
+
+  const urlSessionId = searchParams.get('sessionId') || getSessionId;
+  const sessionId = urlSessionId || getSessionId;
+  const isFromBrainstorming = !!urlSessionId;
+  const [hasInitialized, setHasInitialized] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+  
   const projectId = useParams().id as string;
   const [writerSessionLoading, setWriterSessionLoading] = useState(true);
   const [writerSession, setWriterSession] = useState<any>(null);
+  const [writerSessionInitialized, setWriterSessionInitialized] = useState(false);
+  
   // const [assignmentCode, setAssignmentCode] = useState('');
   const [isValidatingCode, setIsValidatingCode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -220,109 +244,157 @@ const handlePdfClose = () => {
   setSelectedPDF(null);
 };
 
-  
+  console.log('=== FRONTEND DEBUG ===');
+  console.log('urlSessionId:', urlSessionId);
+  console.log('getSessionId:', getSessionId);
+  console.log('final sessionId:', sessionId);
+  console.log('projectId:', projectId);
+  console.log('isFromBrainstorming:', isFromBrainstorming);
+  console.log('dropdownUser:', dropdownUser?.id);
+  console.log('writerSessionInitialized:', writerSessionInitialized);
 
   useEffect(() => {
-  const createWriterSession = async () => {
-    if (!sessionId || !projectId) {
-      console.log('Missing sessionId or projectId:', { sessionId, projectId });
-      return;
-    }
-
-    setWriterSessionLoading(true);
-    try {
-      const res = await fetch(`/api/writer-sessions/create?sessionId=${sessionId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          sessionId,
-          projectId,
-        }),
-      });
-
-      const result = await res.json();
-
-      if (!res.ok) {
-        console.error("Gagal membuat sesi:", result.message || "Unknown error");
-        notifications.show({
-          title: 'Gagal Membuat Sesi',
-          message: result.message || "Terjadi kesalahan",
-          color: 'red',
-        });
+    const createWriterSession = async () => {
+      console.log('=== createWriterSession called ===');
+      
+      if (writerSessionInitialized) {
+        console.log('✅ Writer session already initialized, skipping...');
         return;
       }
 
-      console.log("✅ WriterSession berhasil dibuat:", result);
-      setWriterSession(result.writerSession);
-      setFileName(`Draft: ${result.writerSession?.title || 'Artikel'}`);
-      
-    } catch (error) {
-      console.error("Error:", error);
-      notifications.show({
-        title: 'Error',
-        message: "Terjadi kesalahan saat membuat sesi",
-        color: 'red',
+      // Enhanced validation
+      console.log('Validating parameters:', {
+        sessionId,
+        projectId,
+        hasSessionId: !!sessionId,
+        hasProjectId: !!projectId,
+        dropdownUserExists: !!dropdownUser
       });
-    } finally {
-      setWriterSessionLoading(false);
-    }
-  };
 
-  const initializeData = async () => {
-    // Fetch user data jika belum ada
-    if (!dropdownUser) {
-      await fetchDropdownUser();
-    }
-    
-    // Buat writer session
-    await createWriterSession();
-  };
+      if (!sessionId || !projectId) {
+        console.log('❌ Missing sessionId or projectId:', { sessionId, projectId });
+        
+        // If we have dropdownUser but no sessionId, there's a problem
+        if (dropdownUser && !sessionId) {
+          console.log('⚠️ DropdownUser exists but sessionId is null - potential race condition');
+          console.log('DropdownUser ID:', dropdownUser.id);
+          console.log('getSessionId state:', getSessionId);
+        }
+        
+        return;
+      }
 
-  initializeData();
-}, [sessionId, projectId]);
+      setWriterSessionLoading(true);
+      
+      try {
+        // Determine payload based on scenario
+        let payload: any = { projectId };
+        
+        if (isFromBrainstorming) {
+          payload.sessionId = sessionId;
+          console.log('📤 Sending payload (Case 1 - from brainstorming):', payload);
+        } else {
+          console.log('📤 Sending payload (Case 2 - direct access):', payload);
+        }
+
+        const res = await fetch('/api/writer-sessions/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const result = await res.json();
+        
+        console.log('📥 API Response:', {
+          status: res.status,
+          ok: res.ok,
+          result
+        });
+
+        if (!res.ok) {
+          console.error("❌ API Error:", result.message || "Unknown error");
+          notifications.show({
+            title: 'Gagal Membuat Sesi',
+            message: result.message || "Terjadi kesalahan",
+            color: 'red',
+          });
+          return;
+        }
+
+        console.log("✅ WriterSession berhasil:", result);
+        setWriterSession(result.writerSession);
+        setFileName(`Draft: ${result.writerSession?.title || 'Artikel'}`);
+        setWriterSessionInitialized(true);
+        
+      } catch (error) {
+        console.error("❌ Fetch Error:", error);
+        notifications.show({
+          title: 'Error',
+          message: "Terjadi kesalahan saat membuat sesi",
+          color: 'red',
+        });
+      } finally {
+        setWriterSessionLoading(false);
+      }
+    };
+
+    const initializeData = async () => {
+      console.log('=== initializeData called ===');
+      
+      // Fetch user data jika belum ada
+      if (!dropdownUser) {
+        console.log('🔄 Fetching dropdown user...');
+        await fetchDropdownUser();
+      } else {
+        console.log('✅ DropdownUser already exists:', dropdownUser.id);
+      }
+      
+      // Buat writer session
+      await createWriterSession();
+    };
+
+    // Only run if we have the basic requirements
+    if (projectId) {
+      console.log('🚀 Initializing data...');
+      initializeData();
+    } else {
+      console.log('⏳ Waiting for projectId...');
+    }
+
+  }, [sessionId, projectId, isFromBrainstorming, dropdownUser]);
 
 
   const fetchDropdownUser = async () => {
+    console.log('=== fetchDropdownUser called ===');
     setLoading(true);
+    
     try {
-      const res = await fetch(`/api/user/profile?sessionId=${sessionId}`, {
+      const res = await fetch('/api/user/profile', {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
 
       const data = await res.json();
+      console.log('👤 User profile response:', data);
 
       if (!data || !data.user) {
+        console.log('❌ No user data received');
         setDropdownUser(null);
         throw new Error('No dropdown user authenticated');
       } else {
+        console.log('✅ Setting dropdownUser and getSessionId:', data.user.id);
         setDropdownUser(data.user);
+        setGetSessionId(data.user.id);
       }
     } catch (error: any) {
-      console.error(error.message); 
+      console.error('❌ fetchDropdownUser error:', error.message); 
       setDropdownUser(null);
     } finally {
       setLoading(false);
     }
   };
-
- const handleAnalytics = async (analyticsData: any) => {
-  try {
-    await fetch(`/api/annotation?sessionId=${sessionId}`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        ...analyticsData,
-        userId: 'current_user_id',
-        sessionId: 'uniqueSessionId',
-      }),
-    });
-  } catch (error) {
-    console.error(error);
-  }
-};
   
   const { colorScheme, setColorScheme } = useMantineColorScheme();
   const computedColorScheme = useComputedColorScheme("light", {
@@ -925,7 +997,7 @@ const handleSubmitToTeacher = async () => {
 
 
 
-    const getArticle = async () => {
+  const getArticle = async () => {
     if (!sessionId) {
       console.log('No sessionId available for fetching article');
       return;
@@ -933,7 +1005,7 @@ const handleSubmitToTeacher = async () => {
 
     try {
       setLoading(true);
-      const res = await fetch(`/api/nodes?sessionId=${sessionId}`);
+      const res = await fetch(`/api/nodes?sessionId=${sessionId}&projectId=${projectId}`);
       
       if (!res.ok) {
         throw new Error(`Failed to fetch article: ${res.status}`);
@@ -1338,7 +1410,7 @@ const handleSubmitToTeacher = async () => {
     setLoading(true); // Assuming you have loading state
     
     // Save to database
-    const response = await fetch(`/api/draft/save?sessionId=${sessionId}`, {
+    const response = await fetch('/api/draft/save', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1392,7 +1464,7 @@ const handleSubmitToTeacher = async () => {
 
   const fetchNavbarUser = async () => {
     try {
-      const res = await fetch(`/api/user/profile?sessionId=${sessionId}`, {
+      const res = await fetch('/api/user/profile', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

@@ -40,7 +40,7 @@ import {
   IconNote,
   IconNotebook
 } from '@tabler/icons-react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useHover } from '@mantine/hooks';
@@ -72,8 +72,18 @@ interface Article {
 };
 
 export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
-  const { id: currentSessionId } = useParams();
-  const effectiveSessionId = sessionId || currentSessionId;
+  const { id: projectId } = useParams(); // Ini adalah projectId dari URL
+  const searchParams = useSearchParams();
+  
+  // Improved logic untuk menentukan sessionId yang tepat
+  const urlSessionId = searchParams.get('sessionId');
+  const isFromBrainstorming = !!urlSessionId;
+  
+  console.log('=== AnnotationPanel Debug ===');
+  console.log('projectId from URL:', projectId);
+  console.log('urlSessionId from URL:', urlSessionId);
+  console.log('sessionId prop:', sessionId);
+  console.log('isFromBrainstorming:', isFromBrainstorming);
   
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,13 +101,35 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
   const fetchAnnotations = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/annotation?sessionId=${effectiveSessionId}`);
+      let apiUrl = '/api/annotation?';
+      
+      // Tentukan parameter yang tepat berdasarkan skenario
+      if (isFromBrainstorming && urlSessionId) {
+        // Case 1: Ada sessionId di URL (dari brainstorming)
+        // Gunakan projectId sebagai sessionId karena itu adalah brainstormingSessionId
+        apiUrl += `sessionId=${projectId}`;
+        console.log('📤 Fetching annotations for brainstormingSessionId:', projectId);
+      } else if (projectId) {
+        // Case 2: Direct access (projectId adalah writerSessionId)
+        apiUrl += `projectId=${projectId}`;
+        console.log('📤 Fetching annotations for writerSessionId:', projectId);
+      } else {
+        console.log('❌ No valid parameters for annotation fetch');
+        return;
+      }
+
+      console.log('📤 Annotation API URL:', apiUrl);
+
+      const res = await fetch(apiUrl);
       if (res.ok) {
         const data = await res.json();
+        console.log('📥 Annotations received:', data.length);
         setAnnotations(data);
+      } else {
+        console.error('❌ Annotation API error:', res.status);
       }
     } catch (error) {
-      console.error('Error fetching annotations:', error);
+      console.error('❌ Error fetching annotations:', error);
       notifications.show({
         title: 'Error',
         message: 'Gagal memuat daftar anotasi',
@@ -110,15 +142,19 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
   };
 
   const getArticle = async () => {
+    if (!sessionId) return;
+    
     const res = await fetch(`/api/nodes?sessionId=${sessionId}`);
     const article = await res.json();
-
     setArticle(article);
   }
 
   useEffect(() => {
-    fetchAnnotations();
-  }, [effectiveSessionId]);
+    // Only fetch annotations when we have the necessary parameters
+    if (projectId) {
+      fetchAnnotations();
+    }
+  }, [projectId, urlSessionId, isFromBrainstorming]);
 
   const beforeDeleteAnnotation = async (id: string, title: string) => {
     modals.openConfirmModal({

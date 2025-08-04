@@ -2,185 +2,200 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@sre-monorepo/lib';
 import { createServerSupabaseClient } from '@sre-monorepo/lib';
 
-function extractUserIdFromSessionId(sessionId: string): string | null {
-  try {
-    // sessionId format: "userId_timestamp" 
-    // Example: "f66de40d-ea0e-495c-b52d-dea1eff25cba_1753741"
-    const parts = sessionId.split('_');
-    if (parts.length >= 2 && parts[0].length > 20) { // UUID-like length check
-      return parts[0];
-    }
-    return null;
-  } catch (error) {
-    console.error('Error extracting userId from sessionId:', error);
-    return null;
-  }
-}
+export async function POST(req: NextRequest) {
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-// Enhanced authentication function
-async function authenticateUser(req: Request): Promise<{
-  user: any | null;
-  source: 'supabase' | 'sessionId' | 'none';
-  error?: string;
-}> {
-  const url = new URL(req.url);
-  const sessionId = url.searchParams.get('sessionId');
-  
-  console.log('🔍 Auth attempt with sessionId:', sessionId);
-  console.log('🔍 Full URL:', req.url);
-  
-  // Method 1: Try Supabase authentication first
-  try {
-    const supabase = await createServerSupabaseClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
-    
-    if (user && !error) {
-      console.log('✅ Supabase auth successful:', user.id);
-      return { user, source: 'supabase' };
-    }
-    
-    console.log('⚠️ Supabase auth failed:', error?.message || 'No user');
-  } catch (supabaseError) {
-    console.error('❌ Supabase auth error:', supabaseError);
+  if (!user) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
+
+  const { sessionId, projectId } = await req.json();
   
-  // Method 2: Fallback to sessionId parameter
-  if (sessionId) {
-    console.log('🔄 Trying sessionId fallback authentication');
-    
-    const userId = extractUserIdFromSessionId(sessionId);
-    if (userId) {
-      try {
-        // Verify user exists in database
-        const dbUser = await prisma.user.findUnique({
-          where: { id: userId },
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            group: true,
-            nim: true,
+  // Enhanced logging
+  console.log('=== API /writer-sessions/create ===');
+  console.log('Request payload:', { sessionId, projectId });
+  console.log('Authenticated user:', user.id);
+
+  if (!projectId) {
+    return NextResponse.json({ 
+      message: "Missing projectId" 
+    }, { status: 400 });
+  }
+
+  try {
+    // CASE 1: Jika ada sessionId, berarti dari brainstorming session
+    if (sessionId) {
+      console.log('Case 1: Creating WriterSession from BrainstormingSession');
+      console.log('ProjectId (brainstormingSessionId):', projectId);
+      console.log('SessionId (userId from URL):', sessionId);
+      
+      // Clean sessionId jika mengandung underscore
+      let cleanUserId = sessionId;
+      if (sessionId.includes('_')) {
+        cleanUserId = sessionId.split('_')[0];
+        console.log('Cleaned userId:', cleanUserId);
+      }
+
+      // Validasi bahwa sessionId yang dibersihkan sama dengan user yang login
+      if (cleanUserId !== user.id) {
+        return NextResponse.json({ 
+          message: "SessionId mismatch with authenticated user" 
+        }, { status: 403 });
+      }
+      
+      // Ambil data BrainstormingSession berdasarkan projectId
+      const brainSession = await prisma.brainstormingSession.findUnique({
+        where: { id: projectId },
+      });
+
+      if (!brainSession) {
+        console.log('❌ BrainstormingSession not found with id:', projectId);
+        
+        // FALLBACK: Check if projectId is actually a writerSessionId
+        console.log('🔄 Checking if projectId is a writerSessionId instead...');
+        const possibleWriterSession = await prisma.writerSession.findUnique({
+          where: { id: projectId },
+          include: {
+            brainstormingSession: {
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                userId: true
+              }
+            }
           }
         });
         
-        if (dbUser) {
-          console.log('✅ SessionId auth successful:', userId);
-          // Create user object similar to Supabase format
-          const user = {
-            id: dbUser.id,
-            email: dbUser.email,
-            user_metadata: {
-              name: dbUser.name,
-              group: dbUser.group,
-              nim: dbUser.nim
-            }
-          };
-          return { user, source: 'sessionId' };
-        } else {
-          console.log('❌ User not found for sessionId:', userId);
+        if (possibleWriterSession) {
+          console.log('✅ Found existing WriterSession:', possibleWriterSession.id);
+          if (possibleWriterSession.userId === user.id) {
+            return NextResponse.json({ 
+              id: possibleWriterSession.id,
+              writerSession: possibleWriterSession,
+              type: 'existing_writer_from_case1'
+            });
+          } else {
+            return NextResponse.json({ 
+              message: "Access denied to this writer session" 
+            }, { status: 403 });
+          }
         }
-      } catch (dbError) {
-        console.error('❌ Database error during sessionId auth:', dbError);
-      }
-    } else {
-      console.log('❌ Invalid sessionId format:', sessionId);
-    }
-  }
-  
-  return { user: null, source: 'none', error: 'Authentication failed' };
-}
-
-export async function POST(req: Request) {
-  console.log('🔍 Writer session create API called');
-  
-  try {
-    // Enhanced authentication
-    const { user, source, error } = await authenticateUser(req);
-    
-    if (!user) {
-      console.log('❌ Authentication failed:', error);
-      return NextResponse.json(
-        { 
-          message: 'Unauthorized',
-          error: error,
-          hint: 'Try adding ?sessionId=your_session_id to the URL'
-        }, 
-        { status: 401 }
-      );
-    }
-    
-    console.log(`✅ Authenticated via ${source}:`, user.id);
-    
-    const body = await req.json();
-    const { title, description, coverColor, sessionId, projectId } = body;
-
-    // Jika ada projectId, cek brainstorming session
-    let brainstormingSession = null;
-    if (projectId) {
-      brainstormingSession = await prisma.brainstormingSession.findUnique({
-        where: { id: projectId },
-      });
-      
-      if (!brainstormingSession) {
-        return NextResponse.json({
-          message: 'BrainstormingSession not found'
+        
+        return NextResponse.json({ 
+          message: "BrainstormingSession not found and projectId is not a valid writerSessionId" 
         }, { status: 404 });
       }
-    }
 
-    // Cek existing writer session
-    const existingConditions: any = { userId: user.id };
-    if (projectId) {
-      existingConditions.brainstormingSessionId = projectId;
-    }
+      // Cek apakah user memiliki akses ke brainstorming session ini
+      if (brainSession.userId !== user.id) {
+        return NextResponse.json({ 
+          message: "Access denied to this brainstorming session" 
+        }, { status: 403 });
+      }
 
-    const existing = await prisma.writerSession.findFirst({
-      where: existingConditions,
-    });
+      // Cek apakah WriterSession sudah ada untuk project ini
+      const existing = await prisma.writerSession.findFirst({
+        where: {
+          brainstormingSessionId: projectId,
+          userId: user.id,
+        },
+      });
 
-    if (existing) {
-      console.log('✅ WriterSession already exists:', existing.id);
+      if (existing) {
+        console.log('✅ WriterSession already exists:', existing.id);
+        return NextResponse.json({ 
+          message: "WriterSession already exists", 
+          id: existing.id,
+          writerSession: existing,
+          type: 'existing'
+        });
+      }
+
+      // Buat WriterSession baru dengan relasi ke BrainstormingSession
+      console.log('🆕 Creating new WriterSession...');
+      const newWriterSession = await prisma.writerSession.create({
+        data: {
+          title: `Draft: ${brainSession.title}`,
+          description: brainSession.description || '',
+          userId: user.id,
+          coverColor: brainSession.coverColor,
+          brainstormingSessionId: projectId,
+        },
+      });
+
+      console.log('✅ New WriterSession created:', newWriterSession.id);
       return NextResponse.json({ 
-        message: "WriterSession already exists", 
-        id: existing.id,
-        writerSession: existing,
-        authSource: source
+        id: newWriterSession.id,
+        writerSession: newWriterSession,
+        type: 'created'
+      });
+    }
+    
+    // CASE 2: Tidak ada sessionId, berarti projectId adalah writerSessionId
+    else {
+      console.log('Case 2: Getting existing WriterSession');
+      console.log('ProjectId (writerSessionId):', projectId);
+      
+      // Cari WriterSession berdasarkan projectId
+      const writerSession = await prisma.writerSession.findUnique({
+        where: { id: projectId },
+        include: {
+          brainstormingSession: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              userId: true
+            }
+          }
+        }
+      });
+
+      if (!writerSession) {
+        console.log('❌ WriterSession not found with id:', projectId);
+        
+        // ADDITIONAL FALLBACK: Check if projectId is brainstormingSessionId
+        console.log('🔄 Checking if projectId is a brainstormingSessionId...');
+        const possibleBrainSession = await prisma.brainstormingSession.findUnique({
+          where: { id: projectId },
+        });
+        
+        if (possibleBrainSession && possibleBrainSession.userId === user.id) {
+          console.log('✅ Found brainstormingSession, but no sessionId provided');
+          return NextResponse.json({ 
+            message: "Found brainstormingSession but missing sessionId parameter. Please provide sessionId to create WriterSession from brainstorming." 
+          }, { status: 400 });
+        }
+        
+        return NextResponse.json({ 
+          message: "WriterSession not found and projectId is not a valid brainstormingSessionId" 
+        }, { status: 404 });
+      }
+
+      // Cek apakah user memiliki akses ke writer session ini
+      if (writerSession.userId !== user.id) {
+        console.log('❌ Access denied. WriterSession belongs to:', writerSession.userId, 'but user is:', user.id);
+        return NextResponse.json({ 
+          message: "Access denied to this writer session" 
+        }, { status: 403 });
+      }
+
+      console.log('✅ Returning existing WriterSession:', writerSession.id);
+      return NextResponse.json({ 
+        id: writerSession.id,
+        writerSession: writerSession,
+        type: 'existing_writer'
       });
     }
 
-    // Create new writer session
-    const writerSessionData: any = {
-      title: title || (brainstormingSession ? `Draft: ${brainstormingSession.title}` : 'New Draft'),
-      description: description || brainstormingSession?.description || '',
-      coverColor: coverColor || brainstormingSession?.coverColor || '#4c6ef5',
-      userId: user.id,
-      lastActivity: new Date(),
-    };
-
-    if (projectId) {
-      writerSessionData.brainstormingSessionId = projectId;
-    }
-
-    const writerSession = await prisma.writerSession.create({
-      data: writerSessionData,
-    });
-
-    console.log('✅ Writer session created:', writerSession.id);
-
+  } catch (error: any) {
+    console.error('❌ Error handling WriterSession:', error);
+    console.error('Stack trace:', error.stack);
     return NextResponse.json({ 
-      id: writerSession.id,
-      writerSession: writerSession,
-      authSource: source // Debug info
-    });
-    
-  } catch (error) {
-    console.error('💥 Error in writer session create:', error);
-    return NextResponse.json(
-      { 
-        message: 'Internal server error',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }, 
-      { status: 500 }
-    );
+      message: "Internal server error",
+      details: error.message 
+    }, { status: 500 });
   }
 }
