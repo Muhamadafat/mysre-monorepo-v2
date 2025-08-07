@@ -183,7 +183,7 @@ interface User {
   group: string,
 }
 
-export const handleAnalytics = async (analyticsData: any) => {
+const handleAnalytics = async (analyticsData: any) => {
   try {
     await fetch('/api/annotation', {
       method: 'POST',
@@ -1606,7 +1606,7 @@ const handleSubmitToTeacher = async () => {
             <Group align="center" gap="sm" style={{ flexShrink: 0}}>
               <Image
                 // component={NextImage}
-                src='/images/LogoSRE_TULIS.png'
+                src='/images/logoSRE_Tulis.png'
                 alt="Logo"
                 width={200}  // Tambahkan ini
                 height={50}  // Tambahkan ini

@@ -103,7 +103,7 @@ const relationColors = {
   'background': 'blue',
   'method': 'green',
   'gap': 'red',
-  'future': 'violet',
+  'future': 'purple',
   'goal': 'orange'
 };
 
@@ -871,7 +871,7 @@ export default function Home() {
         to: edge.toId,
         label: edge.label,
         relation: edge.relation || 'unknown',
-        arrows: 'to, from',
+        // arrows: 'to, from',
         color: { color: getRelationColor(edge.relation) || 'gray' },
         font: { color: 'black', background: 'white' },
       }));

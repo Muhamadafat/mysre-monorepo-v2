@@ -144,6 +144,11 @@ export default function ChatPanel({
   const [annotationCommentInput, setAnnotationCommentInput] = useState("")
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false)
 
+  //state for infiniteloop
+  const isHandlingScroll = useRef(false);
+  const lastScrollUpdateTime = useRef(0)
+  const SCROLL_UPDATE_THROTTLE = 100
+
   const scrollSuggestions = (direction: "left" | "right") => {
     if (!suggestionContainerRef.current) return
     const container = suggestionContainerRef.current
@@ -278,10 +283,32 @@ export default function ChatPanel({
   // NEW: Improved scroll position change with debouncing and cooldown
   const handleScrollPositionChange = useCallback(
     ({ x, y }: { x: number; y: number }) => {
-      console.log(`📊 Scroll position changed - Y: ${y}`)
-      setScrollPosition({ x, y })
-      setIsScrolling(true)
 
+      if (isHandlingScroll.current){
+        console.log("⚠️ Scroll handler already running, skipping...");
+        return;
+      }
+
+      if (typeof y !== 'number' || isNaN(y) || y < 0){
+        console.warn("Invalid scroll position, skipping");
+        return;
+      }
+
+      const now = Date.now()
+      if (now - lastScrollUpdateTime.current < SCROLL_UPDATE_THROTTLE) {
+        return // Skip this update
+      }
+      lastScrollUpdateTime.current = now
+
+      // console.log(`📊 Scroll position changed - Y: ${y}`)
+      // setScrollPosition({ x, y })
+      // setIsScrolling(true)
+
+      requestAnimationFrame(() => {
+        setScrollPosition({ x, y })
+        setIsScrolling(true)
+      })
+      
       // Clear existing timeout
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current)
@@ -289,15 +316,24 @@ export default function ChatPanel({
 
       // Debounce scroll handling
       scrollTimeoutRef.current = setTimeout(() => {
-        setIsScrolling(false)
+        if (isHandlingScroll.current) return
+
+        requestAnimationFrame(() => {
+          setIsScrolling(false)
+        })
+
+        // setIsScrolling(false)
         const scrollThreshold = 10 // Increased threshold
         const isNearTop = y <= scrollThreshold
         const canLoadMore = hasMore && !loadingMore && !isFetchingHistory.current
 
         // Check cooldown period
         const now = Date.now()
+        // const timeSinceLastFetch = now - lastFetchTime.current
+        // const cooldownPassed = timeSinceLastFetch > FETCH_COOLDOWN
         const timeSinceLastFetch = now - lastFetchTime.current
         const cooldownPassed = timeSinceLastFetch > FETCH_COOLDOWN
+
 
         console.log(
           `📊 Scroll Check - Y: ${y}, Threshold: ${scrollThreshold}, Near Top: ${isNearTop}, Can Load: ${canLoadMore}, Cooldown: ${cooldownPassed} (${timeSinceLastFetch}ms)`,
@@ -306,9 +342,13 @@ export default function ChatPanel({
         if (isNearTop && canLoadMore && cooldownPassed) {
           console.log("🔄 Triggering loadMoreMessages from scroll position change")
           lastFetchTime.current = now
-          loadMoreMessages()
+          loadMoreMessages().finally(() => {
+          setTimeout(() => {
+            isHandlingScroll.current = false
+          }, 200) // Increase timeout
+        })
         }
-      }, 300) // 300ms debounce
+      }, 600) // 300ms debounce
     },
     [hasMore, loadingMore, loadMoreMessages],
   )
@@ -346,7 +386,7 @@ export default function ChatPanel({
         }
       }
     }
-  }, [messages.length, loadingMore, scrollPosition.y])
+  }, [messages.length, loadingMore])
 
   useEffect(() => {
     if (selectedNode) {

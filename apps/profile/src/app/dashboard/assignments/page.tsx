@@ -586,7 +586,10 @@ export default function StudentAssignmentPage() {
                             Minggu {assignment.week_number}
                           </Badge>
                           <Group gap="xs">
-                            <IconCode size={14} />
+                            {/* <IconCode size={14} /> */}
+                            <Text fw={600} size="sm" ff="monospace" c="dark">
+                              KODE SUBMIT =
+                            </Text>
                             <Text fw={600} size="sm" ff="monospace" c="blue">
                               {assignment.assignment_code}
                             </Text>

@@ -89,7 +89,7 @@ export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: Das
             <Burger opened={false} onClick={() => {}} size="sm" />
             <Group gap="xs">
               <Image
-                src='/images/LogoSRE_TULIS.png'
+                src='/images/logoSRE_Tulis.png'
                 alt="My-SRE Logo"
                 width={160}
                 height={50}
@@ -125,7 +125,7 @@ export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: Das
                 Knowledge Visualization Platform
               </Text> */}
               <Image
-                src='/images/LogoSRE_Fix.png'
+                src='/images/logoSRE_Tulis.png'
                 alt="My-SRE Logo"
                 width={160}
                 height={50}

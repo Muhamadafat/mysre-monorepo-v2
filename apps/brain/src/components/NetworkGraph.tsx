@@ -101,8 +101,8 @@ export default function NetworkGraph({
           },
         },
         edges: {
-          arrows: 'to',
           font: { size: 0 },
+          width: 3,
           smooth: {
             enabled: true,
             type: 'dynamic',

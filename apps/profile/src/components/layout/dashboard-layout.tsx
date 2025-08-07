@@ -236,7 +236,7 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
             <Group gap="sm" style={{ display: "flex", alignItems: "center" }}>
               <Image
-                src="/images/LogoSRE_Profile.png"
+                src="/images/logoSRE_Profile.png"
                 alt="MySRE Logo"
                 height={45}
                 width="auto"
@@ -247,7 +247,7 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
           </Group>
           <Group>
             {/* Token Balance Indicator (untuk user) */}
-            {!isAdmin() && user && (
+            {/* {!isAdmin() && user && (
               <Tooltip label="Token Balance">
                 <ActionIcon variant="light" size="lg" color="green">
                   <Group gap="xs">
@@ -258,7 +258,7 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
                   </Group>
                 </ActionIcon>
               </Tooltip>
-            )}
+            )} */}
             {/* Revenue Indicator (untuk admin) */}
             {isAdmin() && (
               <Tooltip label="Monthly Revenue">
@@ -270,11 +270,11 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
                 </ActionIcon>
               </Tooltip>
             )}
-            <Tooltip label="Notifikasi">
+            {/* <Tooltip label="Notifikasi">
               <ActionIcon variant="light" size="lg">
                 <IconBell size={20} />
               </ActionIcon>
-            </Tooltip>
+            </Tooltip> */}
             <Menu shadow="md" width={200}>
               <Menu.Target>
                 <UnstyledButton>
