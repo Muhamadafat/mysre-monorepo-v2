@@ -43,6 +43,7 @@ import {
   IconSparkles,
   IconBrain,
   IconMessageCircle,
+  IconHelp,
 } from "@tabler/icons-react"
 import React, { useEffect, useState, useRef, useCallback } from "react"
 import type { ExtendedNode, ExtendedEdge } from "../types"
@@ -52,6 +53,7 @@ import remarkGfm from "remark-gfm"
 import { useDebouncedValue } from "@mantine/hooks"
 import WebViewer from "./WebViewer"
 import NodeDetail, { handleAnalytics } from "./NodeDetail"
+import { HelpGuideModal } from "./HelpGuideModal"
 
 interface ChatPanelProps {
   sessionId?: string
@@ -148,6 +150,9 @@ export default function ChatPanel({
   const isHandlingScroll = useRef(false);
   const lastScrollUpdateTime = useRef(0)
   const SCROLL_UPDATE_THROTTLE = 100
+
+  //for help modal
+  const [helpModalOpened, setHelpModalOpened] = useState(false);
 
   const scrollSuggestions = (direction: "left" | "right") => {
     if (!suggestionContainerRef.current) return
@@ -323,7 +328,7 @@ export default function ChatPanel({
         })
 
         // setIsScrolling(false)
-        const scrollThreshold = 10 // Increased threshold
+        const scrollThreshold = 100 // Increased threshold
         const isNearTop = y <= scrollThreshold
         const canLoadMore = hasMore && !loadingMore && !isFetchingHistory.current
 
@@ -540,6 +545,32 @@ export default function ChatPanel({
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
 
+    if (contextNodes.length === 0) {
+      // Show helpful message with option to open help
+      const helpMessage = {
+        sender: "ai" as const,
+        text: `Saya melihat Anda belum memilih dokumen untuk dianalisis. Untuk mendapatkan hasil yang optimal, silakan:
+
+1. **Pilih dokumen** dari graph view dengan mengklik node dokumen
+2. **Upload PDF baru** menggunakan tombol upload
+3. **Baca panduan lengkap** untuk memahami cara menggunakan platform ini
+
+Apakah Anda ingin membuka panduan penggunaan?`,
+        showHelpButton: true, // Custom property to show help button
+        contextNodeIds: [],
+      }
+
+      setMessages((prev) => [
+        ...prev, 
+        { sender: "user", text: input, contextNodeIds: [] },
+        helpMessage
+      ])
+
+      setInput("")
+      setShouldScrollToBottom(true)
+      return
+    }
+
     setSuggestions([])
     setShowSuggestions(false)
     setSuggestionContext(null)
@@ -637,6 +668,10 @@ export default function ChatPanel({
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleOpenHelp = () => {
+    setHelpModalOpened(true)
   }
 
   const LoadingMoreIndicator = () => {
@@ -1615,6 +1650,21 @@ export default function ChatPanel({
                             {msg.text}
                           </ReactMarkdown>
 
+                          {/* NEW: Help button for guidance messages - TAMBAHKAN INI */}
+                          {(msg as any).showHelpButton && (
+                            <Box mt="md">
+                              <Button
+                                variant="gradient"
+                                gradient={{ from: "blue", to: "cyan" }}
+                                leftSection={<IconHelp size={16} />}
+                                onClick={handleOpenHelp}
+                                size="sm"
+                                style={{ fontWeight: 500 }}
+                              >
+                                Buka Panduan Penggunaan
+                              </Button>
+                            </Box>
+                          )}
                           {/* Enhanced Reference List */}
                           {(msg.references?.length ?? 0) > 0 && (
                             <Card
@@ -2114,6 +2164,11 @@ export default function ChatPanel({
           </Group>
         </Stack>
       </Modal>
+
+      <HelpGuideModal 
+        opened={helpModalOpened} 
+        onClose={() => setHelpModalOpened(false)} 
+      />
 
       {/* Add CSS animations */}
       <style jsx>{`
