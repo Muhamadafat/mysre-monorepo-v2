@@ -86,6 +86,7 @@ import { Cite } from '@citation-js/core';
 import '@citation-js/plugin-ris';
 import { createClient } from '@sre-monorepo/lib';
 import { useXapiTracking } from '@/hooks/useXapiTracking';
+import { RealUploadProgress } from '@/components/RealTimeUploadProgress';
 
 // const Neograph = dynamic(() => import('@/components/NeoGraph'), {
 //     ssr: false,
@@ -217,6 +218,9 @@ export default function Home() {
 
   const [session, setSession] = useState<any>(null);
   const supabase = createClient();
+
+  const hasSessionId = !!sessionId;
+  const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
 
   const {
     trackNodeClick,
@@ -385,10 +389,14 @@ export default function Home() {
   const handleDirectPdfUpload = async () => {
     if (!selectedFile) return;
 
+    const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setCurrentUploadId(uploadId);
+
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('title', selectedFile.name);
     formData.append('sessionId', sessionId as string);
+    formData.append('uploadId', uploadId);
 
     setUpLoading(true);
     try {
@@ -405,26 +413,28 @@ export default function Home() {
 
       trackPdfUpload(selectedFile.name, 'direct');
 
-      notifications.show({
-        title: 'Berhasil',
-        message: `File "${selectedFile.name}" berhasil diunggah`,
-        color: 'green',
-        position: 'top-right',
-      });
+      // notifications.show({
+      //   title: 'Berhasil',
+      //   message: `File "${selectedFile.name}" berhasil diunggah`,
+      //   color: 'green',
+      //   position: 'top-right',
+      // });
 
-      // Reset dan tutup modal
-      handleModalClose();
-      await fetchData();
+      // // Reset dan tutup modal
+      // handleModalClose();
+      // await fetchData();
 
     } catch (error: any) {
+
+      setUpLoading(false);
+      setCurrentUploadId(null);
+
       notifications.show({
         title: 'Upload Gagal',
         message: error.message || 'Terjadi kesalahan saat upload',
         color: 'red',
         position: 'top-right',
       });
-    } finally {
-      setUpLoading(false);
     }
   };
 
@@ -1019,11 +1029,15 @@ export default function Home() {
   const handleUploadSubmit = async () => {
     if (!selectedFile) return;
 
+    const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setCurrentUploadId(uploadId);
+
     // TETAP KIRIM DATA SEPERTI KODE LAMA (hanya file, title, sessionId)
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('title', selectedFile.name); // Gunakan nama file, bukan form title
     formData.append('sessionId', sessionId as string);
+    formData.append('uploadId', uploadId);
     formData.append('author', uploadForm.author);
     formData.append('year', uploadForm.year);
     formData.append('abstract', uploadForm.abstract);
@@ -1057,30 +1071,34 @@ export default function Home() {
 
       trackPdfUpload(selectedFile.name, 'form');
 
-      notifications.show({
-        title: 'Berhasil',
-        message: `File "${selectedFile.name}" berhasil diunggah dan diproses`,
-        color: 'green',
-        position: 'top-right',
-      });
+      // notifications.show({
+      //   title: 'Berhasil',
+      //   message: `File "${selectedFile.name}" berhasil diunggah dan diproses`,
+      //   color: 'green',
+      //   position: 'top-right',
+      // });
 
-      // Reset form dan tutup modal
-      setUploadModalOpened(false);
-      setSelectedFile(null);
-      setUploadForm({
-        title: '',
-        author: '',
-        year: '',
-        abstract: '',
-        keywords: '',
-        doi: '',
-        // category: ''
-      });
+      // // Reset form dan tutup modal
+      // setUploadModalOpened(false);
+      // setSelectedFile(null);
+      // setUploadForm({
+      //   title: '',
+      //   author: '',
+      //   year: '',
+      //   abstract: '',
+      //   keywords: '',
+      //   doi: '',
+      //   // category: ''
+      // });
 
-      // Refresh data setelah upload
-      await fetchData();
+      // // Refresh data setelah upload
+      // await fetchData();
 
     } catch (error: any) {
+
+      setUpLoading(false);
+      setCurrentUploadId(null);
+
       notifications.show({
         title: 'Upload Gagal',
         message: error.message || 'Terjadi Kesalahan saat upload',
@@ -1088,9 +1106,37 @@ export default function Home() {
         position: 'top-right',
       });
       console.error('File upload error:', error);
-    } finally{
-      setUpLoading(false);
     }
+  };
+
+  const handleUploadComplete = async () => {
+    setUpLoading(false);
+    setCurrentUploadId(null);
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  
+    notifications.show({
+      id: 'upload-success', // ✅ Prevent duplicate
+      title: 'Berhasil',
+      message: `File "${selectedFile?.name}" berhasil diunggah dan diproses`,
+      color: 'green',
+      position: 'top-right',
+    });
+
+    // Reset form dan tutup modal
+    setUploadModalOpened(false);
+    setSelectedFile(null);
+    setUploadForm({
+      title: '',
+      author: '',
+      year: '',
+      abstract: '',
+      keywords: '',
+      doi: '',
+    });
+
+    // Refresh data setelah upload
+    await fetchData();
   };
 
   //PERBAIKAN: Loading state yang lebih informatif
@@ -1619,7 +1665,7 @@ export default function Home() {
           </Group>
         </div>
       )} */}
-      {uploading && (
+      {/* {uploading && (
         <div
           style={{
             position: 'fixed',
@@ -1650,7 +1696,12 @@ export default function Home() {
             </Stack>
           </div>
         </div>
-      )}
+      )} */}
+      <RealUploadProgress 
+        uploadId={currentUploadId} // State baru
+        uploading={uploading}
+        onComplete={handleUploadComplete}
+      />
 
       {/* // Enhanced Upload Modal JSX */}
       <Modal
