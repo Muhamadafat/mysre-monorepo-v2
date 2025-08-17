@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const activeUploads = new Map<string, (data: any) => void>();
+import { activeUploads } from '@/lib/upload-progress-manager';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -36,12 +35,4 @@ export async function GET(req: NextRequest) {
       'Connection': 'keep-alive',
     },
   });
-}
-
-// Function to send progress updates
-export function sendProgress(uploadId: string, progress: any) {
-  const sendEvent = activeUploads.get(uploadId);
-  if (sendEvent) {
-    sendEvent(progress);
-  }
 }

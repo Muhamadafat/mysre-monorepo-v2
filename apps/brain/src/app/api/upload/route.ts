@@ -9,7 +9,7 @@ import { prisma } from "@sre-monorepo/lib";
 import { Readable } from "stream";
 // import { supabase } from "@/lib/supabase";
 import { createServerSupabaseClient } from "@sre-monorepo/lib";
-import { sendProgress } from "../upload-progress/route";
+import { sendProgress } from "@/lib/upload-progress-manager";
 
 export const dynamic = "force-dynamic";
 
