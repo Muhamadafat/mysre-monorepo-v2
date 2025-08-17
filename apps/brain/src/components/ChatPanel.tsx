@@ -133,7 +133,7 @@ export default function ChatPanel({
   const lastFetchTime = useRef(0)
   const FETCH_COOLDOWN = 2000 // 2 seconds cooldown
   const [isScrolling, setIsScrolling] = useState(false)
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  // const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Add after other state declarations
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true)
@@ -153,6 +153,11 @@ export default function ChatPanel({
 
   //for help modal
   const [helpModalOpened, setHelpModalOpened] = useState(false);
+
+  //refactored
+  const scrollPositionRef = useRef({x:0, y: 0});
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const scrollSuggestions = (direction: "left" | "right") => {
     if (!suggestionContainerRef.current) return
@@ -286,77 +291,135 @@ export default function ChatPanel({
   }, [sessionId, fetchChatMessages])
 
   // NEW: Improved scroll position change with debouncing and cooldown
-  const handleScrollPositionChange = useCallback(
-    ({ x, y }: { x: number; y: number }) => {
+  // const handleScrollPositionChange = useCallback(
+  //   ({ x, y }: { x: number; y: number }) => {
 
-      if (isHandlingScroll.current){
-        console.log("⚠️ Scroll handler already running, skipping...");
-        return;
-      }
+  //     if (isHandlingScroll.current){
+  //       console.log("⚠️ Scroll handler already running, skipping...");
+  //       return;
+  //     }
 
-      if (typeof y !== 'number' || isNaN(y) || y < 0){
-        console.warn("Invalid scroll position, skipping");
-        return;
-      }
+  //     if (typeof y !== 'number' || isNaN(y) || y < 0){
+  //       console.warn("Invalid scroll position, skipping");
+  //       return;
+  //     }
 
-      const now = Date.now()
-      if (now - lastScrollUpdateTime.current < SCROLL_UPDATE_THROTTLE) {
-        return // Skip this update
-      }
-      lastScrollUpdateTime.current = now
+  //     const now = Date.now()
+  //     if (now - lastScrollUpdateTime.current < SCROLL_UPDATE_THROTTLE) {
+  //       return // Skip this update
+  //     }
+  //     lastScrollUpdateTime.current = now
 
-      // console.log(`📊 Scroll position changed - Y: ${y}`)
-      // setScrollPosition({ x, y })
-      // setIsScrolling(true)
+  //     // console.log(`📊 Scroll position changed - Y: ${y}`)
+  //     // setScrollPosition({ x, y })
+  //     // setIsScrolling(true)
 
-      requestAnimationFrame(() => {
-        setScrollPosition({ x, y })
-        setIsScrolling(true)
-      })
+  //     requestAnimationFrame(() => {
+  //       setScrollPosition({ x, y })
+  //       setIsScrolling(true)
+  //     })
       
-      // Clear existing timeout
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current)
-      }
+  //     // Clear existing timeout
+  //     if (scrollTimeoutRef.current) {
+  //       clearTimeout(scrollTimeoutRef.current)
+  //     }
 
-      // Debounce scroll handling
-      scrollTimeoutRef.current = setTimeout(() => {
-        if (isHandlingScroll.current) return
+  //     // Debounce scroll handling
+  //     scrollTimeoutRef.current = setTimeout(() => {
+  //       if (isHandlingScroll.current) return
 
-        requestAnimationFrame(() => {
-          setIsScrolling(false)
-        })
+  //       requestAnimationFrame(() => {
+  //         setIsScrolling(false)
+  //       })
 
-        // setIsScrolling(false)
-        const scrollThreshold = 100 // Increased threshold
-        const isNearTop = y <= scrollThreshold
-        const canLoadMore = hasMore && !loadingMore && !isFetchingHistory.current
+  //       // setIsScrolling(false)
+  //       const scrollThreshold = 100 // Increased threshold
+  //       const isNearTop = y <= scrollThreshold
+  //       const canLoadMore = hasMore && !loadingMore && !isFetchingHistory.current
 
-        // Check cooldown period
-        const now = Date.now()
-        // const timeSinceLastFetch = now - lastFetchTime.current
-        // const cooldownPassed = timeSinceLastFetch > FETCH_COOLDOWN
-        const timeSinceLastFetch = now - lastFetchTime.current
-        const cooldownPassed = timeSinceLastFetch > FETCH_COOLDOWN
+  //       // Check cooldown period
+  //       const now = Date.now()
+  //       // const timeSinceLastFetch = now - lastFetchTime.current
+  //       // const cooldownPassed = timeSinceLastFetch > FETCH_COOLDOWN
+  //       const timeSinceLastFetch = now - lastFetchTime.current
+  //       const cooldownPassed = timeSinceLastFetch > FETCH_COOLDOWN
 
 
-        console.log(
-          `📊 Scroll Check - Y: ${y}, Threshold: ${scrollThreshold}, Near Top: ${isNearTop}, Can Load: ${canLoadMore}, Cooldown: ${cooldownPassed} (${timeSinceLastFetch}ms)`,
-        )
+  //       console.log(
+  //         `📊 Scroll Check - Y: ${y}, Threshold: ${scrollThreshold}, Near Top: ${isNearTop}, Can Load: ${canLoadMore}, Cooldown: ${cooldownPassed} (${timeSinceLastFetch}ms)`,
+  //       )
 
-        if (isNearTop && canLoadMore && cooldownPassed) {
-          console.log("🔄 Triggering loadMoreMessages from scroll position change")
-          lastFetchTime.current = now
-          loadMoreMessages().finally(() => {
-          setTimeout(() => {
-            isHandlingScroll.current = false
-          }, 200) // Increase timeout
-        })
-        }
-      }, 600) // 300ms debounce
-    },
-    [hasMore, loadingMore, loadMoreMessages],
-  )
+  //       if (isNearTop && canLoadMore && cooldownPassed) {
+  //         console.log("🔄 Triggering loadMoreMessages from scroll position change")
+  //         lastFetchTime.current = now
+  //         loadMoreMessages().finally(() => {
+  //         setTimeout(() => {
+  //           isHandlingScroll.current = false
+  //         }, 200) // Increase timeout
+  //       })
+  //       }
+  //     }, 600) // 300ms debounce
+  //   },
+  //   [hasMore, loadingMore, loadMoreMessages],
+  // )
+  const handleScrollPositionChange = useCallback(
+      ({ x, y }: { x: number; y: number }) => {
+          if (isHandlingScroll.current) {
+              console.log("⚠️ Scroll handler already running, skipping...");
+              return;
+          }
+
+          if (typeof y !== 'number' || isNaN(y) || y < 0) {
+              console.warn("Invalid scroll position, skipping");
+              return;
+          }
+
+          const now = Date.now();
+          if (now - lastScrollUpdateTime.current < SCROLL_UPDATE_THROTTLE) {
+              return; // Skip this update
+          }
+          lastScrollUpdateTime.current = now;
+
+          // --- PERUBAHAN UTAMA DI SINI ---
+          // Simpan posisi scroll ke ref, TIDAK ke state
+          scrollPositionRef.current = { x, y };
+          isScrollingRef.current = true;
+          // Tidak ada lagi setScrollPosition() atau setIsScrolling()
+
+          if (scrollTimeoutRef.current) {
+              clearTimeout(scrollTimeoutRef.current);
+          }
+
+          scrollTimeoutRef.current = setTimeout(() => {
+              isScrollingRef.current = false;
+              
+              if (isHandlingScroll.current) return;
+
+              const scrollThreshold = 100;
+              const isNearTop = scrollPositionRef.current.y <= scrollThreshold;
+              const canLoadMore = hasMore && !loadingMore && !isFetchingHistory.current;
+
+              const timeSinceLastFetch = Date.now() - lastFetchTime.current;
+              const cooldownPassed = timeSinceLastFetch > FETCH_COOLDOWN;
+
+              console.log(
+                  `📊 Scroll Check - Y: ${scrollPositionRef.current.y}, Near Top: ${isNearTop}, Can Load: ${canLoadMore}, Cooldown: ${cooldownPassed}`
+              );
+
+              if (isNearTop && canLoadMore && cooldownPassed) {
+                  console.log("🔄 Triggering loadMoreMessages from scroll");
+                  lastFetchTime.current = Date.now();
+                  isHandlingScroll.current = true; // Set flag before async call
+                  loadMoreMessages().finally(() => {
+                      setTimeout(() => {
+                          isHandlingScroll.current = false;
+                      }, 500); // Cooldown before allowing next handle
+                  });
+              }
+          }, 300); // 300ms debounce
+      },
+      [hasMore, loadingMore, loadMoreMessages] // Dependencies tetap sama
+  );
 
   // NEW: Handle scroll position restoration after loading more messages
   useEffect(() => {
@@ -381,7 +444,8 @@ export default function ChatPanel({
           console.log(`📏 Restoring scroll position - Height diff: ${heightDifference}`)
           // Add offset to prevent immediate re-trigger
           const offset = 200 // 200px offset from top
-          const newScrollTop = Math.max(scrollPosition.y + heightDifference + offset, offset)
+          // const newScrollTop = Math.max(scrollPosition.y + heightDifference + offset, offset)
+          const newScrollTop = Math.max(scrollPositionRef.current.y + heightDifference + offset, offset)
 
           setTimeout(() => {
             scrollContainer.scrollTop = newScrollTop
