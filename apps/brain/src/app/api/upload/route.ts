@@ -9,6 +9,7 @@ import { prisma } from "@sre-monorepo/lib";
 import { Readable } from "stream";
 // import { supabase } from "@/lib/supabase";
 import { createServerSupabaseClient } from "@sre-monorepo/lib";
+import { sendProgress } from "@/lib/upload-progress-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -55,10 +56,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return new Promise((resolve, reject) => {
     // const uploadsDir = path.join(process.cwd(), "public", "uploads");
     // if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+    // const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const busboy = Busboy({ headers: Object.fromEntries(req.headers) });
     let title = "Untitled";
     let sessionId = "";
+    let uploadId = "";
     let fileBuffer: Buffer;
     let uploadFileName = "";
     let originalFileName = "";
@@ -115,6 +118,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         title = val;
       } if (fieldname === "sessionId") {
         sessionId = val;
+      } if (fieldname === "uploadId") {
+        uploadId = val;
       } if (fieldname === "author"){
         author = val;
       } if (fieldname === "year"){
@@ -129,10 +134,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
 
     busboy.on("finish", async () => {
+      if (!uploadId) {
+        console.error("❌ No uploadId provided from frontend");
+        return resolve(NextResponse.json({error: 'Missing uploadId'}, {status: 400}));
+      }
+
+      sendProgress(uploadId, {
+        type: 'progress', // ✅ Tambah type
+        stage: 'authenticating',
+        progress: 10,
+        message: 'Memverifikasi pengguna...'
+      });
+
       const supabase = await createServerSupabaseClient();
       const { data: {user}, error } = await supabase.auth.getUser();
 
       if (!user || error) {
+        sendProgress(uploadId, {
+            type: 'error', // ✅ Tambah type
+            stage: 'error',
+            progress: 0,
+            message: 'Unauthorized'
+        });
         return resolve(NextResponse.json({error: 'Unauthorized'}, {status: 401}));
       }
 
@@ -143,17 +166,38 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           title = originalFileName;
         };
 
+        sendProgress(uploadId, {
+          type: 'progress',
+          stage: 'uploading_file',
+          progress: 20,
+          message: 'Mengunggah file ke cloud storage...'
+        });
+
         const {error: uploadError} = await supabase.storage.from("uploads").upload(uploadFileName, fileBuffer, {
           contentType: "application/pdf",
           upsert: true,
         });
 
         if (uploadError){
+          sendProgress(uploadId, {
+            type: 'error', // ✅ Tambah type
+            stage: 'error',
+            progress: 0,
+            message: `Upload gagal: ${uploadError.message}`
+          });
           console.error("Upload gagal:", uploadError.message);
+          throw new Error(`Upload failed: ${uploadError.message}`);
         };
 
         const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(uploadFileName);
         const publicUrl = urlData?.publicUrl || "";
+
+        sendProgress(uploadId, {
+          type: 'progress',
+          stage: 'saving_database',
+          progress: 30,
+          message: 'Menyimpan informasi artikel ke database...'
+        });
 
         const article = await prisma.article.create({
           data: {
@@ -168,6 +212,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             doi: doi || null,
             // createdAt: new Date(),
           },
+        });
+
+        sendProgress(uploadId, {
+          type: 'progress',
+          stage: 'ai_processing',
+          progress: 40,
+          message: 'AI sedang menganalisis konten PDF...'
         });
         
         const mcpResponse = await fetch(`${process.env.PY_URL}/mcp`, {
@@ -187,6 +238,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             },
             id: 1
           })
+        });
+
+        sendProgress(uploadId, {
+          type: 'progress',
+          stage: 'generating_nodes',
+          progress: 60,
+          message: 'Memproses hasil analisis AI...'
         });
 
         if (!mcpResponse.ok) {
@@ -236,6 +294,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             throw new Error("Python did not return article node data.");
         }
 
+        sendProgress(uploadId, {
+          type: 'progress',
+          stage: 'generating_nodes',
+          progress: 70,
+          message: 'Membuat node artikel...'
+        });
+
         const parentNode = await prisma.node.create({
           data: {
             label: generatedArticleNodeData.label,
@@ -257,6 +322,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         let createdEdges: any[] = [];
         let edgeTokenUsage: any = null;
         if (sessionId){
+
+          sendProgress(uploadId, {
+            type: 'progress',
+            stage: 'generating_edges',
+            progress: 80,
+            message: 'Menganalisis hubungan dengan dokumen lain...'
+          });
+
           const articleInSession = await prisma.article.findMany({
             where: {
               sessionId: sessionId,
@@ -410,6 +483,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               
               if (sourceNode && targetNode){
                 try {
+
+                  sendProgress(uploadId, {
+                    type: 'progress',
+                    stage: 'generating_edges',
+                    progress: 90,
+                    message: 'Menyimpan koneksi antar dokumen...'
+                  });
+
                   const newEdge = await prisma.edge.create({
                     data: {
                       fromId: sourceNode.id,
@@ -468,9 +549,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         });
 
         console.log(`✅ Saved ${combinedTokenUsage.total.total_tokens} tokens to database`);
+
+        sendProgress(uploadId, {
+          type: 'complete',
+          stage: 'completed',
+          progress: 100,
+          message: 'Upload berhasil diselesaikan!',
+          result: {
+            article,
+            parentNode,
+            edges: createdEdges
+          }
+        });
           
           resolve(
           NextResponse.json({
+              uploadId,
               message: "File uploaded, article node and edges generated and processed successfully",
               article,
               parentNode,
@@ -481,6 +575,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         }
         
       } catch (err) {
+
+        sendProgress(uploadId, {
+          type: 'error', // ✅ Tambah type
+          stage: 'error',
+          progress: 0,
+          message: `Processing failed: ${err instanceof Error ? err.message : 'Unknown error'}`
+        });
+
         console.error("Processing error:", err);
         reject(
           NextResponse.json(
@@ -497,6 +599,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!req.body) {
       return resolve(NextResponse.json({ message: "No file data" }, { status: 400 }));
     }
+
+    req.headers.set('x-upload-id', uploadId);
 
     // Convert Web ReadableStream to Node.js Readable stream
     const stream = Readable.fromWeb(req.body as any);

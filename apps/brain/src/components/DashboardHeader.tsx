@@ -15,8 +15,9 @@ import {
   useMantineColorScheme,
   Image
 } from "@mantine/core"
-import { IconNetwork, IconSettings, IconSun, IconMoon, IconUser, IconLogout } from "@tabler/icons-react"
+import { IconNetwork, IconSettings, IconSun, IconMoon, IconUser, IconLogout, IconHelp } from "@tabler/icons-react"
 import { useState, useEffect } from "react"
+import { HelpGuideModal } from "./HelpGuideModal"
 
 interface DashboardHeaderProps {
   sidebarOpened: boolean
@@ -31,6 +32,7 @@ export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: Das
   // SOLUSI SEDERHANA: State lokal untuk user data
   const [userData, setUserData] = useState<{ name: string; email: string } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [helpModalOpened, setHelpModalOpened] = useState(false);
 
   // Fetch user data langsung di component ini
   useEffect(() => {
@@ -112,6 +114,7 @@ export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: Das
   }
 
   return (
+    <>
     <Container fluid h="100%" px="xl">
       <Flex h="100%" justify="space-between" align="center">
         <Group gap="md">
@@ -140,6 +143,26 @@ export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: Das
         </Group>
 
         <Group gap="sm">
+          <Tooltip 
+              label="Panduan Penggunaan" 
+              position="bottom"
+              withArrow
+            >
+              <ActionIcon
+                variant="gradient"
+                gradient={{ from: "blue", to: "cyan", deg: 45 }}
+                onClick={() => setHelpModalOpened(true)}
+                size="lg"
+                radius="md"
+                style={{
+                  transition: "all 0.2s ease",
+                  animation: "pulse 2s infinite"
+                }}
+              >
+                <IconHelp size={18} />
+              </ActionIcon>
+          </Tooltip>
+            
           <Tooltip label={dark ? "Light mode" : "Dark mode"}>
             <ActionIcon
               variant="light"
@@ -202,5 +225,24 @@ export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: Das
         </Group>
       </Flex>
     </Container>
+
+    {/* Help Guide Modal */}
+      <HelpGuideModal 
+        opened={helpModalOpened} 
+        onClose={() => setHelpModalOpened(false)} 
+      />
+
+      {/* CSS untuk animasi pulse */}
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+          }
+          50% {
+            box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+          }
+        }
+      `}</style>
+    </>
   )
 }
