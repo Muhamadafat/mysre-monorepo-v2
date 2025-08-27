@@ -11,6 +11,7 @@ interface NodeDetailProps {
   onClose: () => void;
   trackPdfView?: (pdfName: string, action: 'open' | 'close') => void;
   trackModalInteraction?: (modalType: string, action: 'open' | 'close') => void;
+  session?: any;
 };
 
 const attributeIcons = {
@@ -45,7 +46,7 @@ export const handleAnalytics = async (analyticsData: any) => {
   }
 };
 
-export default function NodeDetail({ node, onClose, trackPdfView, trackModalInteraction }: NodeDetailProps) {
+export default function NodeDetail({ node, onClose, trackPdfView, trackModalInteraction, session }: NodeDetailProps) {
   const [opened, setOpened] = useState(false);
   const [selectedPDF, setSelectedPDF] = useState<string | null>(null);
 
@@ -249,7 +250,7 @@ export default function NodeDetail({ node, onClose, trackPdfView, trackModalInte
           {/* ✅ FIX: Kondisional render di dalam Modal, bukan Modal itu sendiri */}
           {selectedPDF && (
             <div style={{ height: '100%', position: 'relative' }}>
-              <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} />
+              <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} session={session} />
             </div>
           )}
         </Modal>
