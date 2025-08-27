@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Group, ThemeIcon, Text, Stack, Box, Card, TextInput, Button, useMantineTheme } from '@mantine/core';
 import { IconNote, IconCheck } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
+import { useXapiTracking } from '@/hooks/useXapiTracking';
 
 interface AnnotationModalProps {
     opened: boolean;
@@ -22,6 +23,31 @@ const AnnotationModal = ({ opened, onClose, highlightedText, targetUrl, isDark }
     const [comment, setComment] = useState("");
     const [isSaving, setIsSaving] = useState(false);
 
+    const [session, setSession] = useState<any>(null)
+    const { trackAnnotationSave } = useXapiTracking(session);
+
+    useEffect(() => {
+        const getSessionFromAPI = async () => {
+        try {
+            const response = await fetch('/api/session');
+            const data = await response.json();
+            
+            if (data.user) {
+            console.log("✅ Got session from API:", data.user.email);
+            setSession({
+                user: data.user,
+                expires_at: data.expires_at
+            });
+            } else {
+            console.log("❌ No session from API");
+            }
+        } catch (error) {
+            console.error("API session fetch error:", error);
+        }
+        };
+        
+        getSessionFromAPI();
+    }, []);
     // Reset comment setiap kali modal dibuka dengan teks baru
     useEffect(() => {
         if (opened) {
@@ -58,6 +84,8 @@ const AnnotationModal = ({ opened, onClose, highlightedText, targetUrl, isDark }
                 const errorData = await response.json();
                 throw new Error(errorData.message || "Gagal menyimpan anotasi.");
             }
+
+            trackAnnotationSave(highlightedText, comment, targetUrl);
 
             notifications.show({
                 title: "Berhasil",
