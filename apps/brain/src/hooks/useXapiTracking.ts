@@ -14,6 +14,9 @@ interface XapiTrackingHook {
   trackTabChange: (fromTab: string, toTab: string) => void;
   trackViewModeChange: (fromMode: string, toMode: string) => void;
   trackGraphModeChange: (fromGraph: string, toGraph: string) => void;
+  trackTextSelection: (selectedText: string, sourceMessage: string, contextNodeIds?: string[]) => void;
+  trackAnnotationAttempt: (selectedText: string, success: boolean, reason?: string) => void;
+  trackAnnotationSave: (selectedText: string, comment: string, documentUrl: string) => void;
 }
 
 export const useXapiTracking = (session: any): XapiTrackingHook => {
@@ -421,6 +424,139 @@ export const useXapiTracking = (session: any): XapiTrackingHook => {
     }, session, pathname, "brain");
   }, [session, getBaseContext, pathname]);
 
+  const trackTextSelection = useCallback((selectedText: string, sourceMessage: string, contextNodeIds?: string[]) => {
+    if (!session) return;
+
+    console.log("🎯 trackTextSelection called:", {
+      selectedTextLength: selectedText.length,
+      hasContext: contextNodeIds && contextNodeIds.length > 0,
+      hasSession: !!session
+    });
+
+    sendXapiStatement({
+      verb: {
+        id: "http://adlnet.gov/expapi/verbs/selected",
+        display: { "en-US": "selected text" }
+      },
+      object: {
+        id: `brain/text-selection/${Date.now()}`,
+        definition: {
+          name: { "en-US": "Text Selection" },
+          description: { "en-US": "User selected text from AI response for potential annotation" },
+          type: "http://adlnet.gov/expapi/activities/interaction"
+        }
+      },
+      result: {
+        completion: true,
+        success: true,
+        response: selectedText.substring(0, 100) // Limit to 100 chars for xAPI
+      },
+      context: {
+        ...getBaseContext(),
+        extensions: {
+          ...getBaseContext().extensions,
+          interactionType: "text-selection",
+          selectedTextLength: selectedText.length,
+          selectedTextPreview: selectedText.substring(0, 50),
+          sourceMessagePreview: sourceMessage.substring(0, 50),
+          hasDocumentContext: contextNodeIds && contextNodeIds.length > 0,
+          contextNodeCount: contextNodeIds?.length || 0
+        }
+      }
+    }, session, pathname, "brain");
+  }, [session, getBaseContext, pathname]);
+
+  const trackAnnotationAttempt = useCallback((selectedText: string, success: boolean, reason?: string) => {
+    if (!session) return;
+
+    console.log("🎯 trackAnnotationAttempt called:", {
+      success,
+      reason,
+      selectedTextLength: selectedText.length,
+      hasSession: !!session
+    });
+
+    sendXapiStatement({
+      verb: {
+        id: success 
+          ? "http://adlnet.gov/expapi/verbs/attempted"
+          : "http://adlnet.gov/expapi/verbs/failed",
+        display: { "en-US": success ? "attempted annotation" : "failed annotation attempt" }
+      },
+      object: {
+        id: `brain/annotation-attempt/${Date.now()}`,
+        definition: {
+          name: { "en-US": "Annotation Attempt" },
+          description: { "en-US": success 
+            ? "User successfully initiated annotation process" 
+            : `User failed to annotate: ${reason || 'unknown reason'}` 
+          },
+          type: "http://adlnet.gov/expapi/activities/interaction"
+        }
+      },
+      result: {
+        completion: success,
+        success: success,
+        response: success ? "Annotation modal opened" : `Failed: ${reason || 'unknown'}`
+      },
+      context: {
+        ...getBaseContext(),
+        extensions: {
+          ...getBaseContext().extensions,
+          interactionType: "annotation-attempt",
+          selectedTextLength: selectedText.length,
+          selectedTextPreview: selectedText.substring(0, 50),
+          attemptSuccess: success,
+          failureReason: reason || null
+        }
+      }
+    }, session, pathname, "brain");
+  }, [session, getBaseContext, pathname]);
+
+  const trackAnnotationSave = useCallback((selectedText: string, comment: string, documentUrl: string) => {
+    if (!session) return;
+
+    console.log("🎯 trackAnnotationSave called:", {
+      selectedTextLength: selectedText.length,
+      commentLength: comment.length,
+      documentUrl: documentUrl.substring(0, 50),
+      hasSession: !!session
+    });
+
+    sendXapiStatement({
+      verb: {
+        id: "http://adlnet.gov/expapi/verbs/annotated",
+        display: { "en-US": "saved annotation" }
+      },
+      object: {
+        id: `brain/annotation/${Date.now()}`,
+        definition: {
+          name: { "en-US": "Text Annotation" },
+          description: { "en-US": "User saved annotation on selected text from AI response" },
+          type: "http://adlnet.gov/expapi/activities/interaction"
+        }
+      },
+      result: {
+        completion: true,
+        success: true,
+        response: comment.substring(0, 100) // Limit comment to 100 chars for xAPI
+      },
+      context: {
+        ...getBaseContext(),
+        extensions: {
+          ...getBaseContext().extensions,
+          interactionType: "annotation-save",
+          selectedTextLength: selectedText.length,
+          selectedTextPreview: selectedText.substring(0, 50),
+          commentLength: comment.length,
+          commentPreview: comment.substring(0, 50),
+          documentUrl: documentUrl,
+          annotationType: "manual"
+        }
+      }
+    }, session, pathname, "brain");
+  }, [session, getBaseContext, pathname]);
+
   return {
     trackNodeClick,
     trackEdgeClick,
@@ -430,6 +566,9 @@ export const useXapiTracking = (session: any): XapiTrackingHook => {
     trackModalInteraction,
     trackTabChange,
     trackViewModeChange,
-    trackGraphModeChange
-  };
+    trackGraphModeChange,
+    trackTextSelection,
+    trackAnnotationAttempt,
+    trackAnnotationSave
+  }
 };
