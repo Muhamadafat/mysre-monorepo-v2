@@ -17,13 +17,15 @@ import {
   useMantineTheme,
 } from "@mantine/core"
 import "react-pdf-highlighter/dist/style.css"
+import { useXapiTracking } from "@/hooks/useXapiTracking"
 
 interface WebViewerProps {
   fileUrl: string
   onAnalytics?: (data: any) => void
+  session?: any  
 }
 
-const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics }) => {
+const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session }) => {
   const [highlights, setHighlights] = useState<IHighlight[]>([])
   const scrollViewerTo = useRef<(highlight: IHighlight) => void>(() => {})
 
@@ -31,6 +33,8 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics }) => {
   const { colorScheme } = useMantineColorScheme()
   const theme = useMantineTheme()
   const isDark = colorScheme === "dark"
+
+   const { trackTextSelection, trackAnnotationAttempt, trackAnnotationSave } = useXapiTracking(session)
 
   const parseIdFromHash = () => document.location.hash.replace(/^#highlight-/, "")
   const resetHash = () => {
@@ -59,12 +63,15 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics }) => {
   const addHighlight = (highlight: NewHighlight) => {
     const id = Math.random().toString(36).slice(2)
 
+    const highlightedText = typeof highlight.content === "string" ? highlight.content : highlight.content?.text || ""
+
     // Completely sanitize comment to remove any emoji
     const commentText = highlight.comment?.text || ""
     const sanitizedComment = {
       text: commentText.replace(/[\u{1F300}-\u{1F9FF}]/gu, "").trim(),
       emoji: "", // Always empty
     }
+    trackTextSelection(highlightedText, `PDF document: ${fileUrl}`)
 
     const newHighlight: IHighlight = {
       id,
@@ -72,9 +79,9 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics }) => {
       position: highlight.position,
       comment: sanitizedComment,
     }
-    setHighlights((prev) => [newHighlight, ...prev])
+    setHighlights((prev) => [newHighlight, ...prev]);
 
-    const highlightedText = typeof highlight.content === "string" ? highlight.content : highlight.content?.text || ""
+    // const highlightedText = typeof highlight.content === "string" ? highlight.content : highlight.content?.text || ""
     onAnalytics?.({
       action: "annotation_add",
       document: fileUrl,
@@ -88,6 +95,8 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics }) => {
       },
       timeStamp: new Date().toISOString(),
     })
+
+    trackAnnotationSave(highlightedText, sanitizedComment.text, fileUrl)
   }
 
   const updateHighlight = (highlightId: string, position: Partial<ScaledPosition>, content: Partial<Content>) => {
