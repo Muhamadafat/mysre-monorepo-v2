@@ -57,6 +57,7 @@ import { HelpGuideModal } from "./HelpGuideModal"
 import ChatMessageItem from "./ChatMessageItem"
 import ChatInputArea from "./ChatInputArea"
 import AnnotationModal from "./AnnotationModal"
+import { useXapiTracking } from "@/hooks/useXapiTracking"
 
 interface ChatPanelProps {
   sessionId?: string
@@ -161,6 +162,33 @@ export default function ChatPanel({
   const scrollPositionRef = useRef({x:0, y: 0});
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // xapi
+  const [session, setSession] = useState<any>(null);
+  const { trackChatInteraction, trackTextSelection, trackAnnotationAttempt, trackAnnotationSave } = useXapiTracking(session);
+
+  useEffect(() => {
+      const getSessionFromAPI = async () => {
+        try {
+          const response = await fetch('/api/session');
+          const data = await response.json();
+          
+          if (data.user) {
+            console.log("✅ Got session from API:", data.user.email);
+            setSession({
+              user: data.user,
+              expires_at: data.expires_at
+            });
+          } else {
+            console.log("❌ No session from API");
+          }
+        } catch (error) {
+          console.error("API session fetch error:", error);
+        }
+      };
+      
+      getSessionFromAPI();
+    }, []);
 
   const scrollSuggestions = (direction: "left" | "right") => {
     if (!suggestionContainerRef.current) return
@@ -633,6 +661,10 @@ Apakah Anda ingin membuka panduan penggunaan?`,
         helpMessage
       ])
 
+      trackChatInteraction(messageText, 'question');
+      
+      trackChatInteraction(helpMessage.text, 'response');
+
       setInput("")
       setShouldScrollToBottom(true)
       return
@@ -648,6 +680,8 @@ Apakah Anda ingin membuka panduan penggunaan?`,
 
     setMessages((prev) => [...prev, { sender: "user", text: messageText, contextNodeIds: contextNodeIds }])
     setShouldScrollToBottom(true) // Ensure scroll to bottom for new messages
+
+    trackChatInteraction(messageText, 'question');
 
     const currentInput = messageText
     setInput("")
@@ -727,18 +761,22 @@ Apakah Anda ingin membuka panduan penggunaan?`,
 
       setMessages((m) => [...m, { sender: "ai", text: data.answer, references: processedReferences || [], contextNodeIds: contextNodeIds, contextEdgeIds: contextEdgeIds }])
 
+      trackChatInteraction(data.answer, 'response');
+
       setTimeout(async () => {
         await fetchFollowupSuggestions(data.answer)
       }, 500)
     } catch (error) {
+      const errorMessage = "terjadi kesalahan dalam menjawab pertanyaan";
       setMessages((m) => [...m, { sender: "ai", text: "terjadi kesalahan dalam menjawab pertanyaan" }])
+      trackChatInteraction(errorMessage, 'response');
     } finally {
       setIsLoading(false)
     }
   }, [isLoading, contextNodes, contextEdges, sessionId, forceWeb, 
     setMessages, setIsLoading, setSuggestions, setShowSuggestions, 
     setSuggestionContext, setPage, setHasMore, setShouldScrollToBottom, 
-    scrollAreaRef, fetchFollowupSuggestions])
+    scrollAreaRef, fetchFollowupSuggestions, trackChatInteraction])
 
   const handleOpenHelp = () => {
     setHelpModalOpened(true)
@@ -1228,7 +1266,10 @@ Apakah Anda ingin membuka panduan penggunaan?`,
       return
     }
 
+    trackTextSelection(selectedText, message.text, message.contextNodeIds);
+
     if (!message.contextNodeIds || message.contextNodeIds.length === 0) {
+      trackAnnotationAttempt(selectedText, false, "no_document_context");
       notifications.show({
         title: "Anotasi Tidak Tersedia",
         message: "Anotasi hanya tersedia untuk respons AI yang berdasarkan dokumen yang dilampirkan.",
@@ -1245,6 +1286,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
     )?.url
 
     if (!documentUrl || documentUrl === "#") {
+      trackAnnotationAttempt(selectedText, false, "no_document_source");
       notifications.show({
         title: "Tidak Ada Dokumen Sumber",
         message: "Respons AI ini tidak memiliki dokumen sumber yang dapat dianotasi.",
@@ -1256,6 +1298,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
       return
     }
 
+    trackAnnotationAttempt(selectedText, true);
     setHighlightedText(selectedText)
     setAnnotationTargetUrl(documentUrl)
     setAnnotationCommentInput("") // Clear previous comment
@@ -1263,7 +1306,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
 
     // Clear selection after opening modal to prevent re-triggering
     selection.empty()
-  }, [])
+  }, [trackTextSelection, trackAnnotationAttempt])
 
   // NEW: Function to save annotation
   const handleSaveAnnotation = async () => {
@@ -1486,7 +1529,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
       >
         {selectedPDF && (
           <div style={{ height: "100%", position: "relative" }}>
-            <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} />
+            <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} session={session} />
           </div>
         )}
       </Modal>
@@ -1518,6 +1561,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
           onClose={() => {
             setDetailModalNode(null)
           }}
+          session={session}
         />
       </Modal>
 
