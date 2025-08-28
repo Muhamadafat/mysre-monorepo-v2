@@ -54,6 +54,10 @@ import { useDebouncedValue } from "@mantine/hooks"
 import WebViewer from "./WebViewer"
 import NodeDetail, { handleAnalytics } from "./NodeDetail"
 import { HelpGuideModal } from "./HelpGuideModal"
+import ChatMessageItem from "./ChatMessageItem"
+import ChatInputArea from "./ChatInputArea"
+import AnnotationModal from "./AnnotationModal"
+import { useXapiTracking } from "@/hooks/useXapiTracking"
 
 interface ChatPanelProps {
   sessionId?: string
@@ -158,6 +162,33 @@ export default function ChatPanel({
   const scrollPositionRef = useRef({x:0, y: 0});
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // xapi
+  const [session, setSession] = useState<any>(null);
+  const { trackChatInteraction, trackTextSelection, trackAnnotationAttempt, trackAnnotationSave } = useXapiTracking(session);
+
+  useEffect(() => {
+      const getSessionFromAPI = async () => {
+        try {
+          const response = await fetch('/api/session');
+          const data = await response.json();
+          
+          if (data.user) {
+            console.log("✅ Got session from API:", data.user.email);
+            setSession({
+              user: data.user,
+              expires_at: data.expires_at
+            });
+          } else {
+            console.log("❌ No session from API");
+          }
+        } catch (error) {
+          console.error("API session fetch error:", error);
+        }
+      };
+      
+      getSessionFromAPI();
+    }, []);
 
   const scrollSuggestions = (direction: "left" | "right") => {
     if (!suggestionContainerRef.current) return
@@ -606,8 +637,8 @@ export default function ChatPanel({
     }
   }
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return
+  const handleSend = useCallback (async (messageText: string) => {
+    if (!messageText.trim() || isLoading) return
 
     if (contextNodes.length === 0) {
       // Show helpful message with option to open help
@@ -626,9 +657,13 @@ Apakah Anda ingin membuka panduan penggunaan?`,
 
       setMessages((prev) => [
         ...prev, 
-        { sender: "user", text: input, contextNodeIds: [] },
+        { sender: "user", text: messageText, contextNodeIds: [] },
         helpMessage
       ])
+
+      trackChatInteraction(messageText, 'question');
+      
+      trackChatInteraction(helpMessage.text, 'response');
 
       setInput("")
       setShouldScrollToBottom(true)
@@ -643,10 +678,12 @@ Apakah Anda ingin membuka panduan penggunaan?`,
 
     const contextEdgeIds = contextEdges.filter((edge) => edge && edge.id).map((edge) => String(edge.id));
 
-    setMessages((prev) => [...prev, { sender: "user", text: input, contextNodeIds: contextNodeIds }])
+    setMessages((prev) => [...prev, { sender: "user", text: messageText, contextNodeIds: contextNodeIds }])
     setShouldScrollToBottom(true) // Ensure scroll to bottom for new messages
 
-    const currentInput = input
+    trackChatInteraction(messageText, 'question');
+
+    const currentInput = messageText
     setInput("")
     setIsLoading(true)
 
@@ -724,15 +761,22 @@ Apakah Anda ingin membuka panduan penggunaan?`,
 
       setMessages((m) => [...m, { sender: "ai", text: data.answer, references: processedReferences || [], contextNodeIds: contextNodeIds, contextEdgeIds: contextEdgeIds }])
 
+      trackChatInteraction(data.answer, 'response');
+
       setTimeout(async () => {
         await fetchFollowupSuggestions(data.answer)
       }, 500)
     } catch (error) {
+      const errorMessage = "terjadi kesalahan dalam menjawab pertanyaan";
       setMessages((m) => [...m, { sender: "ai", text: "terjadi kesalahan dalam menjawab pertanyaan" }])
+      trackChatInteraction(errorMessage, 'response');
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [isLoading, contextNodes, contextEdges, sessionId, forceWeb, 
+    setMessages, setIsLoading, setSuggestions, setShowSuggestions, 
+    setSuggestionContext, setPage, setHasMore, setShouldScrollToBottom, 
+    scrollAreaRef, fetchFollowupSuggestions, trackChatInteraction])
 
   const handleOpenHelp = () => {
     setHelpModalOpened(true)
@@ -876,12 +920,12 @@ Apakah Anda ingin membuka panduan penggunaan?`,
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
+  // const handleKeyPress = (e: React.KeyboardEvent) => {
+  //   if (e.key === "enter" && !e.shiftKey) {
+  //     e.preventDefault()
+  //     handleSend()
+  //   }
+  // }
 
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion)
@@ -1222,7 +1266,10 @@ Apakah Anda ingin membuka panduan penggunaan?`,
       return
     }
 
+    trackTextSelection(selectedText, message.text, message.contextNodeIds);
+
     if (!message.contextNodeIds || message.contextNodeIds.length === 0) {
+      trackAnnotationAttempt(selectedText, false, "no_document_context");
       notifications.show({
         title: "Anotasi Tidak Tersedia",
         message: "Anotasi hanya tersedia untuk respons AI yang berdasarkan dokumen yang dilampirkan.",
@@ -1239,6 +1286,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
     )?.url
 
     if (!documentUrl || documentUrl === "#") {
+      trackAnnotationAttempt(selectedText, false, "no_document_source");
       notifications.show({
         title: "Tidak Ada Dokumen Sumber",
         message: "Respons AI ini tidak memiliki dokumen sumber yang dapat dianotasi.",
@@ -1250,6 +1298,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
       return
     }
 
+    trackAnnotationAttempt(selectedText, true);
     setHighlightedText(selectedText)
     setAnnotationTargetUrl(documentUrl)
     setAnnotationCommentInput("") // Clear previous comment
@@ -1257,7 +1306,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
 
     // Clear selection after opening modal to prevent re-triggering
     selection.empty()
-  }, [])
+  }, [trackTextSelection, trackAnnotationAttempt])
 
   // NEW: Function to save annotation
   const handleSaveAnnotation = async () => {
@@ -1411,378 +1460,15 @@ Apakah Anda ingin membuka panduan penggunaan?`,
           ) : (
             <>
               {messages.map((msg, idx) => (
-                <Transition key={idx} mounted={true} transition="slide-up" duration={300} timingFunction="ease">
-                  {(styles) => (
-                    <Card
-                      shadow="sm"
-                      radius="xl"
-                      withBorder
-                      style={{
-                        ...styles,
-                        alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
-                        background:
-                          msg.sender === "user"
-                            ? isDark
-                              ? `linear-gradient(135deg, ${theme.colors.blue[8]} 0%, ${theme.colors.blue[9]} 100%)`
-                              : `linear-gradient(135deg, ${theme.colors.blue[0]} 0%, ${theme.colors.cyan[0]} 100%)`
-                            : isDark
-                              ? `linear-gradient(135deg, ${theme.colors.dark[6]} 0%, ${theme.colors.dark[7]} 100%)`
-                              : `linear-gradient(135deg, ${theme.colors.gray[0]} 0%, white 100%)`,
-                        maxWidth: "85%",
-                        padding: "20px",
-                        border: `1px solid ${
-                          msg.sender === "user"
-                            ? isDark
-                              ? theme.colors.blue[7]
-                              : theme.colors.blue[2]
-                            : isDark
-                              ? theme.colors.dark[4]
-                              : theme.colors.gray[2]
-                        }`,
-                        position: "relative",
-                        overflow: "hidden",
-                      }}
-                      // NEW: Add onMouseUp handler for AI messages
-                      onMouseUp={msg.sender === "ai" ? (e) => handleTextSelectionForAnnotation(e, msg) : undefined}
-                    >
-                      {/* Accent line for AI messages */}
-                      {msg.sender === "ai" && (
-                        <Box
-                          style={{
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            height: "3px",
-                            background: `linear-gradient(90deg, ${theme.colors.blue[6]}, ${theme.colors.cyan[5]}, ${theme.colors.violet[6]})`,
-                          }}
-                        />
-                      )}
-
-                      <Group justify="space-between" mb="md">
-                        <Group gap="sm">
-                          <Avatar
-                            size="sm"
-                            radius="xl"
-                            style={{
-                              background:
-                                msg.sender === "user"
-                                  ? `linear-gradient(135deg, ${theme.colors.green[6]} 0%, ${theme.colors.teal[5]} 100%)`
-                                  : `linear-gradient(135deg, ${theme.colors.blue[6]} 0%, ${theme.colors.cyan[5]} 100%)`,
-                            }}
-                          >
-                            {msg.sender === "user" ? (
-                              <IconUser size={16} color="white" />
-                            ) : (
-                              <IconBrain size={16} color="white" />
-                            )}
-                          </Avatar>
-                          <Text size="sm" fw={600} c={isDark ? theme.colors.gray[3] : theme.colors.gray[7]}>
-                            {msg.sender === "user" ? "Anda" : "AI Assistant"}
-                          </Text>
-                        </Group>
-
-                        {/* Copy Button - only for AI response */}
-                        {msg.sender === "ai" && (
-                          <CopyButton value={msg.text} timeout={2000}>
-                            {({ copied, copy }) => (
-                              <Tooltip label={copied ? "Berhasil disalin!" : "Salin jawaban"} position="top" withArrow>
-                                <ActionIcon
-                                  variant="subtle"
-                                  size="sm"
-                                  onClick={copy}
-                                  style={{
-                                    transition: "all 0.2s ease",
-                                    transform: copied ? "scale(1.1)" : "scale(1)",
-                                  }}
-                                >
-                                  {copied ? (
-                                    <IconCheck size={16} style={{ color: theme.colors.green[6] }} />
-                                  ) : (
-                                    <IconCopy size={16} style={{ color: theme.colors.gray[6] }} />
-                                  )}
-                                </ActionIcon>
-                              </Tooltip>
-                            )}
-                          </CopyButton>
-                        )}
-                      </Group>
-
-                      {/* Enhanced attachment display for user messages */}
-                      {msg.sender === "user" && msg.contextNodeIds && msg.contextNodeIds.length > 0 && (
-                        <AttachmentDisplay nodeIds={msg.contextNodeIds} />
-                      )}
-
-                      {msg.sender === "user" ? (
-                        <Text size="sm" style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
-                          {msg.text}
-                        </Text>
-                      ) : (
-                        <TypographyStylesProvider className="ai-message-content">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                              p: ({ children }) => {
-                                const extractText = (children: React.ReactNode): string => {
-                                  if (children === null || children === undefined) return ""
-                                  if (typeof children === "string" || typeof children === "number") {
-                                    return String(children)
-                                  }
-                                  if (Array.isArray(children)) {
-                                    return children.map(extractText).join("")
-                                  }
-                                  if (React.isValidElement(children)) {
-                                    return extractText((children.props as { children?: React.ReactNode }).children)
-                                  }
-                                  return ""
-                                }
-
-                                const textContent = extractText(children)
-                                if (!msg.references)
-                                  return (
-                                    <Box mb="xs" style={{ lineHeight: 1.6, fontSize: "14px" }}>
-                                      {children}
-                                    </Box>
-                                  )
-
-                                const dedupedReferences = Array.from(
-                                  new Map(msg.references.map((ref) => [`${ref.url}-${ref.ref_mark}`, ref])).values(),
-                                )
-                                const sortedReferences = dedupedReferences.sort(
-                                  (a, b) => (a.index ?? 999) - (b.index ?? 999),
-                                )
-
-                                const processedContent = processTextWithReferences(textContent, sortedReferences)
-
-                                return (
-                                  <Box mb="xs" style={{ lineHeight: 1.6, fontSize: "14px" }}>
-                                    {processedContent}
-                                  </Box>
-                                )
-                              },
-                              h1: ({ children }) => (
-                                <Text
-                                  size="xl"
-                                  fw={700}
-                                  mb="md"
-                                  c={isDark ? theme.colors.gray[2] : theme.colors.gray[8]}
-                                >
-                                  {children}
-                                </Text>
-                              ),
-                              h3: ({ children }) => (
-                                <Text
-                                  size="md"
-                                  fw={600}
-                                  mb="sm"
-                                  c={isDark ? theme.colors.gray[3] : theme.colors.gray[7]}
-                                >
-                                  {children}
-                                </Text>
-                              ),
-                              ul: ({ children }) => (
-                                <Box component="ul" ml="md" mb="sm">
-                                  {children}
-                                </Box>
-                              ),
-                              ol: ({ children }) => (
-                                <Box component="ol" ml="md" mb="sm">
-                                  {children}
-                                </Box>
-                              ),
-                              li: ({ children }) => (
-                                <Text component="li" size="sm" mb="xs" style={{ lineHeight: 1.5 }}>
-                                  {children}
-                                </Text>
-                              ),
-                              strong: ({ children }) => (
-                                <Text component="span" fw={700}>
-                                  {children}
-                                </Text>
-                              ),
-                              em: ({ children }) => (
-                                <Text component="span" fs="italic">
-                                  {children}
-                                </Text>
-                              ),
-                              code: ({ children, className }) => {
-                                const isInline = !className
-                                return isInline ? (
-                                  <Badge
-                                    variant="light"
-                                    color="gray"
-                                    style={{
-                                      fontFamily: "monospace",
-                                      fontSize: "0.8em",
-                                    }}
-                                  >
-                                    {children}
-                                  </Badge>
-                                ) : (
-                                  <Paper
-                                    bg={isDark ? theme.colors.dark[8] : theme.colors.gray[0]}
-                                    p="md"
-                                    mb="sm"
-                                    radius="md"
-                                    withBorder
-                                    style={{
-                                      overflow: "auto",
-                                    }}
-                                  >
-                                    <Text
-                                      component="pre"
-                                      size="sm"
-                                      style={{
-                                        fontFamily: "monospace",
-                                        margin: 0,
-                                        whiteSpace: "pre-wrap",
-                                      }}
-                                    >
-                                      <code>{children}</code>
-                                    </Text>
-                                  </Paper>
-                                )
-                              },
-                              table: ({ children }) => (
-                                <Box style={{ overflowX: "auto" }} mb="md">
-                                  <Box
-                                    component="table"
-                                    style={{
-                                      width: "100%",
-                                      borderCollapse: "collapse",
-                                      fontSize: "0.875rem",
-                                    }}
-                                  >
-                                    {children}
-                                  </Box>
-                                </Box>
-                              ),
-                              thead: ({ children }) => <Box component="thead">{children}</Box>,
-                              tbody: ({ children }) => <Box component="tbody">{children}</Box>,
-                              tr: ({ children }) => (
-                                <Box
-                                  component="tr"
-                                  style={{
-                                    borderBottom: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
-                                  }}
-                                >
-                                  {children}
-                                </Box>
-                              ),
-                              th: ({ children }) => (
-                                <Box
-                                  component="th"
-                                  p="sm"
-                                  style={{
-                                    backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.gray[0],
-                                    fontWeight: 600,
-                                    textAlign: "left",
-                                    border: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
-                                  }}
-                                >
-                                  {children}
-                                </Box>
-                              ),
-                              td: ({ children }) => (
-                                <Box
-                                  component="td"
-                                  p="sm"
-                                  style={{
-                                    border: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
-                                    verticalAlign: "top",
-                                  }}
-                                >
-                                  {children}
-                                </Box>
-                              ),
-                              blockquote: ({ children }) => (
-                                <Paper
-                                  pl="md"
-                                  py="sm"
-                                  mb="sm"
-                                  radius="md"
-                                  style={{
-                                    borderLeft: `4px solid ${theme.colors.blue[6]}`,
-                                    backgroundColor: isDark ? theme.colors.dark[7] : theme.colors.blue[0],
-                                  }}
-                                >
-                                  {children}
-                                </Paper>
-                              ),
-                            }}
-                          >
-                            {msg.text}
-                          </ReactMarkdown>
-
-                          {/* NEW: Help button for guidance messages - TAMBAHKAN INI */}
-                          {(msg as any).showHelpButton && (
-                            <Box mt="md">
-                              <Button
-                                variant="gradient"
-                                gradient={{ from: "blue", to: "cyan" }}
-                                leftSection={<IconHelp size={16} />}
-                                onClick={handleOpenHelp}
-                                size="sm"
-                                style={{ fontWeight: 500 }}
-                              >
-                                Buka Panduan Penggunaan
-                              </Button>
-                            </Box>
-                          )}
-                          {/* Enhanced Reference List */}
-                          {(msg.references?.length ?? 0) > 0 && (
-                            <Card
-                              mt="md"
-                              p="sm"
-                              radius="md"
-                              withBorder
-                              style={{
-                                background: isDark
-                                  ? `linear-gradient(135deg, ${theme.colors.dark[7]} 0%, ${theme.colors.dark[8]} 100%)`
-                                  : `linear-gradient(135deg, ${theme.colors.gray[0]} 0%, ${theme.colors.gray[1]} 100%)`,
-                                border: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
-                              }}
-                            >
-                              <Group gap="xs" mb="sm">
-                                <ThemeIcon size="sm" variant="gradient" gradient={{ from: "blue", to: "cyan" }}>
-                                  <IconCircleDot size={12} />
-                                </ThemeIcon>
-                                <Text size="xs" fw={600} c={isDark ? theme.colors.gray[4] : theme.colors.gray[6]}>
-                                  Referensi:
-                                </Text>
-                              </Group>
-                              <Stack gap={6}>
-                                {msg.references
-                                  ?.sort((a, b) => (a.index ?? 999) - (b.index ?? 999)) // Sort by the 'index' property
-                                  .map((ref, idx) => (
-                                    <Group key={`${ref.text.toLowerCase().trim()}-${idx}`} gap={8} align="flex-start">
-                                      <Badge size="xs" variant="light" color="blue">
-                                        {ref.ref_mark}
-                                      </Badge>
-                                      <Anchor
-                                        href="#"
-                                        size="xs"
-                                        style={{
-                                          wordBreak: "break-all",
-                                          lineHeight: 1.4,
-                                        }}
-                                        onClick={(e) => {
-                                          e.preventDefault()
-                                          handlerOpenPdf(ref.url)
-                                        }}
-                                      >
-                                        {ref.text}
-                                      </Anchor>
-                                    </Group>
-                                  ))}
-                              </Stack>
-                            </Card>
-                          )}
-                        </TypographyStylesProvider>
-                      )}
-                    </Card>
-                  )}
-                </Transition>
+                <ChatMessageItem
+                  key={idx} // Sebaiknya gunakan ID unik dari pesan jika ada
+                  msg={msg}
+                  isDark={isDark}
+                  theme={theme}
+                  onTextSelect={handleTextSelectionForAnnotation}
+                  onOpenHelp={() => setHelpModalOpened(true)}
+                  handlerOpenPdf={handlerOpenPdf}
+                />
               ))}
               {isLoading && <LoadingMessage />}
               <div ref={messageEndRef} />
@@ -1791,302 +1477,20 @@ Apakah Anda ingin membuka panduan penggunaan?`,
         </Stack>
       </ScrollArea>
 
-      {/* Enhanced Context Preview Chips - More Compact */}
-      {contextNodes.length > 0 && (
-        <Box px="md" py="xs" style={{ flexShrink: 0 }}>
-          <Group mb="xs" gap="xs" wrap="wrap">
-            {contextNodes.map((node) => (
-              <Badge
-                key={`context-node-${node.id}`}
-                variant="gradient"
-                gradient={{ from: "blue", to: "cyan", deg: 45 }}
-                size="sm"
-                radius="md"
-                style={{
-                  paddingLeft: "8px",
-                  paddingRight: "4px",
-                  height: "24px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  fontSize: "11px",
-                  fontWeight: 500,
-                  maxWidth: "200px",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-                rightSection={
-                  <ActionIcon
-                    size="xs"
-                    variant="transparent"
-                    color="white"
-                    onClick={() => removeContextNode(node)}
-                    style={{
-                      minWidth: "16px",
-                      width: "16px",
-                      height: "16px",
-                      marginLeft: "2px",
-                    }}
-                  >
-                    <IconX size={10} />
-                  </ActionIcon>
-                }
-                leftSection={<IconPaperclip size={10} />}
-              >
-                {(node.title || node.label || '').length > 20
-                  ? `${(node.title || node.label || '').substring(0, 20)}...`
-                  : node.title || node.label}
-              </Badge>
-            ))}
-          </Group>
-        </Box>
-      )}
-
-      {/* Enhanced Input Area */}
-      <Box
-        p="md"
-        style={{
-          flexShrink: 0,
-          borderTop: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
-          background: isDark
-            ? `linear-gradient(180deg, ${theme.colors.dark[7]} 0%, ${theme.colors.dark[8]} 100%)`
-            : `linear-gradient(180deg, white 0%, ${theme.colors.gray[0]} 100%)`,
-        }}
-      >
-        {/* Combined Input Area with Suggestions */}
-        <Card
-          withBorder
-          radius="xl"
-          p="md"
-          shadow="sm"
-          style={{
-            background: isDark
-              ? `linear-gradient(135deg, ${theme.colors.dark[6]} 0%, ${theme.colors.dark[7]} 100%)`
-              : `linear-gradient(135deg, white 0%, ${theme.colors.gray[0]} 100%)`,
-            border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[2]}`,
-          }}
-        >
-          {/* Input Row */}
-          <Group align="flex-end" gap="sm" mb="sm">
-            <Box style={{ flex: 1 }}>
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault()
-                    handleSend()
-                  }
-                }}
-                placeholder={isLoading ? "Menunggu Respon AI..." : "Mulai mengetik..."}
-                rows={1}
-                style={{
-                  width: "100%",
-                  padding: "16px",
-                  backgroundColor: "transparent",
-                  color: isDark ? theme.colors.gray[2] : theme.black,
-                  border: "none",
-                  outline: "none",
-                  resize: "none",
-                  minHeight: "24px",
-                  maxHeight: "120px",
-                  overflow: "hidden",
-                  fontFamily: "inherit",
-                  fontSize: "14px",
-                  lineHeight: "1.5",
-                  borderRadius: theme.radius.md,
-                }}
-                onInput={(e) => {
-                  const target = e.target as HTMLTextAreaElement
-                  target.style.height = "auto"
-                  target.style.height = target.scrollHeight + "px"
-                }}
-              />
-            </Box>
-
-            {/* Enhanced Web Search Toggle */}
-            {/* <Tooltip label={forceWeb ? "Pencarian web aktif" : "Pencarian web nonaktif"} position="top" withArrow>
-              <Box
-                style={{
-                  padding: "8px",
-                  borderRadius: theme.radius.md,
-                  background: forceWeb
-                    ? `linear-gradient(135deg, ${theme.colors.blue[1]} 0%, ${theme.colors.cyan[1]} 100%)`
-                    : isDark
-                      ? theme.colors.dark[5]
-                      : theme.colors.gray[1],
-                  border: `1px solid ${forceWeb ? theme.colors.blue[3] : isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-                  transition: "all 0.2s ease",
-                }}
-              >
-                <Switch
-                  size="md"
-                  checked={forceWeb}
-                  onChange={(event) => setForceWeb(event.currentTarget.checked)}
-                  thumbIcon={
-                    forceWeb ? (
-                      <IconSearch size="0.8rem" color={theme.colors.blue[6]} stroke={3} />
-                    ) : (
-                      <IconWorld size="0.8rem" color={theme.colors.gray[6]} stroke={2} />
-                    )
-                  }
-                  styles={{
-                    track: {
-                      backgroundColor: forceWeb ? theme.colors.blue[6] : undefined,
-                    },
-                  }}
-                />
-              </Box>
-            </Tooltip> */}
-
-            {/* Enhanced Send Button */}
-            <ActionIcon
-              onClick={handleSend}
-              disabled={!input.trim() || isLoading}
-              size="xl"
-              variant="gradient"
-              gradient={{ from: "blue", to: "cyan", deg: 45 }}
-              radius="xl"
-              style={{
-                cursor: !input.trim() || isLoading ? "not-allowed" : "pointer",
-                opacity: !input.trim() || isLoading ? 0.5 : 1,
-                transition: "all 0.2s ease",
-                transform: !input.trim() || isLoading ? "scale(0.95)" : "scale(1)",
-              }}
-              styles={{
-                root: {
-                  "&:hover": {
-                    transform: !input.trim() || isLoading ? "scale(0.95)" : "scale(1.05)",
-                    boxShadow: theme.shadows.md,
-                  },
-                },
-              }}
-            >
-              <IconSend size={20} />
-            </ActionIcon>
-          </Group>
-
-          {/* Enhanced Suggested Questions Row - Better Spacing */}
-          {suggestions.length > 0 && (
-            <Group align="center" gap="sm" style={{ position: "relative" }}>
-              {/* Left Scroll Button */}
-              {showLeftScroll && (
-                <ActionIcon
-                  onClick={() => scrollSuggestions("left")}
-                  size="sm"
-                  variant="gradient"
-                  gradient={{ from: "blue", to: "cyan" }}
-                  radius="xl"
-                  style={{
-                    boxShadow: theme.shadows.sm,
-                    flexShrink: 0,
-                  }}
-                >
-                  <IconChevronLeft size={14} />
-                </ActionIcon>
-              )}
-
-              {/* Suggestions Container */}
-              <Box
-                ref={suggestionContainerRef}
-                style={{
-                  flex: 1,
-                  overflowX: "auto",
-                  scrollBehavior: "smooth",
-                  scrollbarWidth: "none",
-                  msOverflowStyle: "none",
-                }}
-              >
-                <Group gap="xs" wrap="nowrap" style={{ minWidth: "fit-content" }}>
-                  {suggestions.map((suggestion, index) => (
-                    <Button
-                      key={index}
-                      onClick={() => handleSuggestionClick(suggestion)}
-                      variant="light"
-                      size="xs"
-                      radius="lg"
-                      style={{
-                        background: isDark
-                          ? `linear-gradient(135deg, ${theme.colors.dark[5]} 0%, ${theme.colors.dark[6]} 100%)`
-                          : `linear-gradient(135deg, ${theme.colors.gray[1]} 0%, ${theme.colors.gray[0]} 100%)`,
-                        color: isDark ? theme.colors.gray[3] : theme.colors.gray[7],
-                        padding: "4px 10px",
-                        border: `1px solid ${isDark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-                        whiteSpace: "nowrap",
-                        fontSize: "11px",
-                        fontWeight: 500,
-                        minWidth: "fit-content",
-                        maxWidth: "200px",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        flexShrink: 0,
-                        transition: "all 0.2s ease",
-                        height: "24px",
-                        lineHeight: "1",
-                      }}
-                      styles={{
-                        root: {
-                          "&:hover": {
-                            transform: "translateY(-1px)",
-                            boxShadow: theme.shadows.sm,
-                            background: isDark
-                              ? `linear-gradient(135deg, ${theme.colors.blue[8]} 0%, ${theme.colors.cyan[8]} 100%)`
-                              : `linear-gradient(135deg, ${theme.colors.blue[0]} 0%, ${theme.colors.cyan[0]} 100%)`,
-                          },
-                        },
-                      }}
-                    >
-                      {suggestion.length > 32 ? `${suggestion.substring(0, 32)}...` : suggestion}
-                    </Button>
-                  ))}
-                </Group>
-              </Box>
-
-              {/* Right Scroll Button */}
-              {showRightScroll && (
-                <ActionIcon
-                  onClick={() => scrollSuggestions("right")}
-                  size="sm"
-                  variant="gradient"
-                  gradient={{ from: "blue", to: "cyan" }}
-                  radius="xl"
-                  style={{
-                    boxShadow: theme.shadows.sm,
-                    flexShrink: 0,
-                  }}
-                >
-                  <IconChevronRight size={14} />
-                </ActionIcon>
-              )}
-
-              {/* Enhanced source count - inline */}
-              <Badge
-                variant="light"
-                color="blue"
-                size="xs"
-                style={{
-                  fontSize: "10px",
-                  height: "20px",
-                  flexShrink: 0,
-                  marginLeft: "4px",
-                }}
-              >
-                {suggestions.length}
-              </Badge>
-            </Group>
-          )}
-        </Card>
-
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          style={{ display: "none" }}
-          onChange={onFileChange}
-          accept="application/pdf"
-        />
-      </Box>
+      <ChatInputArea
+        isLoading={isLoading}
+        isDark={isDark}
+        theme={theme}
+        contextNodes={contextNodes}
+        suggestions={suggestions}
+        showLeftScroll={showLeftScroll}
+        showRightScroll={showRightScroll}
+        suggestionContainerRef={suggestionContainerRef}
+        onSendMessage={handleSend}
+        onRemoveContextNode={removeContextNode}
+        // onSuggestionClick={handleSuggestionClick}
+        onScrollSuggestions={scrollSuggestions}
+      />
 
       {/* Enhanced Modals */}
       <Modal
@@ -2125,7 +1529,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
       >
         {selectedPDF && (
           <div style={{ height: "100%", position: "relative" }}>
-            <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} />
+            <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} session={session} />
           </div>
         )}
       </Modal>
@@ -2157,77 +1561,23 @@ Apakah Anda ingin membuka panduan penggunaan?`,
           onClose={() => {
             setDetailModalNode(null)
           }}
+          session={session}
         />
       </Modal>
 
       {/* Enhanced Annotation Modal */}
-      <Modal
+      <AnnotationModal
         opened={showAnnotationModal}
-        onClose={() => setShowAnnotationModal(false)}
-        title={
-          <Group gap="xs">
-            <ThemeIcon variant="gradient" gradient={{ from: "blue", to: "cyan" }} size="md">
-              <IconNote size={16} />
-            </ThemeIcon>
-            <Text fw={600}>Buat Anotasi</Text>
-          </Group>
-        }
-        centered
-        overlayProps={{ blur: 3 }}
-        radius="lg"
-      >
-        <Stack gap="md">
-          <Box>
-            <Text size="sm" c="dimmed" mb={8} fw={500}>
-              Teks yang dipilih:
-            </Text>
-            <Card
-              p="md"
-              withBorder
-              radius="md"
-              style={{
-                background: isDark
-                  ? `linear-gradient(135deg, ${theme.colors.dark[7]} 0%, ${theme.colors.dark[8]} 100%)`
-                  : `linear-gradient(135deg, ${theme.colors.gray[0]} 0%, ${theme.colors.gray[1]} 100%)`,
-                border: `1px solid ${isDark ? theme.colors.dark[5] : theme.colors.gray[2]}`,
-              }}
-            >
-              <Text size="sm" style={{ fontStyle: "italic", lineHeight: 1.5 }}>
-                {highlightedText.length > 150 ? `${highlightedText.substring(0, 150)}...` : highlightedText}
-              </Text>
-            </Card>
-          </Box>
-
-          <TextInput
-            label="Komentar Anda"
-            placeholder="Tambahkan komentar untuk anotasi ini..."
-            value={annotationCommentInput}
-            onChange={(event) => setAnnotationCommentInput(event.currentTarget.value)}
-            styles={{
-              input: {
-                borderRadius: theme.radius.md,
-              },
-            }}
-          />
-
-          <Group justify="flex-end" gap="sm">
-            <Button variant="light" color="gray" onClick={() => setShowAnnotationModal(false)} radius="md">
-              Batal
-            </Button>
-            <Button
-              variant="gradient"
-              gradient={{ from: "blue", to: "cyan" }}
-              onClick={handleSaveAnnotation}
-              loading={isSavingAnnotation}
-              disabled={!annotationCommentInput.trim()}
-              leftSection={<IconCheck size={16} />}
-              radius="md"
-            >
-              Simpan Anotasi
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+        onClose={() => {
+        setShowAnnotationModal(false);
+        // Anda bisa reset state lain di sini jika perlu
+        setHighlightedText("");
+        setAnnotationTargetUrl(null);
+        }}
+        highlightedText={highlightedText}
+        targetUrl={annotationTargetUrl}
+      isDark={isDark}
+      />
 
       <HelpGuideModal 
         opened={helpModalOpened} 

@@ -881,7 +881,7 @@ export default function Home() {
         to: edge.toId,
         label: edge.label,
         relation: edge.relation || 'unknown',
-        // arrows: 'to, from',
+        arrows: 'to',
         color: { color: getRelationColor(edge.relation) || 'gray' },
         font: { color: 'black', background: 'white' },
       }));
@@ -1617,7 +1617,9 @@ export default function Home() {
             setDetailModalEdge(edgeDetailReturn);
             setEdgeDetailReturn(null);
           }
-        }} />
+        }} 
+        session={session}
+        />
       </Modal>
 
       <Modal
