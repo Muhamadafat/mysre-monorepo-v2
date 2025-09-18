@@ -14,7 +14,7 @@
     "jsx": "preserve",
     "incremental": true,
     "noImplicitAny": false,
-    // "types": ["react"],
+    "types": ["react"],
     "plugins": [
       {
         "name": "next"
