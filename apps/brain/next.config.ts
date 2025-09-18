@@ -71,6 +71,12 @@ const nextConfig: NextConfig = {
       ignoreDuringBuilds: false,
     },
   }),
+
+  images: {
+    domains: [
+      'vefmmrwuwritxbgowqyv.supabase.co',
+    ]
+  }
 }
 
 export default nextConfig;

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --experimental-https",
     "build": "next build --no-lint",
     "lint": "next lint",
     "start:brain": "next start -p 6002"
@@ -20,7 +20,8 @@
     "react-markdown": "^10.1.0",
     "react-pdf-highlighter": "^8.0.0-rc.0",
     "remark-gfm": "^4.0.1",
-    "vis-network": "^10.0.1"
+    "vis-network": "^10.0.1",
+    "webgazer": "^3.4.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
