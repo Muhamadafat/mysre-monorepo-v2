@@ -15,9 +15,10 @@ import {
   useMantineColorScheme,
   Image
 } from "@mantine/core"
-import { IconNetwork, IconSettings, IconSun, IconMoon, IconUser, IconLogout, IconHelp } from "@tabler/icons-react"
+import { IconNetwork, IconSettings, IconSun, IconMoon, IconUser, IconLogout, IconHelp, IconDeviceCctvOff, IconDeviceCctv, IconPlayerStop, IconPlayerRecord } from "@tabler/icons-react"
 import { useState, useEffect } from "react"
 import { HelpGuideModal } from "./HelpGuideModal"
+import { useWebGazer } from "./context/WebGazerContext"
 
 interface DashboardHeaderProps {
   sidebarOpened: boolean
@@ -33,6 +34,8 @@ export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: Das
   const [userData, setUserData] = useState<{ name: string; email: string } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [helpModalOpened, setHelpModalOpened] = useState(false);
+
+  const { isSessionActive, startSession, stopSession } = useWebGazer();
 
   // Fetch user data langsung di component ini
   useEffect(() => {
@@ -143,6 +146,22 @@ export function DashboardHeader({ sidebarOpened, onToggleSidebar, mounted }: Das
         </Group>
 
         <Group gap="sm">
+          <Tooltip
+            label={isSessionActive ? "Hentikan Sesi (Lacak & Rekam)" : "Mulai Sesi (Lacak & Rekam)"}
+            position="bottom"
+            withArrow
+          >
+            <ActionIcon
+              variant={isSessionActive ? "filled" : "light"}
+              color={isSessionActive ? "red" : "teal"}
+              onClick={isSessionActive ? stopSession : startSession} // Gunakan fungsi master
+              size="lg"
+              radius="md"
+            >
+              {isSessionActive ? <IconPlayerStop size={18} /> : <IconPlayerRecord size={18} />}
+            </ActionIcon>
+          </Tooltip>
+
           <Tooltip 
               label="Panduan Penggunaan" 
               position="bottom"
