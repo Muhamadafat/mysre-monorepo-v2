@@ -87,6 +87,7 @@ import '@citation-js/plugin-ris';
 import { createClient } from '@sre-monorepo/lib';
 import { useXapiTracking } from '@/hooks/useXapiTracking';
 import { RealUploadProgress } from '@/components/RealTimeUploadProgress';
+import WebGazerContext from '@/components/context/WebGazerContext';
 
 // const Neograph = dynamic(() => import('@/components/NeoGraph'), {
 //     ssr: false,
@@ -153,7 +154,6 @@ export default function Home() {
 
   const [mounted, setMounted] = useState(false);
   const dark = mounted ? colorScheme === 'dark' : false;
-
  
 
   const [sidebarOpened, setSidebarOpened] = useState(false);
@@ -233,6 +233,276 @@ export default function Home() {
     trackViewModeChange,
     trackGraphModeChange
   } = useXapiTracking(session);
+
+  //webgazer
+  const [isTracking, setIsTracking] = useState(false);
+  const gazeDataRef = useRef<{x: number; y: number; timestamp:number} []>([]);
+  const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
+
+  //perekaman
+  const [isRecording, setIsRecording] = useState<boolean>(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const videoPreviewRef = useRef<HTMLVideoElement>(null);
+
+  const captureScreenshot = async (): Promise<string | null> => {
+    if (!screenStreamRef.current || !screenStreamRef.current.active){
+      console.warn('Screen stream is not active, cannot capture screenshot');
+      return null;
+    }
+
+    try {
+      const videoTrack = screenStreamRef.current.getVideoTracks()[0];
+      const imageCapture = new ImageCapture(videoTrack);
+      const imageBitmap = await (imageCapture as any).grabFrame();
+
+      const canvas = document.createElement('canvas');
+      canvas.width = imageBitmap.width;
+      canvas.height = imageBitmap.height;
+      const ctx = canvas.getContext('2d');
+
+      if (ctx){
+        ctx.drawImage(imageBitmap, 0, 0);
+        return canvas.toDataURL('image/jpeg', 0.7);
+      }
+      return null;
+    } catch (error) {
+      console.error("Error capturing screenshot:", error);
+      return null;
+    }
+  }
+
+  const startRecording = async () => {
+    try {
+      
+      const camStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
+      setCameraStream(camStream);
+
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+
+
+      screenStreamRef.current = stream;
+      recordedChunksRef.current = [];
+
+      //instance mediarecorder
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      //atur handler saat ada rekaman
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0){
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      //atur handler saat stop rekaman
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `session-recording-${Date.now()}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      console.log('Screen recording started');
+    } catch (error) {
+      console.error("Error starting screen recording:", error);
+      if (cameraStream){
+        cameraStream.getTracks().forEach(track => track.stop());
+        setCameraStream(null);
+      }
+      console.error("Gagal memulai sesi:", error);
+      notifications.show({
+          title: 'Perekaman Gagal',
+          message: 'Izin untuk merekam layar ditolak atau terjadi error.',
+          color: 'red',
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording'){
+      mediaRecorderRef.current.stop();
+    }
+    if (screenStreamRef.current){
+      screenStreamRef.current.getTracks().forEach(track => track.stop());
+      screenStreamRef.current = null;
+    }
+
+    if (cameraStream){
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+
+    setIsRecording(false);
+    console.log('Screen recording stopped');
+  }
+
+  const sendGazeData = async () => {
+    if (gazeDataRef.current.length === 0){
+      return;
+    }
+
+    console.log("--- DEBUGGING DATA TO BE SENT ---");
+    console.log("Type of sessionId:", typeof sessionId);
+    console.log("Value of sessionId:", JSON.stringify(sessionId, null, 2));
+
+    const dataToSend = [...gazeDataRef.current];
+    gazeDataRef.current = [];
+
+    const screenshotDataUrl = await captureScreenshot();
+    
+    try {
+      await fetch('/api/track-gaze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          sessionId: sessionId,
+          gazeData: dataToSend,
+          screenshot: screenshotDataUrl,
+        }),
+      });
+      console.log(`Sent ${dataToSend} gaze points`);
+    } catch (error) {
+      console.error('Failed to send gaze data:', error);
+      gazeDataRef.current.unshift(...dataToSend);
+    }
+  };
+
+  const startEyeTracking = async () =>{
+    // try {
+    //   await navigator.mediaDevices.getUserMedia({video: true});
+    // } catch (error) {
+    //   notifications.show({
+    //     title: 'Akses Kamera Ditolak',
+    //     message: 'Mohon izinkan akses kamera di pengaturan browser untuk fitur ini.',
+    //     color: 'yellow',
+    //     position: 'top-right',
+    //   })
+    //   return;
+    // }
+
+    const webgazer = (await import('webgazer')).default;
+
+    await webgazer.begin();
+    webgazer.setGazeListener((data, elapsedTime) => {
+      if (data){
+        gazeDataRef.current.push({
+          x: data.x,
+          y: data.y,
+          timestamp: Date.now(),
+        });
+      }
+    });
+    webgazer.showPredictionPoints(true);
+    webgazer.showVideo(false);
+
+
+    setIsTracking(true);
+    notifications.show({
+        title: 'Pelacakan Mata Aktif',
+        message: 'Kamera telah diaktifkan untuk melacak pandangan Anda.',
+        color: 'green',
+        position: 'top-right',
+    });
+  };
+
+  const stopEyeTracking = async () => {
+    const webgazer = (await import('webgazer')).default;
+    webgazer.end();
+    setIsTracking(false);
+
+    await sendGazeData();
+
+    notifications.show({
+        title: 'Pelacakan Mata Dihentikan',
+        message: 'Kamera telah dinonaktifkan.',
+        color: 'blue',
+        position: 'top-right',
+    });
+  };
+
+  useEffect(() => {
+    if (isTracking){
+      intervalIdRef.current = setInterval(sendGazeData, 5000);
+    }
+
+    return () => {
+      if (intervalIdRef.current){
+        clearInterval(intervalIdRef.current);
+      }
+    };
+  }, [isTracking]);
+  
+  const startSession = async () => {
+    await startEyeTracking();
+    await startRecording();
+  };
+
+  const stopSession = async () => {
+    stopEyeTracking();
+    stopRecording();
+  }
+  
+  const contextValue = {
+    isSessionActive: isTracking || isRecording,
+    startSession,
+    stopSession,
+  };
+
+  const VideoPreview = ({stream}: {stream: MediaStream | null}) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    useEffect(() => {
+      if (videoRef.current && stream){
+        videoRef.current.srcObject = stream;
+      }
+    }, [stream]);
+
+    if (!stream){
+      return null;
+    }
+
+    return(
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        style={{
+          position: 'fixed',
+          bottom: '20px',
+          right: '20px',
+          width: '150px',
+          height: '150px',
+          borderRadius: '50%',
+          objectFit: 'cover',
+          border: '3px solid #fff',
+          boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+          zIndex: 1000,
+        }}
+      >
+      </video>
+    )
+  }
 
   // ✅ Session setup
   useEffect(() => {
@@ -1172,6 +1442,8 @@ export default function Home() {
   }
 
   return (
+    <WebGazerContext.Provider value={contextValue} >
+    <VideoPreview stream={cameraStream} />
     <DashboardLayout
       sidebarOpened={sidebarOpened}
       onToggleSidebar={handleToggleSidebar}
@@ -1926,5 +2198,6 @@ export default function Home() {
         )}
       </Modal>
     </DashboardLayout>
+    </WebGazerContext.Provider>
   );
 }
