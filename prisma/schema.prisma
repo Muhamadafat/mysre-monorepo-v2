@@ -168,6 +168,7 @@ model BrainstormingSession {
   chatMessages           ChatMessage[]
   tokenUsages            TokenUsage[]
   writerSessions         WriterSession[]
+  gazeEvents             GazeEvent[]
 }
 
 model ChatMessage {
@@ -298,5 +299,17 @@ model XapiStatement {
 
   @@index([userId])
   @@index([timestamp])
+  @@index([sessionId])
+}
+
+model GazeEvent {
+  id        String    @id @default(uuid())
+  createdAt DateTime  @default(now())
+
+  gazeData  Json
+  screenshotPath  String?
+  sessionId   String
+  session     BrainstormingSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
   @@index([sessionId])
 }
