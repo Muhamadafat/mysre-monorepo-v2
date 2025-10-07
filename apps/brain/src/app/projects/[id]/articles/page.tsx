@@ -35,6 +35,7 @@ interface Annotation {
 
 export default function Article(){
     const {id: sessionId} = useParams();
+    const sessionId2 = Array.isArray(sessionId) ? sessionId[0] : sessionId;
     const router = useRouter();
 
     const {colorScheme} = useMantineColorScheme();
@@ -62,6 +63,11 @@ export default function Article(){
     const [loadingDeleteAnnotations, setLoadingDeleteAnnotations] = useState(false);
 
     const dark = mounted ? colorScheme === 'dark' : false;
+    const [session, setSession] = useState({
+        user: '',
+        expires_at: '',
+        projectId: ''
+    })
 
     const handleGoBack = () => {
         router.back();
@@ -74,8 +80,28 @@ export default function Article(){
         setArticle(article);
     };
 
+    const getSessionFromAPI = async () => {
+        try {
+            const response = await fetch('/api/session');
+            const data = await response.json();
+
+            if (data.user){
+                setSession({
+                    user: data.user,
+                    expires_at: data.expirese_at,
+                    projectId: sessionId2!
+                })
+            } else {
+                console.log('X No session from API');
+            }
+        } catch (error) {
+            console.error("API session fetch error:", error);
+        }
+    }
+
     useEffect(() => {
         getArticle();
+        getSessionFromAPI();
         setMounted(true);
     }, []);
 
@@ -549,7 +575,7 @@ export default function Article(){
             >
             {selectedPDF && (
                 <div style={{ height: '100%', position: 'relative' }}>
-                <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} />
+                <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics}  session={session}/>
                 </div>
             )}
         </Modal>
