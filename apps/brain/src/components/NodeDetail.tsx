@@ -1,6 +1,6 @@
 'use client';
 
-import { Modal, Table, Text, Group, Badge, Paper, ThemeIcon, Box, Stack } from '@mantine/core';
+import { Modal, Table, Text, Group, Badge, Paper, ThemeIcon, Box, Stack, Loader, Center } from '@mantine/core';
 import { ExtendedNode } from '@/types';
 import { IconArticle, IconTarget, IconMath, IconHistory, IconArrowForward, IconFileAlert } from '@tabler/icons-react';
 import WebViewer from '@/components/WebViewer';
@@ -12,6 +12,7 @@ interface NodeDetailProps {
   trackPdfView?: (pdfName: string, action: 'open' | 'close') => void;
   trackModalInteraction?: (modalType: string, action: 'open' | 'close') => void;
   session?: any;
+  projectId?: any;
 };
 
 const attributeIcons = {
@@ -31,19 +32,20 @@ const attributeColors = {
 };
 
 export const handleAnalytics = async (analyticsData: any) => {
-  try {
-    await fetch('/api/annotation', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        ...analyticsData,
-        userId: 'current_user_id',
-        sessionId: 'uniqueSessionId',
-      }),
-    });
-  } catch (error) {
-    console.error(error);
-  }
+  // try {
+  //   await fetch('/api/annotation', {
+  //     method: 'POST',
+  //     headers: {'Content-Type': 'application/json'},
+  //     body: JSON.stringify({
+  //       ...analyticsData,
+  //       userId: 'current_user_id',
+  //       sessionId: 'uniqueSessionId',
+  //     }),
+  //   });
+  // } catch (error) {
+  //   console.error(error);
+  // }
+  console.log('📊 Analytics: analyticsData');
 };
 
 export default function NodeDetail({ node, onClose, trackPdfView, trackModalInteraction, session }: NodeDetailProps) {
@@ -53,13 +55,11 @@ export default function NodeDetail({ node, onClose, trackPdfView, trackModalInte
   const handlePdfOpen = useCallback((pdfUrl: string, pdfName?: string) => {
     const fileName = pdfName || pdfUrl.split('/').pop() || 'unknown.pdf';
     
-    console.log("📖 Opening PDF:", { fileName, pdfUrl });
+    console.log("📖 Opening PDF:", { fileName, pdfUrl, session });
     
-    // Update UI state
     setSelectedPDF(pdfUrl);
     setOpened(true);
     
-    // Track PDF view open
     if (trackPdfView) {
       try {
         trackPdfView(fileName, 'open');
@@ -68,14 +68,13 @@ export default function NodeDetail({ node, onClose, trackPdfView, trackModalInte
         console.error("❌ PDF view open tracking error:", error);
       }
     }
-  }, [trackPdfView]); // 
+  }, [trackPdfView, session]);
 
   const handlePdfClose = useCallback(() => {
     const fileName = selectedPDF?.split('/').pop() || 'unknown.pdf';
     
     console.log("📖 Closing PDF:", { fileName });
     
-    // Track PDF view close SEBELUM update state
     if (trackPdfView && selectedPDF) {
       try {
         trackPdfView(fileName, 'close');
@@ -85,10 +84,9 @@ export default function NodeDetail({ node, onClose, trackPdfView, trackModalInte
       }
     }
     
-    // Update UI state
     setOpened(false);
     setSelectedPDF(null);
-  }, [selectedPDF, trackPdfView]); 
+  }, [selectedPDF, trackPdfView]);
 
   if (!node) {
     return null;
@@ -222,7 +220,7 @@ export default function NodeDetail({ node, onClose, trackPdfView, trackModalInte
           </Paper>
         )}
 
-        {/* ✅ FIX: Modal harus selalu di-render, tapi dengan opened state */}
+        {/* Modal PDF Viewer */}
         <Modal
           opened={opened}
           onClose={handlePdfClose}
@@ -247,10 +245,23 @@ export default function NodeDetail({ node, onClose, trackPdfView, trackModalInte
             },
           }}
         >
-          {/* ✅ FIX: Kondisional render di dalam Modal, bukan Modal itu sendiri */}
+          {/* ✅ FIX: Tunggu session ready sebelum render WebViewer */}
           {selectedPDF && (
             <div style={{ height: '100%', position: 'relative' }}>
-              <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} session={session} />
+              {!session ? (
+                <Center h="100%">
+                  <Stack align="center" gap="md">
+                    <Loader size="lg" />
+                    <Text c="dimmed">Memuat session...</Text>
+                  </Stack>
+                </Center>
+              ) : (
+                <WebViewer 
+                  fileUrl={selectedPDF} 
+                  onAnalytics={handleAnalytics} 
+                  session={session} 
+                />
+              )}
             </div>
           )}
         </Modal>
