@@ -515,7 +515,8 @@ export default function Home() {
           console.log("✅ Got session from API:", data.user.email);
           setSession({
             user: data.user,
-            expires_at: data.expires_at
+            expires_at: data.expires_at,
+            projectId: sessionId
           });
         } else {
           console.log("❌ No session from API");
@@ -1846,7 +1847,7 @@ export default function Home() {
                   </Box>
                 ) : (
                   <Box>
-                    <AnnotationPanel sessionId={sessionId} />
+                    <AnnotationPanel sessionId={sessionId} session={session} />
                   </Box>
                 )}
               </Box>
@@ -1891,6 +1892,7 @@ export default function Home() {
           }
         }} 
         session={session}
+        projectId={sessionId}
         />
       </Modal>
 
