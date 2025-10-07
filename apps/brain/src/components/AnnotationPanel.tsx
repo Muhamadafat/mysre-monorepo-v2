@@ -71,7 +71,7 @@ interface Article {
     filePath: string,
 };
 
-export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
+export default function AnnotationPanel({ sessionId, session }: { sessionId?: string, session?: string }) {
   const { id: currentSessionId } = useParams();
   const effectiveSessionId = sessionId || currentSessionId;
   
@@ -582,7 +582,7 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
       >
         {selectedPDF && (
           <div style={{ height: '100%', position: 'relative' }}>
-            <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} />
+            <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} session={session} />
           </div>
         )}
       </Modal>
