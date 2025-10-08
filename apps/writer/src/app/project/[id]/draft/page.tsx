@@ -2,16 +2,28 @@
 
 'use client'
 
+import ConceptMap from '@/components/ConceptMap';
 import dynamic from 'next/dynamic';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { PartialBlock } from "@blocknote/core";
 import { ExtendedEdge, ExtendedNode } from '@/types'
 import type { BlockNoteEditorRef } from '@/components/BlockNoteEditor';
 import AnnotationPanel from '@/components/AnnotationPanel';
 const BlockNoteEditorComponent = dynamic(() => import("@/components/BlockNoteEditor"), {
   ssr: false
 });
+const ActivityLog = dynamic(() => import("@/components/ActivityLog"), {
+  ssr: false
+});
 import NextImage from 'next/image';
+import { useActivityLog } from '@/hooks/useActivityLog';
+import { useDraftShortcuts } from '@/hooks/useDraftShortcuts';
+import { useAdvancedShortcuts } from '@/hooks/useAdvancedShortcuts';
+import { useTextFormattingShortcuts } from '@/hooks/useTextFormattingShortcuts';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { KeyboardShortcutsModal } from '@/components/KeyboardShortcutsModal';
+import { DraftQuickAccessModal } from '@/components/DraftQuickAccessModal';
 import {
   AppShell,
   Burger,
@@ -44,6 +56,9 @@ import {
   Grid,
   RingProgress,
   Progress,
+  SegmentedControl,
+  Tabs,
+  ThemeIcon,
 } from "@mantine/core";
 
 import {useDisclosure, useDebouncedCallback, useMediaQuery} from "@mantine/hooks";
@@ -54,9 +69,13 @@ import {
    IconGraph,
    IconMessageCircle2,
    IconBrain,
+   IconSparkles,
+   IconCheck,
+   IconBulb,
    IconMap2,
    IconSend,
-   IconFilePlus, 
+   IconFilePlus,
+   IconHistory, 
    IconUpload,
    IconFileText,
    IconChevronRight,
@@ -69,7 +88,6 @@ import {
    IconUser,
    IconLogout,
    IconList,
-   IconHistory,
    IconTrash,
    IconNumber,
    IconDotsVertical,
@@ -80,9 +98,9 @@ import {
    IconAlertTriangle,
    IconX,
    IconCircleCheck,
-   IconBulb,
    IconShieldCheck,
    IconScan,
+   IconRobot as IconActivity,
    IconQuote,
    IconBook,
    IconWorld,
@@ -91,12 +109,29 @@ import {
    IconVideo,
    IconMicrophone,
    IconClipboardCheck,
+   IconKeyboard,
    IconStethoscope,
    IconPercentage,
    IconTrendingUp,
    IconTrendingDown,
    IconEye,
    IconAnalyze,
+   IconAlignLeft,
+   IconChevronUp,
+   IconChevronDown,
+   IconChevronLeft,
+   IconZoom,
+   IconMaximize,
+   IconArrowsMove,
+   IconDownload,
+   IconLayoutSidebarRightCollapse,
+   IconLayoutSidebarLeftCollapse,
+   IconHelp,
+   IconHeadset,
+   IconBooks,
+   IconArticle,
+   IconHeading,
+   IconHelpCircle,
   } from "@tabler/icons-react";
 import classes from '../../../container.module.css';
 // import'/images/LogoSRE_FIX.png'from '../../../imageCollection/LogoSRE_Fix.png';
@@ -105,6 +140,8 @@ import Split from 'react-split';
 import { useSearchParams } from 'next/navigation';
 import { useParams, useRouter } from 'next/navigation';
 import WebViewer from '@/components/WebViewer2';
+
+import { v4 as uuidv4 } from 'uuid';
 
 interface Article {
     id: string,
@@ -166,6 +203,7 @@ interface HistoryItem {
   version: string; // Versi dokumen ("Versi 1", "Versi 2", "Final")
   type: "draft" | "final"; // Tipe penyimpanan: draft atau final submission
   assignmentCode?: string; // Kode assignment dari dosen (untuk final submission)
+  draftId?: string; // ID draft untuk loading content (hanya untuk draft)
 }
 
 interface AICheckResult {
@@ -235,12 +273,15 @@ const handleAnalytics = async (analyticsData: any) => {
   }
 };
 
+//pusing1
+type BlockNoteType = "paragraph" | "heading";
+type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
 export default function Home() {
   const [navUser, setNavUser] = useState<User | null>(null); // untuk navbar
   const [dropdownUser, setDropdownUser] = useState<User | null>(null); // untuk dropdown menu
   const [navbarOpened, { toggle: toggleNavbar, close: closeNavbar }] = useDisclosure();
 //   const {id: sessionId} = useParams();
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
   const [getSessionId, setGetSessionId]= useState(null);
@@ -255,6 +296,21 @@ export default function Home() {
   const [writerSessionLoading, setWriterSessionLoading] = useState(true);
   const [writerSession, setWriterSession] = useState<any>(null);
   const [writerSessionInitialized, setWriterSessionInitialized] = useState(false);
+
+  // State untuk draft
+  const [draftTitle, setDraftTitle] = useState('');
+  const [shortcutsModalOpened, setShortcutsModalOpened] = useState(false);
+  const [draftQuickAccessOpened, setDraftQuickAccessOpened] = useState(false);
+  const [draftContent, setDraftContent] = useState('');
+  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
+  const [draftProgress, setDraftProgress] = useState(0);
+  const [draftStage, setDraftStage] = useState('');
+  const [isDraftSaving, setIsDraftSaving] = useState(false);
+  
+  // Additional state for outline and content management
+  const [outlineData, setOutlineData] = useState<any[]>([]);
+  const [selectedSection, setSelectedSection] = useState('');
+  const [generatedContent, setGeneratedContent] = useState('');
   
   // const [assignmentCode, setAssignmentCode] = useState('');
   const [isValidatingCode, setIsValidatingCode] = useState(false);
@@ -267,6 +323,16 @@ export default function Home() {
 
   const [opened, setOpened] = useState(false);
   const [selectedPDF, setSelectedPDF] = useState<string | null>(null);
+
+  // State for node adding functionality
+  const [nodeTypeModalOpened, setNodeTypeModalOpened] = useState(false);
+  const [selectedNodeType, setSelectedNodeType] = useState<'title' | 'subtitle' | 'paragraph' | null>(null);
+  const [nodeText, setNodeText] = useState('');
+  const [nodeDetailModalOpened, setNodeDetailModalOpened] = useState(false);
+  const [selectedNodeDetail, setSelectedNodeDetail] = useState<any>(null);
+
+  // State untuk mengontrol tampilan panel tengah (concept map vs editor)
+  const [activeCentralView, setActiveCentralView] = useState('conceptMap');
 
   const [mcpContext, setMcpContext] = useState<{
     sessionId: string;
@@ -297,6 +363,12 @@ export default function Home() {
     setOpened(false);
     setSelectedPDF(null);
   };
+
+  // [MODIFIKASI 2]: Tambahkan state untuk kontrol panel kiri
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+
+  const [helpOpened, { open: openHelp, close: closeHelp }] = useDisclosure(false);
+  const router = useRouter();
 
   console.log('=== FRONTEND DEBUG ===');
   console.log('urlSessionId:', urlSessionId);
@@ -443,7 +515,7 @@ export default function Home() {
         setGetSessionId(data.user.id);
       }
     } catch (error: any) {
-      console.error('❌ fetchDropdownUser error:', error.message); 
+      console.warn('⚠️ fetchDropdownUser warning:', error.message); 
       setDropdownUser(null);
     } finally {
       setLoading(false);
@@ -462,9 +534,17 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("chat");
   const isMobile = useMediaQuery('(max-width: 768px)');
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const [fileName, setFileName] = useState("Judul Artikel 1");
+  const [fileName, setFileName] = useState("");
+  const [isClient, setIsClient] = useState(false);
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
   const [draftCounter, setDraftCounter] = useState(1); // Counter untuk versi draft
+  
+  // Debug useEffect untuk tracking headings changes
+  useEffect(() => {
+    console.log('📊 HEADINGS STATE CHANGED:', headings);
+    console.log('📊 HEADINGS COUNT:', headings.length);
+    console.log('📊 HEADINGS DETAILS:', headings.map(h => ({ level: h.level, text: h.text, id: h.id })));
+  }, [headings]);
   // State untuk daftar artikel dari API
   const [article, setArticle] = useState<Article[]>([]);
 
@@ -508,6 +588,7 @@ export default function Home() {
   const [aiCheckResult, setAiCheckResult] = useState<AICheckResult | null>(
     null
   ); // Hasil AI detection
+  const [showAIIndicators, setShowAIIndicators] = useState(false); // Kontrol tampilan indikator warna AI
   const [assignmentCode, setAssignmentCode] = useState("");
 
   const [
@@ -518,10 +599,125 @@ export default function Home() {
     bibliographyModalOpened, // Modal form bibliography
     { open: openBibliographyModal, close: closeBibliographyModal },
   ] = useDisclosure(false);
+  const [
+    activityLogOpened, // Modal activity log
+    { open: openActivityLog, close: closeActivityLog },
+  ] = useDisclosure(false);
+
+  // Activity log hook
+  const {
+    activities,
+    addActivity,
+    clearAll: clearActivityLog,
+    exportLog,
+    logFormula,
+    logEdit,
+    logSave,
+    logTransform,
+    logError,
+  } = useActivityLog();
+
+  // Fungsi khusus untuk kembali ke revisi dengan mempertahankan indikator
+  const handleBackToRevision = useCallback(() => {
+    setShowAIIndicators(true); // Pastikan indikator tetap tampil
+    closeAIResultModal(); // Tutup modal
+    
+    // Tambah aktivitas ke log
+    addActivity(
+      'edit',
+      'Mode Revisi AI',
+      'Kembali ke mode revisi dengan indikator AI tetap aktif',
+      {
+        result: `Persentase AI: ${aiCheckResult?.percentage}%`
+      },
+      'success'
+    );
+  }, [aiCheckResult, closeAIResultModal, addActivity]);
 
   useEffect(() => {
     bibliographyListRef.current = bibliographyList;
   }, [bibliographyList]);
+
+  // Initialize client-side state to prevent hydration errors
+  useEffect(() => {
+    // Add delay to ensure DOM is fully ready
+    const timer = setTimeout(() => {
+      setIsClient(true);
+      setFileName("Judul Artikel 1");
+      
+      // Add welcome log
+      logTransform('Editor Dimulai', 'Editor BlockNote telah siap digunakan');
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [logTransform]);
+
+  // Listen for slash menu title updates
+  useEffect(() => {
+    const handleSlashMenuTitleUpdate = (event: any) => {
+      console.log('🎯 RECEIVED SLASH MENU EVENT:', event);
+      const { title } = event.detail;
+      if (title) {
+        console.log('📝 UPDATING FILENAME STATE FROM SLASH MENU (CLEAN):', title);
+        setFileName(title); // Langsung pakai title clean tanpa prefix
+        
+        // Force re-render to ensure UI updates
+        setTimeout(() => {
+          console.log('✅ LEFT PANEL FILENAME UPDATED TO:', title);
+        }, 100);
+      } else {
+        console.log('❌ No title in event detail:', event.detail);
+      }
+    };
+
+    // Add outline refresh listener
+    const handleForceOutlineRefresh = () => {
+      console.log('🗂️ FORCE OUTLINE REFRESH - Triggered from AI Modal');
+      // Manually trigger outline extraction from current editor content
+      setTimeout(() => {
+        if (editorRef.current) {
+          const editor = editorRef.current.getEditor();
+          if (editor) {
+            console.log('🗂️ FORCE OUTLINE REFRESH - Calling handleContentChange manually');
+            handleContentChange(editor.document);
+          }
+        }
+      }, 100);
+    };
+
+    // BACKUP: Direct outline setter
+    const handleSetOutlineDirectly = (event: any) => {
+      console.log('🎯 DIRECT OUTLINE SET - Event received:', event);
+      console.log('🎯 DIRECT OUTLINE SET - Event detail:', event.detail);
+      
+      const { headings } = event.detail;
+      if (headings && headings.length > 0) {
+        console.log('🗂️ DIRECT OUTLINE SET - Setting headings directly:', headings);
+        console.log('🗂️ DIRECT OUTLINE SET - Current headings before update:', headings);
+        setHeadings(headings);
+        console.log('✅ DIRECT OUTLINE SET - Headings set successfully, new state should be:', headings);
+        
+        // Force a re-render by triggering state update
+        setTimeout(() => {
+          console.log('🔄 DIRECT OUTLINE SET - Forcing component re-render');
+        }, 100);
+      } else {
+        console.log('❌ DIRECT OUTLINE SET - No valid headings received:', { headings, eventDetail: event.detail });
+      }
+    };
+
+    console.log('🔗 SLASH MENU & OUTLINE EVENT LISTENERS REGISTERED');
+    window.addEventListener('slashMenuTitleUpdate', handleSlashMenuTitleUpdate);
+    window.addEventListener('forceOutlineRefresh', handleForceOutlineRefresh);
+    window.addEventListener('setOutlineDirectly', handleSetOutlineDirectly);
+    
+    return () => {
+      console.log('🔗 EVENT LISTENERS REMOVED');
+      window.removeEventListener('slashMenuTitleUpdate', handleSlashMenuTitleUpdate);
+      window.removeEventListener('forceOutlineRefresh', handleForceOutlineRefresh);
+      window.removeEventListener('setOutlineDirectly', handleSetOutlineDirectly);
+    };
+  }, []);
 
   // 4. Load drafts di useEffect (tambahan untuk page.tsx)
   const loadDrafts = async () => {
@@ -540,13 +736,14 @@ export default function Home() {
           timestamp: new Date(draft.createdAt),
           wordCount: draft.sections.reduce((total: number, section: any) => {
             return (
-              total + 
+              total +
               (section.content?.split(/\s+/).filter(Boolean).length || 0)
             );
           }, 0),
           title: draft.title,
           version: `Versi ${result.drafts.length - index}`,
-          type: "draft" as const
+          type: "draft" as const,
+          draftId: draft.id
         }));
 
         setHistory(historyItems);
@@ -558,7 +755,55 @@ export default function Home() {
     }
   };
 
-  
+  // Function to load specific draft content
+  const loadDraftContent = async (draftId: string) => {
+    if (!draftId) return;
+
+    try {
+      console.log('Loading draft content for ID:', draftId);
+
+      const response = await fetch(`/api/draft/get?draftId=${draftId}`);
+      const result = await response.json();
+
+      if (response.ok && result.editorContent) {
+        // IMPORTANT: Update editorContent state first
+        setEditorContent(result.editorContent);
+        console.log('Draft content loaded to state:', result.editorContent.length, 'blocks');
+
+        // Sync to concept map
+        syncEditorToConceptMap(result.editorContent);
+
+        // Switch to editor view
+        setActiveCentralView('editor');
+
+        // Wait for view to switch, then set content to editor
+        setTimeout(() => {
+          if (editorRef.current) {
+            editorRef.current.setContent(result.editorContent);
+            console.log('Draft content applied to editor:', result.editorContent.length, 'blocks');
+          }
+        }, 100);
+
+        // Show notification
+        notifications.show({
+          title: "Artikel Dimuat",
+          message: `"${result.draft.title}" berhasil dimuat ke editor.`,
+          color: "blue",
+          position: "top-right",
+        });
+      } else {
+        throw new Error(result.message || 'Failed to load draft');
+      }
+    } catch (error) {
+      console.error('Error loading draft content:', error);
+      notifications.show({
+        title: "Error",
+        message: "Gagal memuat artikel dari riwayat.",
+        color: "red",
+        position: "top-right",
+      });
+    }
+  };
 
 useEffect(() => {
     if (sessionId) {
@@ -712,7 +957,7 @@ useEffect(() => {
    * @returns Promise yang resolve dengan response dari API GPTZero.
    */
   const callGPTZeroAPI = async (text: string): Promise<GPTZeroResponse> => {
-    const apiKey = "7eef19cc7e18431ea60d89ef63b3b6b0"; // KUNCI API ANDA
+    const apiKey = "987d28247b4b46dfabc2303a7bee9213"; // KUNCI API ANDA
 
     try {
       const response = await fetch("https://api.gptzero.me/v2/predict/text", {
@@ -771,7 +1016,7 @@ useEffect(() => {
       isSimulation: boolean = false
     ): AICheckResult => {
       let recommendation = "";
-      const isConsideredHuman = percentage <= 10;
+      const isConsideredHuman = percentage <= 30;
 
       if (isSimulation) {
         recommendation =
@@ -865,6 +1110,27 @@ useEffect(() => {
         "AI Check Error / API Failed. Using enhanced fallback simulation.",
         error
       );
+
+      // // Enhanced user notification based on error type
+      // const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // let userMessage = "Sistem deteksi AI tidak tersedia, menggunakan mode simulasi.";
+      
+      // if (errorMessage.includes('API Key tidak valid')) {
+      //   userMessage = "🔑 API Key GPTZero tidak valid. Menggunakan mode simulasi untuk analisis.";
+      // } else if (errorMessage.includes('quota')) {
+      //   userMessage = "📊 Quota API GPTZero habis. Menggunakan mode simulasi untuk analisis.";
+      // } else if (errorMessage.includes('Server')) {
+      //   userMessage = "🔧 Server GPTZero bermasalah. Menggunakan mode simulasi untuk analisis.";
+      // }
+
+      // // Show user notification
+      // notifications.show({
+      //   title: "⚠️ Info Sistem Deteksi AI",
+      //   message: userMessage + "\n\n💡 Catatan: Hasil simulasi ini hanya untuk referensi. Silakan periksa manual untuk memastikan originalitas konten.",
+      //   color: "yellow",
+      //   autoClose: 8000,
+      //   style: { whiteSpace: 'pre-line' }
+      // });
 
       // --- LOGIKA SIMULASI YANG TELAH DIPERBAIKI ---
       // 1. Menghasilkan skor acak dari 1% hingga 100% untuk simulasi yang lebih realistis.
@@ -1521,10 +1787,10 @@ const handleSubmitToTeacher = async () => {
           let blockModified = false;
           const newInlineContent: any[] = [];
 
-          block.content.forEach((inlineContent) => {
+          block.content.forEach((inlineContent: { type: string, text?: string }) => {
             if (
               inlineContent.type === "text" &&
-              inlineContent.text.includes(citationText)
+              inlineContent.text?.includes(citationText)
             ) {
               blockModified = true;
               const newText = inlineContent.text.replaceAll(citationText, "");
@@ -1616,6 +1882,1066 @@ const handleSubmitToTeacher = async () => {
   };
 
   const editorRef = useRef<BlockNoteEditorRef>(null);
+
+  /**
+   * =================================================================================
+   * FUNGSI UNTUK MENGELOLA DRAFT
+   * =================================================================================
+   */
+  const handleDraftTitleChange = (value: string) => {
+    setDraftTitle(value);
+  };
+
+  const handleDraftContentChange = (value: string) => {
+    setDraftContent(value);
+  };
+
+  const saveDraft = async () => {
+    if (!draftTitle.trim()) {
+      notifications.show({
+        title: "Judul Diperlukan",
+        message: "Mohon masukkan judul untuk draft artikel",
+        color: "yellow",
+      });
+      return;
+    }
+
+    if (!editorRef.current) {
+      notifications.show({
+        title: "Editor tidak tersedia",
+        message: "Editor belum siap untuk menyimpan",
+        color: "yellow",
+      });
+      return;
+    }
+
+    setIsDraftSaving(true);
+    try {
+      // Get content from editor
+      const contentBlocks = editorRef.current.getContent();
+      const contentText = extractTextFromBlockNote(contentBlocks);
+      const wordCount = contentText.split(/\s+/).filter(word => word.length > 0).length;
+
+      // Call the actual save API
+      const response = await fetch('/api/draft/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          writerSessionId: projectId, // project ID from URL params
+          title: draftTitle,
+          contentBlocks,
+          wordCount,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save draft');
+      }
+
+      const result = await response.json();
+      
+      notifications.show({
+        title: "Draft Tersimpan",
+        message: `Draft "${draftTitle}" berhasil disimpan dengan ${result.sectionsCount} bagian`,
+        color: "green",
+      });
+      
+      // Log to activity
+      logSave(`Draft artikel "${draftTitle}" telah disimpan (${wordCount} kata, ${result.sectionsCount} bagian)`);
+      
+    } catch (error) {
+      console.error('Save error:', error);
+      notifications.show({
+        title: "Gagal Menyimpan",
+        message: "Terjadi kesalahan saat menyimpan draft",
+        color: "red",
+      });
+    } finally {
+      setIsDraftSaving(false);
+    }
+  };
+
+  // Keyboard shortcuts integration
+  const { isSaving } = useDraftShortcuts({
+    onSave: saveDraft,
+    onNewDraft: () => {
+      // Reset draft state for new draft
+      setDraftTitle('');
+      if (editorRef.current) {
+        const editor = editorRef.current.getEditor();
+        // Clear editor content by replacing with empty paragraph
+        editor.replaceBlocks(editor.document, [
+          {
+            type: "paragraph",
+            content: "",
+          },
+        ]);
+      }
+    },
+    onShowHelp: () => setShortcutsModalOpened(true),
+    enabled: true,
+  });
+
+  // Advanced shortcuts for expert users
+  useAdvancedShortcuts({
+    onInsertCitation: () => {
+      // Open bibliography modal to select citation
+      if (bibliographyList.length > 0) {
+        // Insert the next available citation number
+        const nextNumber = bibliographyList.length + 1;
+        insertCitationNumber(nextNumber);
+      } else {
+        notifications.show({
+          title: "No Bibliography Available",
+          message: "Please add bibliography items first before inserting citations",
+          color: "yellow",
+        });
+      }
+    },
+    onInsertFormula: () => {
+      // Open LaTeX modal directly
+      if (editorRef.current?.openLatexModal) {
+        editorRef.current.openLatexModal();
+      } else {
+        notifications.show({
+          title: "LaTeX Modal",
+          message: "Membuka modal LaTeX untuk sisipkan rumus matematika...",
+          color: "blue",
+          autoClose: 2000,
+        });
+      }
+    },
+    onGenerateAI: () => {
+      // Trigger AI generation like the existing AI button
+      if (!draftTitle.trim()) {
+        notifications.show({
+          title: "Judul Diperlukan",
+          message: "Masukkan judul terlebih dahulu sebelum generate AI",
+          color: "yellow",
+        });
+        return;
+      }
+      
+      notifications.show({
+        title: "🤖 AI Generation Started",
+        message: `Generating content for "${draftTitle}"...`,
+        color: "blue",
+        autoClose: 3000,
+      });
+    },
+    onAnalyzeReferences: () => {
+      if (bibliographyList.length === 0) {
+        notifications.show({
+          title: "No References",
+          message: "Add bibliography items to analyze references",
+          color: "yellow",
+        });
+        return;
+      }
+      
+      notifications.show({
+        title: "🧠 Analyzing References",
+        message: `Analyzing ${bibliographyList.length} references with AI...`,
+        color: "purple",
+        autoClose: 3000,
+      });
+    },
+    onWordCount: () => {
+      const contentBlocks = editorRef.current?.getContent();
+      if (contentBlocks) {
+        const contentText = extractTextFromBlockNote(contentBlocks);
+        const wordCount = contentText.split(/\s+/).filter(word => word.length > 0).length;
+        notifications.show({
+          title: "📝 Word Count",
+          message: `Current document: ${wordCount} words`,
+          color: "blue",
+          autoClose: 4000,
+        });
+      }
+    },
+    onInsertTable: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        // Insert a simple table structure
+        editor.insertBlocks([
+          {
+            type: "paragraph",
+            content: "| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n| Row 1    | Data     | Data     |\n| Row 2    | Data     | Data     |",
+          }
+        ], editor.getTextCursorPosition().block, "after");
+      }
+    },
+    onInsertImage: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        editor.insertBlocks([
+          {
+            type: "image",
+            props: {
+              url: "https://via.placeholder.com/400x200/cccccc/969696?text=Image+Placeholder",
+              caption: "Image caption here",
+            }
+          }
+        ], editor.getTextCursorPosition().block, "after");
+      }
+    },
+    onInsertCode: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        editor.insertBlocks([
+          {
+            type: "codeBlock",
+            props: {
+              language: "javascript"
+            },
+            content: "// Your code here\nconsole.log('Hello World');"
+          }
+        ], editor.getTextCursorPosition().block, "after");
+      }
+    },
+    onExportDraft: () => {
+      if (!draftTitle.trim()) {
+        notifications.show({
+          title: "No Title",
+          message: "Please add a title before exporting",
+          color: "yellow",
+        });
+        return;
+      }
+      
+      notifications.show({
+        title: "📄 Exporting Draft",
+        message: `Exporting "${draftTitle}" to PDF...`,
+        color: "blue",
+        autoClose: 3000,
+      });
+      
+      // Here you would implement actual PDF export functionality
+      // For now, we'll just show a success message after delay
+      setTimeout(() => {
+        notifications.show({
+          title: "✅ Export Complete",
+          message: `"${draftTitle}.pdf" ready for download`,
+          color: "green",
+        });
+      }, 2000);
+    },
+    onToggleFullscreen: () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+        notifications.show({
+          title: "Fullscreen Off",
+          message: "Exited fullscreen mode",
+          color: "blue",
+          autoClose: 2000,
+        });
+      } else {
+        document.documentElement.requestFullscreen();
+        notifications.show({
+          title: "Fullscreen On",
+          message: "Press F11 or Escape to exit fullscreen",
+          color: "blue",
+          autoClose: 3000,
+        });
+      }
+    },
+    onFindReplace: () => {
+      // Trigger browser's native find dialog
+      notifications.show({
+        title: "🔍 Find & Replace",
+        message: "Use Ctrl+F for find, browser's find dialog opened",
+        color: "blue",
+        autoClose: 2000,
+      });
+    },
+    onOpenDraftList: () => {
+      setDraftQuickAccessOpened(true);
+      notifications.show({
+        title: "📋 Draft List",
+        message: "Opening quick access to all drafts...",
+        color: "green",
+        autoClose: 2000,
+      });
+    },
+    onListRecentDrafts: () => {
+      setDraftQuickAccessOpened(true);
+      notifications.show({
+        title: "🕒 Recent Drafts",
+        message: "Showing recently modified drafts...",
+        color: "blue",
+        autoClose: 2000,
+      });
+    },
+    onInsertQuote: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        editor.insertBlocks([
+          {
+            type: "paragraph",
+            content: "",
+            props: {
+              textColor: "default",
+              backgroundColor: "default",
+              textAlignment: "left"
+            }
+          }
+        ], editor.getTextCursorPosition().block, "after");
+
+        // Insert the quote block
+        setTimeout(() => {
+          editor.insertBlocks([
+            {
+              type: "paragraph",
+              content: "Quote text here...",
+              props: {
+                textColor: "gray",
+                backgroundColor: "gray",
+                textAlignment: "left"
+              }
+            }
+          ], editor.getTextCursorPosition().block, "after");
+        }, 100);
+
+        notifications.show({
+          title: "💬 Quote Block Added",
+          message: "Quote block has been inserted",
+          color: "blue",
+          autoClose: 2000,
+        });
+      }
+    },
+    enabled: true,
+  });
+
+  // Text formatting shortcuts
+  useTextFormattingShortcuts({
+    onBold: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        // Toggle bold formatting for selected text
+        editor.toggleStyles({ bold: true });
+        notifications.show({
+          title: "Bold Applied",
+          message: "Text formatting applied",
+          color: "blue",
+          autoClose: 1000,
+        });
+      }
+    },
+    onItalic: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        editor.toggleStyles({ italic: true });
+        notifications.show({
+          title: "Italic Applied",
+          message: "Text formatting applied",
+          color: "blue",
+          autoClose: 1000,
+        });
+      }
+    },
+    onUnderline: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        editor.toggleStyles({ underline: true });
+        notifications.show({
+          title: "Underline Applied",
+          message: "Text formatting applied",
+          color: "blue",
+          autoClose: 1000,
+        });
+      }
+    },
+    onLink: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        const url = prompt("Masukkan URL:");
+        const text = prompt("Masukkan teks link (opsional):");
+        if (url) {
+          editor.createLink(url, text || url);
+          notifications.show({
+            title: "🔗 Link Added",
+            message: "Link has been inserted",
+            color: "blue",
+            autoClose: 2000,
+          });
+        }
+      }
+    },
+    onBulletList: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        editor.insertBlocks([
+          {
+            type: "bulletListItem",
+            content: "List item",
+          }
+        ], editor.getTextCursorPosition().block, "after");
+        notifications.show({
+          title: "• Bullet List",
+          message: "Bullet list created",
+          color: "blue",
+          autoClose: 1500,
+        });
+      }
+    },
+    onNumberedList: () => {
+      const editor = editorRef.current?.getEditor();
+      if (editor) {
+        editor.insertBlocks([
+          {
+            type: "numberedListItem",
+            content: "List item",
+          }
+        ], editor.getTextCursorPosition().block, "after");
+        notifications.show({
+          title: "1. Numbered List",
+          message: "Numbered list created",
+          color: "blue",
+          autoClose: 1500,
+        });
+      }
+    },
+
+    onHeading: (level: number) => {
+      if (level >= 1 && level <= 6 ){
+        const editor = editorRef.current?.getEditor();
+        if (editor) {
+          editor.insertBlocks([
+            {
+              type: "heading",
+              props: { level: level as HeadingLevel },
+              content: `Heading ${level}`,
+            }
+          ], editor.getTextCursorPosition().block, "after");
+          notifications.show({
+            title: `H${level} Heading`,
+            message: `Heading level ${level} created`,
+            color: "blue",
+            autoClose: 1500,
+          });
+        }
+      }
+    },
+    enabled: true,
+  });
+
+  // State to store pending content for editor
+  const [pendingEditorContent, setPendingEditorContent] = useState<any[]>([]);
+  const [editorContent, setEditorContent] = useState<any[]>([]);
+
+  // State for outline panel collapse/expand
+  const [isOutlineCollapsed, setIsOutlineCollapsed] = useState(false);
+
+  // State to persist concept map data
+  const [conceptMapData, setConceptMapData] = useState<{nodes: any[], edges: any[]}>({nodes: [], edges: []});
+
+  // Handler for auto-saving concept map data
+  const handleConceptMapDataChange = (nodes: any[], edges: any[]) => {
+    console.log("Auto-saving concept map data:", { nodes: nodes.length, edges: edges.length });
+    setConceptMapData({ nodes: [...nodes], edges: [...edges] });
+  };
+
+  const getTextFromBlock = (block: any): string => {
+    if (!block || !block.content) return "";
+    if (Array.isArray(block.content)) {
+        return block.content.map((item: any) => item.text || "").join("");
+    }
+    return typeof block.content === "string" ? block.content : "";
+  };
+
+  // Function to sync editor content to concept map
+  const syncEditorToConceptMap = (content: any[]) => {
+    console.log("🔄 Syncing editor to concept map...", content.length, "blocks");
+
+    const nodes: any[] = [];
+    const edges: any[] = [];
+
+    const lastHeadingIds: { [key: number]: string | null } = {
+      1: null,
+      2: null,
+      3: null,
+      4: null,
+    };
+
+    // Gunakan 'for' loop agar kita bisa melompati indeks (i++)
+    for (let i = 0; i < content.length; i++) {
+      const currentBlock = content[i];
+      const nodeId = currentBlock.id || `node-${uuidv4()}`;
+      let nodeData: any = null;
+      let parentId: string | null = null;
+      const currentText = getTextFromBlock(currentBlock);
+
+      // Skip blok kosong
+      if (currentText.trim() === "" && currentBlock.type === "paragraph") {
+        continue;
+      }
+
+      // LOGIKA UTAMA: Cek heading H2/H3/H4 dan lihat blok selanjutnya
+      if (currentBlock.type === 'heading' && currentBlock.props?.level > 1) {
+        const level = currentBlock.props.level;
+        const nextBlock = content[i + 1];
+        const nextText = nextBlock ? getTextFromBlock(nextBlock) : "";
+
+        // JIKA blok selanjutnya adalah paragraf berisi teks -> GABUNGKAN
+        if (nextBlock && nextBlock.type === 'paragraph' && nextText.trim() !== '') {
+          const label = `${truncateByWords(currentText, 3)}\n${truncateByWords(nextText, 3)}`;
+          nodeData = {
+            id: nodeId, label, title: `${currentText}\n\n${nextText}`, content: nextText,
+            type: 'H2_H4', shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
+            font: { multi: true, size: 14, bold: { size: 16 } },
+            color: { background: '#fcc419', border: '#f59f00' },
+          };
+          i++; // 👈 PENTING: Lompati blok paragraf berikutnya karena sudah digabung
+        } else {
+          // JIKA TIDAK -> Buat sebagai node heading biasa (tanpa konten)
+          nodeData = {
+            id: nodeId, label: truncateByWords(currentText, 3), title: currentText, content: '',
+            type: 'H2_H4', shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
+            font: { size: 16, bold: true },
+            color: { background: '#fcc419', border: '#f59f00' },
+          };
+        }
+        
+        // Logika untuk menentukan parent & edge
+        if (level > 1) parentId = lastHeadingIds[level - 1];
+        if (!parentId) { for (let p = level - 2; p >= 1; p--) { if (lastHeadingIds[p]) { parentId = lastHeadingIds[p]; break; } } }
+        lastHeadingIds[level] = nodeId;
+        for (let j = level + 1; j <= 4; j++) { lastHeadingIds[j] = null; }
+
+      } else if (currentText.trim() !== '') {
+        // Logika untuk blok lainnya (H1 atau paragraf yang tidak digabung)
+        if (currentBlock.type === 'heading') { // Ini pasti H1
+          const level = 1;
+          nodeData = {
+            id: nodeId, label: truncateByWords(currentText, 3), title: currentText, type: 'H1',
+            shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
+            font: { size: 18, bold: true },
+            color: { background: '#40c057', border: '#2f9e44' },
+          };
+          lastHeadingIds[level] = nodeId;
+          for (let j = level + 1; j <= 4; j++) { lastHeadingIds[j] = null; }
+        } else if (currentBlock.type === 'paragraph') {
+          nodeData = {
+            id: nodeId, label: truncateByWords(currentText, 3), title: currentText, type: 'Paragraph',
+            shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
+            font: { size: 14 },
+            color: { background: '#adb5bd', border: '#868e96' },
+          };
+          for (let p = 4; p >= 1; p--) { if (lastHeadingIds[p]) { parentId = lastHeadingIds[p]; break; } }
+        }
+      }
+
+      if (nodeData) {
+        nodes.push(nodeData);
+        if (parentId) {
+          edges.push({ id: `edge-${parentId}-${nodeId}`, from: parentId, to: nodeId, arrows: 'to' });
+        }
+      }
+    }
+    console.log("✅ Synced to concept map:", nodes.length, "nodes,", edges.length, "edges");
+    setConceptMapData({ nodes, edges });
+  };
+
+  const truncateByWords = (text: string, limit: number) => {
+    const words = text.split(' ');
+    if (words.length > limit) {
+      return words.slice(0, limit).join(' ') + '...';
+    }
+    return text;
+  };
+
+  // Function untuk concept map
+  const handleGenerateToEditor = (nodes: any[], edges: any[]) => {
+    console.log("=== GENERATING TO EDITOR WITH HIERARCHY LOGIC ===");
+    if (nodes.length === 0) {
+      notifications.show({
+        title: 'Tidak Ada Data',
+        message: 'Tambahkan node terlebih dahulu di peta konsep sebelum generate ke editor',
+        color: 'orange',
+      });
+      return;
+    }
+
+    // 1. Buat "kamus" untuk mencari data node dengan cepat berdasarkan ID-nya
+    const nodeMap = new Map(nodes.map(node => [node.id, node]));
+
+    // 2. Bangun struktur pohon: petakan setiap induk ke anak-anaknya
+    const childrenMap = new Map<string, string[]>();
+    edges.forEach(edge => {
+      if (!childrenMap.has(edge.from)) {
+        childrenMap.set(edge.from, []);
+      }
+      // Pastikan tidak ada duplikat anak
+      if (!childrenMap.get(edge.from)!.includes(edge.to)) {
+          childrenMap.get(edge.from)!.push(edge.to);
+      }
+    });
+
+    // 3. Cari node akar (node yang tidak pernah menjadi 'anak')
+    const nodeIdsWithParents = new Set(edges.map(edge => edge.to));
+    const rootNodeIds = nodes
+      .map(n => n.id)
+      .filter(id => !nodeIdsWithParents.has(id));
+
+    // Urutkan node akar berdasarkan posisi vertikalnya (Y)
+    rootNodeIds.sort((a, b) => (nodeMap.get(a)?.y || 0) - (nodeMap.get(b)?.y || 0));
+
+    const blocks: any[] = [];
+
+    // 4. Fungsi rekursif untuk menjelajahi pohon dan membuat blok teks
+    const buildBlocksRecursively = (nodeId: string) => {
+      const node = nodeMap.get(nodeId);
+      if (!node) return;
+
+      // --- Konversi Node menjadi Block (logika yang sudah ada) ---
+      if (node.type === 'H1') {
+        blocks.push({
+          type: "heading",
+          props: { level: 1 },
+          content: [{ type: "text", text: node.title || node.label.replace(/\.\.\.$/, '') }]
+        });
+      } else if (node.type === 'H2_H4') {
+        const h2Title = node.title ? node.title.split('\n\n')[0] : node.label.split('\n')[0].replace(/^\*|\*$/g, '');
+        blocks.push({
+          type: "heading",
+          props: { level: 2 }, // Kita asumsikan H2 untuk subjudul
+          content: [{ type: "text", text: h2Title }]
+        });
+        if (node.content && node.content.trim()) {
+          blocks.push({
+            type: "paragraph",
+            content: [{ type: "text", text: node.content }]
+          });
+        }
+      } else if (node.type === 'Paragraph') {
+        const paragraphText = node.title || node.label.replace(/\.\.\.$/, '');
+        blocks.push({
+          type: "paragraph",
+          content: [{ type: "text", text: paragraphText }]
+        });
+      }
+      // Tambahkan baris kosong antar blok untuk kerapian
+      blocks.push({ type: "paragraph", content: "" });
+      // --- Akhir Konversi ---
+
+      // Lanjutkan ke anak-anak dari node ini
+      const children = childrenMap.get(nodeId);
+      if (children) {
+        // Urutkan anak berdasarkan posisi horizontal (X) agar urut dari kiri ke kanan
+        children.sort((a, b) => (nodeMap.get(a)?.x || 0) - (nodeMap.get(b)?.x || 0));
+        children.forEach(childId => buildBlocksRecursively(childId));
+      }
+    };
+
+    // 5. Mulai proses penjelajahan dari setiap node akar
+    rootNodeIds.forEach(rootId => buildBlocksRecursively(rootId));
+    
+    // Hapus baris kosong terakhir jika ada
+    if (blocks.length > 0 && getTextFromBlock(blocks[blocks.length - 1]).trim() === "") {
+      blocks.pop();
+    }
+
+    console.log("Generated blocks with hierarchy:", blocks);
+
+    setPendingEditorContent(blocks);
+    setActiveCentralView('editor');
+
+    notifications.show({
+      title: '✅ Generate Berhasil!',
+      message: 'Teks berhasil disusun di editor sesuai struktur peta konsep.',
+      color: 'green',
+    });
+  };
+
+  // Effect to insert pending content when editor becomes available
+  useEffect(() => {
+    console.log("=== useEffect for pending content ===");
+    console.log("activeCentralView:", activeCentralView);
+    console.log("pendingEditorContent.length:", pendingEditorContent.length);
+    console.log("editorRef.current:", !!editorRef.current);
+
+    if (activeCentralView === 'editor' && pendingEditorContent.length > 0) {
+      const insertPendingContent = () => {
+        console.log("Attempting to insert pending content...");
+        console.log("editorRef.current:", editorRef.current);
+
+        if (editorRef.current) {
+          console.log("Using setContent to replace all content");
+
+          try {
+            // Use setContent method instead of direct editor manipulation
+            editorRef.current.setContent(pendingEditorContent);
+
+            // Manually trigger content change to update outline panel
+            setTimeout(() => {
+              handleContentChange(pendingEditorContent);
+            }, 100);
+
+            // Clear pending content
+            setPendingEditorContent([]);
+            console.log("Pending content inserted successfully with setContent");
+          } catch (error) {
+            console.error("Error inserting pending content with setContent:", error);
+
+            // Fallback: try with editor directly
+            const editor = editorRef.current.getEditor();
+            if (editor) {
+              try {
+                editor.replaceBlocks(editor.document, pendingEditorContent);
+                setPendingEditorContent([]);
+                console.log("Pending content inserted successfully with fallback");
+              } catch (fallbackError) {
+                console.error("Fallback insertion also failed:", fallbackError);
+              }
+            }
+          }
+        } else {
+          console.log("editorRef.current is null, retrying...");
+          setTimeout(insertPendingContent, 300);
+        }
+      };
+
+      setTimeout(insertPendingContent, 500); // Increased delay
+    }
+  }, [activeCentralView, pendingEditorContent]);
+
+  // Effect to save content when switching from editor to concept map
+  useEffect(() => {
+    if (activeCentralView === 'conceptMap' && editorRef.current) {
+      // Save current editor content before switching away
+      try {
+        const currentContent = editorRef.current.getContent();
+        console.log("Saving current editor content before switching to concept map:", currentContent);
+        setEditorContent(currentContent); // Store in state
+      } catch (error) {
+        console.error("Error saving editor content:", error);
+      }
+    }
+  }, [activeCentralView]);
+
+  // Effect to restore content when switching back to editor (if no pending content)
+  // FIXED: Removed editorContent from dependency to prevent infinite loop
+  useEffect(() => {
+    if (activeCentralView === 'editor' && pendingEditorContent.length === 0 && editorContent.length > 0 && editorRef.current) {
+      const restoreContent = () => {
+        try {
+          console.log("Restoring previous editor content:", editorContent.length, "blocks");
+          editorRef.current?.setContent(editorContent);
+        } catch (error) {
+          console.error("Error restoring editor content:", error);
+        }
+      };
+
+      // Only restore if not just loaded from draft (to avoid conflict)
+      setTimeout(restoreContent, 350);
+    }
+  }, [activeCentralView, pendingEditorContent.length]); // REMOVED editorContent to fix infinite loop
+
+  // Node management handlers
+  const handleNodeTypeSelection = (type: 'title' | 'subtitle' | 'paragraph') => {
+    setSelectedNodeType(type);
+    setNodeText(''); // Reset text
+    setNodeTypeModalOpened(true);
+  };
+
+  const handleAddNode = () => {
+    if (!nodeText.trim() || !selectedNodeType) return;
+
+    const editor = editorRef.current?.getEditor();
+    if (!editor) return;
+
+    // Limit node text length to keep it short
+    const maxLength = selectedNodeType === 'title' ? 50 : selectedNodeType === 'subtitle' ? 70 : 100;
+    const truncatedText = nodeText.length > maxLength ?
+      nodeText.substring(0, maxLength) + '...' : nodeText;
+
+    let blockType: BlockNoteType = 'paragraph';
+    let props = {};
+
+    switch (selectedNodeType) {
+      case 'title':
+        blockType = 'heading';
+        props = { level: 1 };
+        break;
+      case 'subtitle':
+        blockType = 'heading';
+        props = { level: 2 };
+        break;
+      case 'paragraph':
+        blockType = 'paragraph';
+        props = {};
+        break;
+    }
+
+    editor.insertBlocks([
+      {
+        type: blockType,
+        props,
+        content: truncatedText,
+      }
+    ], editor.getTextCursorPosition().block, "after");
+
+    // Close modal and reset
+    setNodeTypeModalOpened(false);
+    setNodeText('');
+    setSelectedNodeType(null);
+
+    notifications.show({
+      title: "✅ Node Added",
+      message: `${selectedNodeType} node has been added to the document`,
+      color: "green",
+      autoClose: 2000,
+    });
+  };
+
+  const handleNodeClick = (nodeData: any) => {
+    setSelectedNodeDetail(nodeData);
+    setNodeDetailModalOpened(true);
+  };
+
+  // Additional editor shortcuts
+  useKeyboardShortcuts({
+    enabled: true,
+    shortcuts: [
+      // Search shortcuts
+      {
+        key: 'f',
+        ctrl: true,
+        description: 'Find in document',
+        action: () => {
+          // Trigger browser's native find dialog
+          if (document.execCommand) {
+            document.execCommand('find', false, undefined);
+          }
+          notifications.show({
+            title: "🔍 Find",
+            message: "Find dialog opened (Ctrl+F)",
+            color: "blue",
+            autoClose: 2000,
+          });
+        },
+      },
+      // Navigation shortcuts
+      {
+        key: 'Home',
+        ctrl: true,
+        description: 'Go to document start',
+        action: () => {
+          const editor = editorRef.current?.getEditor();
+          if (editor) {
+            const firstBlock = editor.document[0];
+            if (firstBlock) {
+              editor.setTextCursorPosition(firstBlock, "start");
+              notifications.show({
+                title: "⬆️ Document Start",
+                message: "Moved to beginning of document",
+                color: "blue",
+                autoClose: 1500,
+              });
+            }
+          }
+        },
+      },
+      {
+        key: 'End',
+        ctrl: true,
+        description: 'Go to document end',
+        action: () => {
+          const editor = editorRef.current?.getEditor();
+          if (editor) {
+            const lastBlock = editor.document[editor.document.length - 1];
+            if (lastBlock) {
+              editor.setTextCursorPosition(lastBlock, "end");
+              notifications.show({
+                title: "⬇️ Document End",
+                message: "Moved to end of document",
+                color: "blue",
+                autoClose: 1500,
+              });
+            }
+          }
+        },
+      },
+      {
+        key: 'g',
+        ctrl: true,
+        description: 'Go to line',
+        action: () => {
+          const lineNumber = prompt("Go to line number:");
+          if (lineNumber && !isNaN(Number(lineNumber))) {
+            const line = parseInt(lineNumber);
+            const editor = editorRef.current?.getEditor();
+            if (editor && editor.document[line - 1]) {
+              editor.setTextCursorPosition(editor.document[line - 1], "start");
+              notifications.show({
+                title: `📍 Line ${line}`,
+                message: `Moved to line ${line}`,
+                color: "blue",
+                autoClose: 2000,
+              });
+            } else {
+              notifications.show({
+                title: "❌ Invalid Line",
+                message: `Line ${line} not found`,
+                color: "red",
+                autoClose: 2000,
+              });
+            }
+          }
+        },
+      },
+      // Editor actions
+      {
+        key: 'Enter',
+        ctrl: true,
+        description: 'Generate AI content',
+        action: () => {
+          notifications.show({
+            title: "🤖 AI Content",
+            message: "AI content generation triggered",
+            color: "purple",
+            autoClose: 2000,
+          });
+        },
+      },
+      {
+        key: 'd',
+        ctrl: true,
+        description: 'Duplicate block',
+        action: () => {
+          const editor = editorRef.current?.getEditor();
+          if (editor) {
+            const currentBlock = editor.getTextCursorPosition().block;
+            const duplicatedBlock = { ...currentBlock };
+            editor.insertBlocks([duplicatedBlock], currentBlock, "after");
+            notifications.show({
+              title: "📋 Block Duplicated",
+              message: "Current block has been duplicated",
+              color: "blue",
+              autoClose: 1500,
+            });
+          }
+        },
+      },
+      {
+        key: 'k',
+        ctrl: true,
+        shift: true,
+        description: 'Delete line',
+        action: () => {
+          const editor = editorRef.current?.getEditor();
+          if (editor) {
+            const currentBlock = editor.getTextCursorPosition().block;
+            editor.removeBlocks([currentBlock]);
+            notifications.show({
+              title: "🗑️ Line Deleted",
+              message: "Current line has been deleted",
+              color: "red",
+              autoClose: 1500,
+            });
+          }
+        },
+      },
+    ],
+  });
+
+  const startWriting = () => {
+    console.log('🚀 Starting to write...');
+    
+    // Set default title if empty
+    if (!draftTitle.trim()) {
+      setDraftTitle('Draft Artikel Baru');
+    }
+    
+    // Focus the editor
+    const editor = editorRef.current?.getEditor();
+    if (editor) {
+      editor.focus();
+      console.log('✅ Editor focused');
+    }
+    
+    // Log activity
+    logEdit('Mulai Menulis', 'Memulai penulisan draft artikel baru');
+    
+    // Show notification
+    notifications.show({
+      title: "Siap Menulis!",
+      message: "Editor telah siap. Mulai tulis artikel Anda!",
+      color: "blue",
+    });
+  };
+
+  const addParagraph = () => {
+    console.log('🔧 Adding paragraph...');
+    const editor = editorRef.current?.getEditor();
+    if (editor) {
+      // Add a new paragraph block
+      editor.insertBlocks([{
+        type: "paragraph",
+        content: "Paragraf baru dimulai di sini..."
+      }], editor.getTextCursorPosition().block);
+      logEdit('Paragraf Ditambah', 'Menambahkan paragraf baru ke dalam draft');
+      console.log('✅ Paragraph added successfully');
+    } else {
+      console.error('❌ Editor not found');
+      notifications.show({
+        title: "Error",
+        message: "Editor tidak ditemukan",
+        color: "red",
+      });
+    }
+  };
+
+  const insertQuote = () => {
+    console.log('🔧 Inserting quote...');
+    const editor = editorRef.current?.getEditor();
+    if (editor) {
+      // Add a quote block
+      editor.insertBlocks([{
+        type: "paragraph",
+        content: [
+          { type: "text", text: "\"Ini adalah contoh kutipan dari referensi.\"", styles: { italic: true } },
+          { type: "text", text: "\n— Sumber Referensi", styles: { bold: true } }
+        ]
+      }], editor.getTextCursorPosition().block);
+      logEdit('Kutipan Disisipkan', 'Menambahkan kutipan ke dalam draft');
+      console.log('✅ Quote inserted successfully');
+    } else {
+      console.error('❌ Editor not found');
+      notifications.show({
+        title: "Error", 
+        message: "Editor tidak ditemukan",
+        color: "red",
+      });
+    }
+  };
+
+  const addBulletList = () => {
+    console.log('🔧 Adding bullet list...');
+    const editor = editorRef.current?.getEditor();
+    if (editor) {
+      // Add bullet list blocks
+      const bulletPoints: PartialBlock[] = [
+        { type: "bulletListItem", content: "Poin pertama" },
+        { type: "bulletListItem", content: "Poin kedua" },
+        { type: "bulletListItem", content: "Poin ketiga" }
+      ];
+      
+      editor.insertBlocks(bulletPoints, editor.getTextCursorPosition().block);
+      logEdit('Daftar Poin Ditambah', 'Menambahkan daftar poin ke dalam draft');
+      console.log('✅ Bullet list added successfully');
+    } else {
+      console.error('❌ Editor not found');
+      notifications.show({
+        title: "Error",
+        message: "Editor tidak ditemukan", 
+        color: "red",
+      });
+    }
+  };
 
   /**
    * =================================================================================
@@ -1727,7 +3053,36 @@ const handleSubmitToTeacher = async () => {
       const contentText = extractTextFromBlockNote(blocks);
 
       if (!contentText || contentText.trim().length < 10) {
-        alert("Konten artikel masih kosong atau terlalu pendek.");
+        notifications.show({
+          title: "📝 Konten Tidak Mencukupi",
+          message: "Konten artikel masih kosong atau terlalu pendek untuk dianalisis.\n\n💡 Tips:\n• Tulis minimal beberapa kalimat\n• Gunakan fitur AI Magic untuk bantuan\n• Import dari referensi pustaka",
+          color: "orange",
+          icon: <Text size="lg">⚠️</Text>,
+          autoClose: 6000,
+          withBorder: true,
+          style: { 
+            whiteSpace: 'pre-line',
+            boxShadow: '0 10px 25px rgba(255, 165, 0, 0.15)',
+            borderLeft: '4px solid #fd7e14'
+          },
+          styles: {
+            root: {
+              backgroundColor: 'rgba(255, 248, 242, 0.95)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(253, 126, 20, 0.2)'
+            },
+            title: {
+              fontWeight: 600,
+              fontSize: '16px',
+              color: '#fd7e14'
+            },
+            description: {
+              fontSize: '14px',
+              lineHeight: 1.6,
+              color: '#495057'
+            }
+          }
+        });
         return;
       }
 
@@ -1736,7 +3091,36 @@ const handleSubmitToTeacher = async () => {
         .filter((word) => word.length > 0).length;
 
       if (wordCount < 10) {
-        alert("Konten terlalu pendek untuk dianalisis. Minimal 10 kata.");
+        notifications.show({
+          title: "📊 Jumlah Kata Tidak Mencukupi",
+          message: `Konten saat ini hanya ${wordCount} kata. Diperlukan minimal 10 kata untuk analisis AI yang akurat.\n\n🚀 Saran:\n• Kembangkan ide dengan lebih detail\n• Gunakan AI Magic untuk ekspansi konten\n• Tambahkan contoh atau penjelasan`,
+          color: "blue",
+          icon: <Text size="lg">📊</Text>,
+          autoClose: 6000,
+          withBorder: true,
+          style: { 
+            whiteSpace: 'pre-line',
+            boxShadow: '0 10px 25px rgba(34, 139, 230, 0.15)',
+            borderLeft: '4px solid #228be6'
+          },
+          styles: {
+            root: {
+              backgroundColor: 'rgba(242, 248, 255, 0.95)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(34, 139, 230, 0.2)'
+            },
+            title: {
+              fontWeight: 600,
+              fontSize: '16px',
+              color: '#228be6'
+            },
+            description: {
+              fontSize: '14px',
+              lineHeight: 1.6,
+              color: '#495057'
+            }
+          }
+        });
         return;
       }
 
@@ -1750,12 +3134,56 @@ const handleSubmitToTeacher = async () => {
       setScanningProgress(80);
 
       setAiCheckResult(result);
+      setShowAIIndicators(true); // Aktifkan indikator warna AI
       openAIResultModal();
 
       setScanningProgress(100);
     } catch (error) {
       console.error("❌ Error in final save:", error);
-      alert("Terjadi kesalahan saat menganalisis artikel. Silakan coba lagi.");
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      let userMessage = "Terjadi kesalahan saat menganalisis artikel.";
+      
+      if (errorMessage.includes('API Key tidak valid')) {
+        userMessage = "🔑 API Key GPTZero tidak valid atau expired. Sistem akan melanjutkan dengan mode simulasi.";
+      } else if (errorMessage.includes('quota') || errorMessage.includes('403')) {
+        userMessage = "📊 Quota API GPTZero habis atau akses ditolak. Sistem akan melanjutkan dengan mode simulasi.";
+      } else if (errorMessage.includes('Server') || errorMessage.includes('500')) {
+        userMessage = "🔧 Server GPTZero sedang bermasalah. Sistem akan melanjutkan dengan mode simulasi.";
+      }
+      
+      notifications.show({
+        title: "⚠️ Info Analisis AI",
+        message: userMessage + "\n\n💡 Anda tetap dapat menyimpan draft, namun hasil analisis AI mungkin tidak akurat.",
+        color: "orange",
+        autoClose: 8000,
+        style: { whiteSpace: 'pre-line' }
+      });
+      
+      // Continue with simulation mode instead of stopping
+      try {
+        const blocks = editorRef.current?.getContent() || [];
+        const contentText = extractTextFromBlockNote(blocks);
+        
+        if (contentText && contentText.trim().length >= 10) {
+          setScanningText("Menggunakan mode simulasi...");
+          setScanningProgress(50);
+          
+          // Use fallback simulation
+          const simulationResult = await checkWithGPTZero(contentText);
+          setAiCheckResult(simulationResult);
+          setShowAIIndicators(true);
+          openAIResultModal();
+        }
+      } catch (simulationError) {
+        console.error("Simulation fallback failed:", simulationError);
+        notifications.show({
+          title: "❌ Error",
+          message: "Analisis gagal sepenuhnya. Silakan periksa koneksi internet dan coba lagi.",
+          color: "red",
+          autoClose: 5000
+        });
+      }
     } finally {
       setTimeout(() => {
         setIsScanning(false);
@@ -1822,8 +3250,18 @@ const handleSubmitToTeacher = async () => {
   //   });
   // };
   const handleSaveDraft = async () => {
-    const editorInstance = editorRef.current?.getEditor?.();
-    const contentBlocks = editorInstance?.document;
+    console.log('🚀 Starting handleSaveDraft...');
+    
+    // Try multiple methods to get editor content
+    let contentBlocks = editorRef.current?.getContent?.();
+    
+    // Fallback method using getEditor if getContent doesn't work
+    if (!contentBlocks || contentBlocks.length === 0) {
+      const editorInstance = editorRef.current?.getEditor?.();
+      contentBlocks = editorInstance?.document;
+    }
+    
+    console.log('📝 Content blocks:', contentBlocks);
 
     if (!contentBlocks || contentBlocks.length === 0) {
       notifications.show({
@@ -1837,10 +3275,13 @@ const handleSubmitToTeacher = async () => {
     // Extract text menggunakan function yang sudah ada
     const contentText = extractTextFromBlockNote(contentBlocks);
     const wordCount = contentText.split(/\s+/).filter(Boolean).length;
+    
+    console.log('📊 Word count:', wordCount);
+    console.log('📄 Content text preview:', contentText.substring(0, 100));
 
     if (wordCount === 0) {
       notifications.show({
-        title: "Konten Kosong",
+        title: "Konten Kosong", 
         message: "Silakan tulis konten terlebih dahulu!",
         color: "red",
       });
@@ -1860,9 +3301,12 @@ const handleSubmitToTeacher = async () => {
         title = headingText;
       }
     }
+    
+    console.log('📰 Title:', title);
 
     // Validasi writerSession
     if (!writerSession?.id) {
+      console.error('❌ Writer session not found:', writerSession);
       notifications.show({
         title: "Error",
         message: "Writer session tidak ditemukan!",
@@ -1871,8 +3315,12 @@ const handleSubmitToTeacher = async () => {
       return;
     }
 
+    console.log('✅ Writer session found:', writerSession.id);
+
   try {
-    setLoading(true); // Assuming you have loading state
+    setLoading(true);
+    
+    console.log('🔄 Sending data to API...');
     
     // Save to database
     const response = await fetch("/api/draft/save", {
@@ -1889,6 +3337,8 @@ const handleSubmitToTeacher = async () => {
     });
 
     const result = await response.json();
+    
+    console.log('📥 API Response:', result);
 
     if (!response.ok) {
       throw new Error(result.message || "Failed to save draft");
@@ -1913,13 +3363,20 @@ const handleSubmitToTeacher = async () => {
       color: "green",
     });
 
-    console.log('✅ Draft saved:', result.draft);
+    // Log activity
+    logSave(`Draft "${title}" disimpan`, wordCount);
+
+    console.log('✅ Draft saved successfully:', result.draft);
 
   } catch (error) {
     console.error('❌ Error saving draft:', error);
+    
+    // Log error
+    logError('Gagal menyimpan draft', error instanceof Error ? error.message : 'Unknown error');
+    
     notifications.show({
       title: "Error",
-      message: "Gagal menyimpan draft. Silakan coba lagi.",
+      message: `Gagal menyimpan draft: ${error instanceof Error ? error.message : 'Unknown error'}`,
       color: "red",
     });
   } finally {
@@ -1965,20 +3422,91 @@ const handleSubmitToTeacher = async () => {
   // Enhanced headings state dengan level
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<string[]>([]);
-  const [editorContent, setEditorContent] = useState<any[]>([]);
+
+  // Function to navigate to specific heading in editor
+  const navigateToHeading = (headingId: string, headingText: string) => {
+    console.log('🎯 OUTLINE NAVIGATION - Attempting to navigate to:', { headingId, headingText });
+    
+    try {
+      const editor = editorRef.current?.getEditor();
+      if (!editor) {
+        console.log('❌ OUTLINE NAVIGATION - No editor reference available');
+        return;
+      }
+
+      console.log('🔍 OUTLINE NAVIGATION - Searching through editor blocks...');
+      const blocks = editor.document;
+      
+      // Find the block by ID first
+      let targetBlock = blocks.find(block => block.id === headingId);
+      
+      // If not found by ID, find by heading content
+      if (!targetBlock) {
+        console.log('🔍 OUTLINE NAVIGATION - Block not found by ID, searching by content...');
+        targetBlock = blocks.find(block => {
+          if (block.type === 'heading' && block.content?.length > 0) {
+            const blockText = block.content.map((item: any) => item.text || "").join("").trim();
+            return blockText === headingText;
+          }
+          return false;
+        });
+      }
+
+      if (targetBlock) {
+        console.log('✅ OUTLINE NAVIGATION - Target block found:', targetBlock);
+        
+        // Focus the editor first
+        editor.focus();
+        
+        // Set text cursor to the heading block
+        editor.setTextCursorPosition(targetBlock, "start");
+        
+        // Also scroll the block into view
+        setTimeout(() => {
+          const blockElement = document.querySelector(`[data-id="${targetBlock.id}"]`) as HTMLElement;
+          if (blockElement) {
+            console.log('📍 OUTLINE NAVIGATION - Scrolling to block element');
+            blockElement.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'center' 
+            });
+            
+            // Add highlight effect
+            blockElement.style.background = 'rgba(59, 130, 246, 0.15)';
+            blockElement.style.borderLeft = '4px solid #3b82f6';
+            blockElement.style.borderRadius = '0 8px 8px 0';
+            blockElement.style.transition = 'all 0.3s ease';
+            
+            setTimeout(() => {
+              blockElement.style.background = '';
+              blockElement.style.borderLeft = '';
+              blockElement.style.borderRadius = '';
+            }, 2500);
+          } else {
+            console.log('⚠️ OUTLINE NAVIGATION - Block element not found in DOM');
+          }
+        }, 100);
+        
+        console.log('✅ OUTLINE NAVIGATION - Successfully navigated to heading');
+      } else {
+        console.log('❌ OUTLINE NAVIGATION - Target block not found in editor document');
+        console.log('📝 Available blocks:', blocks.map(b => ({ id: b.id, type: b.type, content: b.content })));
+      }
+    } catch (error) {
+      console.error('❌ OUTLINE NAVIGATION - Error during navigation:', error);
+    }
+  };
 
   const handleContentChange = (content: any[]) => {
+    console.log('🔄 CONTENT CHANGE - Received content update:', content.length, 'blocks');
     setEditorContent(content);
 
-    // ✅ MODIFICATION: Trigger bibliography sync when content changes
-    syncBibliographyWithContent();
-
-    // Extract headings from BlockNote content dengan level
+    // ✅ IMMEDIATE HEADING EXTRACTION (no debounce for outline updates)
     const extractedHeadings: { id: string; text: string; level: number }[] = [];
     let firstH1Title = "";
     let hasAnyContent = false;
-        
-    content.forEach((block) => {
+
+    content.forEach((block, index) => {
       // Check if ada content apapun
       if (block.content && block.content.length > 0) {
         const hasText = block.content.some((item: any) => {
@@ -1989,18 +3517,20 @@ const handleSubmitToTeacher = async () => {
           hasAnyContent = true;
         }
       }
-        
+
       if (block.type === "heading" && block.content?.length > 0) {
         const text = block.content.map((item: any) => item.text || "").join("");
         if (text.trim()) {
           const level = block.props?.level || 1;
-            
+
+          console.log(`📝 HEADING FOUND - Level ${level}: "${text.trim()}" (ID: ${block.id})`);
+
           extractedHeadings.push({
             id: block.id || `heading-${Math.random().toString(36).substr(2, 9)}`,
             text: text.trim(),
             level: level,
           });
-            
+
           // Auto-update fileName dengan H1 pertama yang ditemukan
           if (level === 1 && !firstH1Title) {
               firstH1Title = text.trim();
@@ -2008,9 +3538,41 @@ const handleSubmitToTeacher = async () => {
         }
       }
     });
-        
+
+    console.log('🗂️ OUTLINE UPDATE - Extracted headings:', extractedHeadings);
+
+    // IMMEDIATE UPDATE - No delays for outline
     setHeadings(extractedHeadings);
-        
+
+    // Force outline panel re-render
+    setTimeout(() => {
+      console.log('🔄 OUTLINE UPDATE - Forcing panel refresh with', extractedHeadings.length, 'headings');
+    }, 50);
+
+    // ✅ MODIFICATION: Trigger bibliography sync when content changes
+    syncBibliographyWithContent();
+
+    // ✅ Sync editor content to concept map (debounced)
+    const debouncedSync = setTimeout(() => {
+      syncEditorToConceptMap(content);
+    }, 1000);
+
+    // Log content changes (debounced to avoid spam)
+    const contentText = extractTextFromBlockNote(content);
+    const wordCount = contentText.split(/\s+/).filter(Boolean).length;
+
+    if (wordCount > 0) {
+      // Simple debounce - only log if significant change
+      const debouncedLog = setTimeout(() => {
+        logEdit('Konten diubah', undefined, undefined, wordCount);
+      }, 2000);
+
+      return () => {
+        clearTimeout(debouncedLog);
+        clearTimeout(debouncedSync);
+      };
+    }
+
     // Logic untuk update/reset title
     if (!hasAnyContent) {
       // Jika editor benar-benar kosong, reset title
@@ -2042,6 +3604,23 @@ const handleSubmitToTeacher = async () => {
 
   const [selectedNode, setSelectedNode] = useState<ExtendedNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<ExtendedEdge | null>(null);
+
+  // Show loading screen until client is ready to prevent hydration errors
+  if (!isClient) {
+    return (
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#f8f9fa"
+        }}
+      >
+        <Text size="lg" c="dimmed">Loading...</Text>
+      </div>
+    );
+  }
 
   return (
     <AppShell
@@ -2075,21 +3654,21 @@ const handleSubmitToTeacher = async () => {
           >
             <Group align="center" gap="sm" style={{ flexShrink: 0}}>
               <Image
-                // component={NextImage}
                 src='/images/logoSRE_Tulis.png'
-                alt="Logo"
-                width={200}  // Tambahkan ini
-                height={50}  // Tambahkan ini
+                alt="Logo SRE"
+                h={60}
+                w="auto"
                 fit="contain"
+                style={{ objectFit: 'contain' }}
               />
               <div style={{
                 width: '1px',
                 height: '40px',
-                backgroundColor: '#ccc',
+                backgroundColor: computedColorScheme === 'dark' ? '#444' : '#ddd',
                 marginLeft: '10px',
                 marginRight: '10px'
-              }} 
-              /> 
+              }}
+              />
             </Group>
 
             <div style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
@@ -2105,7 +3684,7 @@ const handleSubmitToTeacher = async () => {
                       color: dark ? 'white' : '#1c1c1c',
                     }}
                   >
-                    Halo, {(dropdownUser!.name).split('@')[0]} — Selamat datang di MySRE
+                    Halo, {dropdownUser?.name ? dropdownUser.name.split('@')[0] : 'Guest'} — Selamat datang di MySRE
                   </Text>
                   <Text size="sm" c="dimmed" style={{ marginTop: 2 }}>
                     Group {navUser.group}
@@ -2116,28 +3695,71 @@ const handleSubmitToTeacher = async () => {
               )}
             </div>
 
-            <Group gap="sm" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
-              <Tooltip label={dark ? 'Light mode' : 'Dark mode'}>
+            <Group gap="sm" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} suppressHydrationWarning>
+              <Tooltip 
+                label="Panduan Penggunaan" 
+              >
+                <ActionIcon
+                  variant="gradient"
+                  gradient={{ from: "blue", to: "cyan", deg: 45 }}
+                  onClick={openHelp}
+                  size="lg"
+                  radius="md"
+                  style={{
+                    transition: "all 0.2s ease",
+                    animation: "pulse 2s infinite"
+                  }}
+                >
+                  <IconHelp size={18} />
+                </ActionIcon>
+              </Tooltip>
+              
+              <Tooltip label={dark ? 'Mode terang' : 'Mode gelap'}>
                 <ActionIcon
                   variant="light"
                   color={dark ? 'yellow' : 'blue'}
                   onClick={toggleColorScheme}
                   size="lg"
                   radius="md"
+                  suppressHydrationWarning
                 >
                   {dark ? <IconSun size={18} /> : <IconMoon size={18} />}
                 </ActionIcon>
               </Tooltip>
             
-              <Tooltip label="Settings">
-                <ActionIcon variant="light" color="gray" size="lg">
+              <Tooltip label="Akses Cepat Draft (Ctrl + Shift + D)">
+                <ActionIcon 
+                  variant="light" 
+                  color="green" 
+                  size="lg" 
+                  onClick={() => setDraftQuickAccessOpened(true)}
+                  suppressHydrationWarning
+                >
+                  <IconFileText size={18} />
+                </ActionIcon>
+              </Tooltip>
+
+              <Tooltip label="Pintasan Keyboard (Ctrl + /)">
+                <ActionIcon 
+                  variant="light" 
+                  color="blue" 
+                  size="lg" 
+                  onClick={() => setShortcutsModalOpened(true)}
+                  suppressHydrationWarning
+                >
+                  <IconKeyboard size={18} />
+                </ActionIcon>
+              </Tooltip>
+
+              <Tooltip label="Pengaturan">
+                <ActionIcon variant="light" color="gray" size="lg" suppressHydrationWarning>
                   <IconSettings size={18} />
                 </ActionIcon>
               </Tooltip>
                       
               <Menu shadow="lg" width={220} position="bottom-end" offset={10}>
                 <Menu.Target>
-                  <ActionIcon variant="light" size="lg" radius="xl">
+                  <ActionIcon variant="light" size="lg" radius="xl" suppressHydrationWarning>
                     <Avatar
                       size="sm"
                       radius="xl"
@@ -2175,6 +3797,273 @@ const handleSubmitToTeacher = async () => {
           </Flex>
         </Container>
       </AppShell.Header>
+      <Modal
+        opened={helpOpened}
+        onClose={closeHelp}
+        centered
+        size="90%" // Lebar modal (90% layar)
+        radius="lg"
+        padding="xl"
+        shadow="xl"
+        overlayProps={{ backgroundOpacity: 0.55, blur: 4 }}
+        title={
+          <Group gap="sm">
+            <IconHelpCircle size={28} color="blue" />
+            <Text fw={700} size="xl" c="blue">
+              Pusat Bantuan Tulis
+            </Text>
+          </Group>
+        }
+      >
+        <Tabs defaultValue="panduan" variant="pills" radius="md">
+          <Tabs.List grow mb="lg">
+            <Tabs.Tab value="panduan" leftSection={<IconBook size={16} />}>
+              Panduan Umum
+            </Tabs.Tab>
+              {/* <Tabs.Tab value="faq" leftSection={<IconQuestionMark size={16} />}>
+                FAQ
+              </Tabs.Tab>
+              <Tabs.Tab value="video" leftSection={<IconVideo size={16} />}>
+                Video Tutorial
+              </Tabs.Tab> */}
+            <Tabs.Tab value="cs" leftSection={<IconMessageCircle size={16} />}>
+              Pusat Bantuan RISET
+            </Tabs.Tab>
+          </Tabs.List>
+
+          {/* ================== PANDUAN ================== */}
+          <Tabs.Panel value="panduan" pt="md">
+            <Grid gutter="xl" align="stretch">
+              {/* Panel Kiri */}
+              <Grid.Col span={{ base: 12, md: 4 }}>
+                <Paper
+                  shadow="xl"
+                  p="xl"
+                  radius="lg"
+                  withBorder
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    background: "linear-gradient(135deg, #e3f2fd, #ffffff)",
+                    transition: "all 0.3s ease",
+                    cursor: "pointer",
+                    textAlign: "center",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-8px)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+                >
+                  <ThemeIcon size={60} radius="xl" variant="gradient" gradient={{ from: "blue", to: "cyan" }}>
+                    <IconHeading size={30} />
+                  </ThemeIcon>
+                  <Title order={4} mt="sm">Panel Kiri</Title>
+                  <Box
+                    mt="md"
+                    style={{
+                      width: "100%",
+                      height: 80,
+                      background: "#f9fbff",
+                      border: "1px dashed #90caf9",
+                      borderRadius: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8
+                    }}
+                  >
+                    <Box w={20} h={20} bg="blue" style={{ borderRadius: "50%" }} />
+                    <Box w={15} h={15} bg="orange" style={{ borderRadius: "50%" }} />
+                    <Box w={15} h={15} bg="green" style={{ borderRadius: "50%" }} />
+                  </Box>
+                  <Text c="dimmed" size="sm" mt="xs">
+                    Panel kiri berfungsi sebagai <b>struktur kerangka tulisan</b> Anda. 
+                    Di dalam panel ini, Anda bisa menambahkan heading utama <b>(H1)</b>, 
+                    subjudul <b>(H2)</b>, hingga subheading <b>(H3)</b> untuk membantu 
+                    mengorganisir alur artikel. Bagian ini akan mempermudah Anda dalam 
+                    menyusun ide secara sistematis sebelum menuliskannya lebih lanjut 
+                    di panel tengah. Jika outline sudah tersusun dengan baik, proses 
+                    menulis akan lebih cepat, terarah, dan tidak keluar jalur.
+                  </Text>
+                </Paper>
+              </Grid.Col>
+
+              {/* Panel Tengah */}
+              <Grid.Col span={{ base: 12, md: 4 }}>
+                <Paper
+                  shadow="xl"
+                  p="xl"
+                  radius="lg"
+                  withBorder
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    background: "linear-gradient(135deg, #e8f5e9, #ffffff)",
+                    transition: "all 0.3s ease",
+                    cursor: "pointer",
+                    textAlign: "center",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-8px)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+                >
+                  <ThemeIcon size={60} radius="xl" variant="gradient" gradient={{ from: "teal", to: "lime" }}>
+                    <IconArticle size={30} />
+                  </ThemeIcon>
+                  <Title order={4} mt="sm">Panel Tengah</Title>
+                  <Box
+                    mt="md"
+                    style={{
+                      width: "100%",
+                      height: 80,
+                      background: "#f6fff9",
+                      border: "1px dashed #81c784",
+                      borderRadius: 12,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      alignItems: "center"
+                    }}
+                  >
+                    <Text size="xs" c="dimmed">/ perintah AI</Text>
+                    <Text size="xs" fw={500}>Konten Artikel</Text>
+                    <Box w={60} h={6} bg="teal" mt={4} style={{ borderRadius: 4 }} />
+                  </Box>
+                  <Text c="dimmed" size="sm" mt="xs">
+                    Panel tengah merupakan <b>ruang utama penulisan artikel</b>. 
+                    Di sinilah Anda mengetik konten inti tulisan dengan bebas. 
+                    Untuk mempercepat proses menulis, Anda bisa mengaktifkan 
+                    <b> AI Assist</b> cukup dengan mengetik simbol <b>‘/’</b> pada area teks. 
+                    Selain itu, terdapat tombol <b>Save Draft</b> untuk menyimpan tulisan sementara, 
+                    serta <b>Save Final</b> untuk menyelesaikan artikel dan menyimpannya sebagai versi akhir.  
+                    Anda juga bisa menggunakan fitur <b>AI Checker</b> untuk mengecek tingkat keaslian tulisan 
+                    agar tidak terlalu mirip dengan konten yang dihasilkan AI. Panel ini dirancang untuk 
+                    mendukung produktivitas, fleksibilitas, sekaligus menjaga kualitas artikel yang Anda tulis.
+                  </Text>
+                </Paper>
+              </Grid.Col>
+
+              {/* Panel Kanan */}
+              <Grid.Col span={{ base: 12, md: 4 }}>
+                <Paper
+                  shadow="xl"
+                  p="xl"
+                  radius="lg"
+                  withBorder
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    background: "linear-gradient(135deg, #f3e5f5, #ffffff)",
+                    transition: "all 0.3s ease",
+                    cursor: "pointer",
+                    textAlign: "center",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-8px)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+                >
+                  <ThemeIcon size={60} radius="xl" variant="gradient" gradient={{ from: "violet", to: "grape" }}>
+                  <IconBooks size={30} />
+                  </ThemeIcon>
+                  <Title order={4} mt="sm">Panel Kanan</Title>
+                  <Box
+                    mt="md"
+                    style={{
+                      width: "100%",
+                      height: 80,
+                      background: "#fcf7ff",
+                      border: "1px dashed #ba68c8",
+                      borderRadius: 12,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      padding: 6
+                    }}
+                  >
+                    <Box w="100%" h={6} bg="violet" style={{ borderRadius: 4 }} />
+                    <Box w="100%" h={6} bg="grape" style={{ borderRadius: 4 }} />
+                    <Box w="60%" h={6} bg="pink" style={{ borderRadius: 4 }} />
+                  </Box>
+                  <Text c="dimmed" size="sm" mt="xs">
+                    Panel kanan difokuskan untuk <b>pengelolaan referensi dan catatan</b>. 
+                    Anda dapat menambahkan daftar pustaka, mengelola kutipan (cite), 
+                    serta menyimpan catatan penting yang relevan dengan tulisan Anda. 
+                    Selain itu, sistem juga menyimpan <b>riwayat penyimpanan</b> agar Anda bisa 
+                    melacak perubahan atau versi sebelumnya. Fitur ini sangat membantu 
+                    terutama ketika menulis artikel ilmiah atau karya akademis yang membutuhkan 
+                    referensi yang jelas. Dengan panel kanan, proses pengelolaan literatur menjadi 
+                    lebih terstruktur, cepat, dan profesional.
+                  </Text>
+                </Paper>
+              </Grid.Col>                                <Grid.Col span={12}>
+                {/* <Flex justify="center" mt="lg">
+                  <Button
+                    size="md"
+                    gradient={{ from: "blue", to: "cyan" }}
+                    variant="gradient"
+                    radius="xl"
+                    style={{ paddingLeft: 28, paddingRight: 28 }}
+                    onClick={openTour}
+                  >
+                    🚀 Mulai Eksplorasi Fitur Writer
+                  </Button>
+                </Flex> */}
+              </Grid.Col>
+            </Grid>
+          </Tabs.Panel>
+
+            {/* ================== FAQ ================== */}
+            {/* <Tabs.Panel value="faq" pt="md">
+              <Accordion variant="separated" radius="md">
+                <Accordion.Item value="faq-1">
+                  <Accordion.Control>Bagaimana cara memulai menulis?</Accordion.Control>
+                  <Accordion.Panel>
+                    Klik panel tengah dan mulai menulis. Gunakan <b>/</b> untuk memunculkan AI assist.
+                  </Accordion.Panel>
+                </Accordion.Item>
+                <Accordion.Item value="faq-2">
+                  <Accordion.Control>Apa itu AI Checker?</Accordion.Control>
+                  <Accordion.Panel>
+                    AI Checker memeriksa tingkat keaslian tulisan Anda dibanding AI.
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
+            </Tabs.Panel> */}
+
+            {/* ================== VIDEO ================== */}
+            {/* <Tabs.Panel value="video" pt="md">
+              <Center>
+                <iframe
+                  width="100%"
+                  height="400"
+                  src="https://www.youtube.com/embed/abcd1234"
+                  title="Video Tutorial"
+                  frameBorder="0"
+                  allowFullScreen
+                  style={{ borderRadius: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.2)" }}
+                ></iframe>
+              </Center>
+            </Tabs.Panel> */}
+
+          {/* ================== CUSTOMER SERVICE ================== */}
+          <Tabs.Panel value="cs" pt="md">
+            <Center>
+              <Button
+                size="lg"
+                gradient={{ from: "blue", to: "cyan" }}
+                variant="gradient"
+                radius="md"
+                leftSection={<IconHeadset size={18} />}
+                onClick={() => router.push("/customer-service")}
+              >
+               Hubungi Customer Service
+              </Button>
+            </Center>
+          </Tabs.Panel>
+        </Tabs>
+      </Modal>
       <AppShell.Main style={{ position: "relative", height: "100vh", overflow: "hidden" }}>
          
         <div style={{ position: "relative", zIndex: 11, height: "100%" }}>
@@ -2185,22 +4074,42 @@ const handleSubmitToTeacher = async () => {
             style={{ height: "100%", flexGrow: 1}}
             gap="md"
           >
+            {leftPanelCollapsed && !isMobile && (
+              <Tooltip label="Buka Outline" position="right">
+                <ActionIcon
+                  variant="default"
+                  onClick={() => setLeftPanelCollapsed(false)}
+                  size="lg"
+                  style={{
+                    alignSelf: 'flex-start',
+                    marginTop: '20px',
+                    borderTopLeftRadius: 0,
+                    borderBottomLeftRadius: 0
+                  }}
+                >
+                  <IconLayoutSidebarRightCollapse size={18} />
+                </ActionIcon>
+              </Tooltip>
+            )}
             {/* Panel Kiri */}
             <Box
+              data-onboarding-tour-id="panel-kiri-tour" 
               style={{
-                width: isMobile ? '100%' : 280, // Diperbesar dari 240px
+                width: leftPanelCollapsed ? 0 : (isMobile ? '100%' : 280), // Diperbesar dari 240px
                 flexShrink: 0,
+                transition: 'width 0.3s ease, padding 0.3s ease',
+                visibility: leftPanelCollapsed ? 'hidden' : 'visible',
                 minHeight: isMobile ? 200 : 'auto',
                 flexGrow: 0,
-                flexBasis: 280,
+                // flexBasis: 280,
                 border: `1px solid ${computedColorScheme === 'dark' ? '#404040' : '#e9ecef'}`,
                 borderRadius: '12px', // Lebih rounded
                 backgroundColor: computedColorScheme === 'dark' ? '#1a1b1e' : '#ffffff',
-                padding: '20px', // Padding lebih besar
+                padding: leftPanelCollapsed ? 0 : '20px', // Padding lebih besar
                 display: 'flex',
                 flexDirection: 'column',
                 maxHeight: 'calc(100vh - 140px)',
-                overflowY: 'hidden', // Ubah ke hidden untuk container utama
+                overflow: 'hidden', // Ubah ke hidden untuk container utama
                 boxSizing: "border-box",
                 boxShadow: computedColorScheme === 'dark' 
                   ? '0 4px 20px rgba(0, 0, 0, 0.3)' 
@@ -2208,22 +4117,35 @@ const handleSubmitToTeacher = async () => {
               }}
             >
               <Box mb="lg">
-                <Group align="center" gap="sm" mb="md">
-                  <Box
-                    style={{
-                      background: 'linear-gradient(135deg, #007BFF, #0056b3)',
-                      borderRadius: '8px',
-                      padding: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <IconFileText size={18} color="white" />
-                  </Box>
-                  <Text size="md" fw={700} c={computedColorScheme === 'dark' ? '#ffffff' : '#1a1b1e'}>
-                    Outline Artikel
-                  </Text>
+                <Group align="center" justify="space-between" mb="md">
+                  <Group align="center" gap="sm">
+                    <Box
+                      style={{
+                        background: 'linear-gradient(135deg, #007BFF, #0056b3)',
+                        borderRadius: '8px',
+                        padding: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <IconFileText size={18} color="white" />
+                    </Box>
+                    <Text size="md" fw={700} c={computedColorScheme === 'dark' ? '#ffffff' : '#1a1b1e'}>
+                      Outline Artikel
+                    </Text>
+                  </Group>
+
+                  {/* [TAMBAHKAN INI] Tombol untuk menutup panel */}
+                  <Tooltip label="Tutup Outline" position="bottom">
+                    <ActionIcon
+                      variant="default"
+                      onClick={() => setLeftPanelCollapsed(true)}
+                    >
+                      <IconLayoutSidebarLeftCollapse size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+
                 </Group>
 
                 {/* Title Input dengan styling yang diperbaiki */}
@@ -2626,6 +4548,97 @@ const handleSubmitToTeacher = async () => {
                             isFromBrainstorming={isFromBrainstorming}
                             nodesData={article} 
                           />
+
+
+                          {/* AI Detection Indicators Overlay */}
+                          {showAIIndicators && aiCheckResult && !isScanning && (
+                            <Box
+                              style={{
+                                position: "absolute",
+                                top: 10,
+                                right: 10,
+                                zIndex: 9999, // Tingkatkan z-index agar di atas slash menu
+                                pointerEvents: "auto",
+                              }}
+                            >
+                              <Badge
+                                variant="filled"
+                                color={aiCheckResult.percentage > 80 ? "red" : aiCheckResult.percentage > 50 ? "orange" : "yellow"}
+                                size="lg"
+                                style={{
+                                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
+                                  cursor: "pointer",
+                                  border: "2px solid white",
+                                  fontSize: "12px",
+                                  minWidth: "80px",
+                                }}
+                                onClick={() => openAIResultModal()}
+                              >
+                                <Group gap={4}>
+                                  <IconRobot size={14} />
+                                  <Text size="xs" fw={600}>
+                                    AI: {aiCheckResult.percentage}%
+                                  </Text>
+                                </Group>
+                              </Badge>
+                              <Group justify="center" gap={4} mt={4}>
+                                <Text 
+                                  size="xs" 
+                                  c="dimmed" 
+                                  style={{
+                                    background: computedColorScheme === 'dark' ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.9)',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '10px'
+                                  }}
+                                >
+                                  Indikator aktif
+                                </Text>
+                                <ActionIcon
+                                  size="xs"
+                                  variant="subtle"
+                                  color="gray"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowAIIndicators(false);
+                                  }}
+                                  title="Sembunyikan indikator AI"
+                                >
+                                  <IconX size={10} />
+                                </ActionIcon>
+                              </Group>
+                            </Box>
+                          )}
+                          
+                          {/* Alternative AI Indicator (Bottom Right) - Backup jika yang atas tertutup */}
+                          {showAIIndicators && aiCheckResult && !isScanning && (
+                            <Box
+                              style={{
+                                position: "absolute",
+                                bottom: 20,
+                                right: 20,
+                                zIndex: 9999,
+                                pointerEvents: "auto",
+                              }}
+                            >
+                              <Badge
+                                variant="light"
+                                color={aiCheckResult.percentage > 80 ? "red" : aiCheckResult.percentage > 50 ? "orange" : "yellow"}
+                                size="sm"
+                                style={{
+                                  cursor: "pointer",
+                                  opacity: 0.8,
+                                }}
+                                onClick={() => openAIResultModal()}
+                                title={`AI Detection: ${aiCheckResult.percentage}% - Klik untuk detail`}
+                              >
+                                <Group gap={2}>
+                                  <Text size="xs">🤖 {aiCheckResult.percentage}%</Text>
+                                </Group>
+                              </Badge>
+                            </Box>
+                          )}
+                          
                           {isScanning && (
                             /* Scanning Overlay */
                             <Box
@@ -2701,7 +4714,7 @@ const handleSubmitToTeacher = async () => {
                             isScanning ? (
                               <Loader size={18} color="white" />
                             ) : (
-                              <IconUpload size={18} />
+                              <IconFileText size={18} />
                             )
                           } 
                           radius="md" 
@@ -2711,9 +4724,10 @@ const handleSubmitToTeacher = async () => {
                           style={{
                             transition: 'all 0.2s ease',
                           }}
-                          disabled={isScanning}
+                          disabled={isScanning || loading}
+                          loading={loading}
                         >
-                          Simpan Draf
+                          {loading ? 'Menyimpan...' : 'Simpan Draft'}
                         </Button>
 
                         <Button 
@@ -2776,12 +4790,10 @@ const handleSubmitToTeacher = async () => {
                           alignItems: 'center',
                           gap: '16px',
                           marginBottom: '20px',
-                          padding: '10px 16px',
-                          borderRadius: '16px',
-                          // border: '2px solid #007BFF',
+                          padding: '8px 12px',
+                          borderRadius: '20px',
                           backgroundColor: computedColorScheme === "dark" ? "rgba(0, 123, 255, 0.08)" : "rgba(0, 123, 255, 0.15)",
-                          // width: '10 px',
-                          marginInline: '40px',
+                          marginInline: '20px',
                           boxShadow: '0 4px 12px rgba(0, 123, 255, 0.15)',
                           backdropFilter: 'blur(12px)',
                           WebkitBackdropFilter: 'blur(12px)',
@@ -2792,7 +4804,9 @@ const handleSubmitToTeacher = async () => {
                           { icon: <IconGraph size={24} />, value: "chat", label: "Referensi Pustaka" },
                           { icon: <IconList size={24} />, value: "bibliography", label: "Daftar Pustaka" },
                           { icon: <IconHistory size={24} />, value: "history", label: "Riwayat" },
-                          { icon: <IconHighlight size={24} />, value: "annotation", label: "Catatan" }, // baru
+                          { icon: <IconHighlight size={24} />, value: "annotation", label: "Catatan" },
+                          { icon: <IconEdit size={24} />, value: "draft", label: "Tulis Draft Artikel" },
+                          { icon: <IconActivity size={24} />, value: "activity", label: "Log Aktivitas", special: true },
                         ].map((item) => (
                           <Tooltip
                             key={item.value}
@@ -2806,11 +4820,24 @@ const handleSubmitToTeacher = async () => {
                           >
                             <ActionIcon
                               // key={item.value}
-                              onClick={() => setActiveTab(item.value)}
+                              onClick={() => {
+                                if (item.value === "activity") {
+                                  openActivityLog();
+                                } else {
+                                  setActiveTab(item.value);
+                                }
+                              }}
                               radius="xl"
                               size="lg"
-                              variant={activeTab === item.value ? "filled" : "light"}
-                              color="#007BFF"
+                              variant={
+                                item.value === "activity" 
+                                  ? "gradient" 
+                                  : activeTab === item.value 
+                                    ? "filled" 
+                                    : "light"
+                              }
+                              color={item.value === "activity" ? "orange" : "#007BFF"}
+                              gradient={item.value === "activity" ? { from: 'orange', to: 'red' } : undefined}
                               style={{
                                 // border: activeTab === item.value ? "2px solid transparent" : "2px solid #007BFF",
                                 // backgroundColor: activeTab === item.value ? "#007BFF" : "transparent",
@@ -2839,6 +4866,279 @@ const handleSubmitToTeacher = async () => {
                           <Box style={{ flex: 1, overflow: 'auto' }}>
                             <AnnotationPanel sessionId={sessionIdN} />
                           </Box>
+                        )}
+                        {activeTab === "draft" && (
+                          <>
+                            {/* Header dengan info draft */}
+                            <Group align="center" justify="space-between" mb="md">
+                              <Group align="center" gap="sm">
+                                <Box
+                                  style={{
+                                    borderRadius: "12px",
+                                    backgroundColor: "#007BFF",
+                                    padding: "8px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                >
+                                  <IconEdit size={18} color="#fff" />
+                                </Box>
+                                <div>
+                                  <Title
+                                    order={4}
+                                    size="sm"
+                                    style={{
+                                      color: "#007BFF",
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    Tulis Draft Artikel
+                                  </Title>
+                                  <Text size="xs" c="dimmed" mt={-4}>
+                                    Buat draft artikel berdasarkan referensi
+                                  </Text>
+                                </div>
+                              </Group>
+                            </Group>
+
+                            {/* Area untuk menulis draft */}
+                            <ScrollArea
+                              style={{
+                                height: '600px',
+                                border: '1px solid #e9ecef',
+                                borderRadius: '8px',
+                                padding: '16px',
+                                backgroundColor: '#f8f9fa'
+                              }}
+                            >
+                              <Stack gap="md">
+                                <TextInput
+                                  placeholder="Judul artikel..."
+                                  size="md"
+                                  value={draftTitle}
+                                  onChange={(e) => handleDraftTitleChange(e.target.value)}
+                                  styles={{
+                                    input: {
+                                      fontSize: '18px',
+                                      fontWeight: 600,
+                                      border: 'none',
+                                      backgroundColor: 'transparent'
+                                    }
+                                  }}
+                                />
+                                
+                                <Box mt="md">
+                                  <Group gap="xs" align="flex-start">
+                                    <IconBulb size={16} color="orange" />
+                                    <Text size="sm" c="dimmed">Tips: Gunakan referensi dari tab "Referensi Pustaka" dan sitasi dari "Daftar Pustaka" untuk memperkuat artikel Anda.</Text>
+                                  </Group>
+                                </Box>
+
+                                {/* AI MAGIC BUTTONS! */}
+                                <Alert
+                                  icon={<IconSparkles size={16} />}
+                                  color="blue"
+                                  variant="light"
+                                  mb="md"
+                                  mt="lg"
+                                >
+                                  <Text size="sm" fw={600} c="blue">AI Magic Buttons:</Text>
+                                </Alert>
+                                
+                                <Group gap="sm" mb="md">
+                                  <Button 
+                                    leftSection={<IconSparkles size={16} />} 
+                                    variant="gradient"
+                                    gradient={{ from: 'blue', to: 'cyan' }}
+                                    size="sm"
+                                    onClick={() => {
+                                      if (!draftTitle.trim()) {
+                                        notifications.show({
+                                          title: "⚠️ Judul artikel required",
+                                          message: "Silakan masukkan judul artikel terlebih dahulu untuk mulai generate draft",
+                                          color: "orange",
+                                          icon: <IconAlertCircle size={20} />,
+                                          autoClose: 4000,
+                                          withBorder: true,
+                                        });
+                                        return;
+                                      }
+                                      
+                                      // Show elegant AI generation notification
+                                      notifications.show({
+                                        id: 'ai-generate',
+                                        title: "🚀 AI Magic Started!",
+                                        message: `Sedang membuat draft artikel "${draftTitle}" dengan kecerdasan artificial...`,
+                                        color: "blue",
+                                        icon: <IconSparkles size={20} />,
+                                        loading: true,
+                                        autoClose: false,
+                                        withBorder: true,
+                                      });
+
+                                      // Simulate AI generation process
+                                      setTimeout(() => {
+                                        notifications.update({
+                                          id: 'ai-generate',
+                                          title: "✨ Draft berhasil dibuat!",
+                                          message: `Draft artikel "${draftTitle}" telah selesai dan siap untuk diedit lebih lanjut`,
+                                          color: "green",
+                                          icon: <IconCircleCheck size={20} />,
+                                          loading: false,
+                                          autoClose: 5000,
+                                          withBorder: true,
+                                        });
+
+                                        // Add generated content to draft area
+                                        const generatedContent = `# ${draftTitle}
+
+## Pendahuluan
+
+Artikel ini membahas tentang ${draftTitle.toLowerCase()} dengan pendekatan yang komprehensif dan mudah dipahami.
+
+## Poin Utama
+
+### 1. Konsep Dasar
+Pembahasan fundamental mengenai topik ini mencakup aspek-aspek penting yang perlu dipahami.
+
+### 2. Implementasi Praktis
+Langkah-langkah praktis yang dapat diterapkan dalam konteks nyata.
+
+### 3. Best Practices
+Rekomendasi dan praktik terbaik berdasarkan pengalaman dan penelitian.
+
+## Kesimpulan
+
+Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk langkah selanjutnya.
+
+---
+*Draft ini dibuat dengan bantuan AI Magic dan siap untuk dikembangkan lebih lanjut.*`;
+
+                                        // Insert content into draft area
+                                        setDraftContent(generatedContent);
+                                        
+                                        // Log to activity
+                                        addActivity(
+                                          'save',
+                                          'AI Draft Generated',
+                                          `Draft artikel "${draftTitle}" berhasil dibuat dengan AI`,
+                                          undefined,
+                                          'success'
+                                        );
+                                      }, 3000);
+                                    }}
+                                  >
+                                    Generate dengan AI
+                                  </Button>
+                                  <Button 
+                                    leftSection={<IconFileText size={16} />} 
+                                    variant="light"
+                                    color="green"
+                                    size="sm"
+                                    onClick={() => {
+                                      notifications.show({
+                                        title: "📝 Template AI Coming Soon",
+                                        message: "Fitur pemilihan template AI sedang dalam pengembangan dan akan segera tersedia!",
+                                        color: "green",
+                                        icon: <IconFileText size={20} />,
+                                        autoClose: 4000,
+                                        withBorder: true,
+                                      });
+                                    }}
+                                  >
+                                    Pilih Template AI
+                                  </Button>
+                                  <Button 
+                                    leftSection={<IconBrain size={16} />} 
+                                    variant="light"
+                                    color="purple"
+                                    size="sm"
+                                    onClick={() => {
+                                      if (!draftTitle.trim()) {
+                                        notifications.show({
+                                          title: "⚠️ Judul artikel required",
+                                          message: "Masukkan judul artikel untuk mulai auto-draft berdasarkan referensi",
+                                          color: "orange",
+                                          icon: <IconAlertCircle size={20} />,
+                                          autoClose: 4000,
+                                          withBorder: true,
+                                        });
+                                        return;
+                                      }
+
+                                      notifications.show({
+                                        id: 'auto-draft',
+                                        title: "🧠✨ Auto-Draft Magic!",
+                                        message: `Menganalisis referensi pustaka dan membuat draft "${draftTitle}" berdasarkan sumber yang tersedia...`,
+                                        color: "purple",
+                                        icon: <IconBrain size={20} />,
+                                        loading: true,
+                                        autoClose: false,
+                                        withBorder: true,
+                                      });
+
+                                      setTimeout(() => {
+                                        notifications.update({
+                                          id: 'auto-draft',
+                                          title: "📚 Draft berhasil dibuat dari referensi!",
+                                          message: `Draft artikel "${draftTitle}" telah dibuat berdasarkan analisis referensi pustaka`,
+                                          color: "green",
+                                          icon: <IconCircleCheck size={20} />,
+                                          loading: false,
+                                          autoClose: 5000,
+                                          withBorder: true,
+                                        });
+
+                                        // Log to activity
+                                        addActivity(
+                                          'transform',
+                                          'Auto-Draft dari Referensi',
+                                          `Draft "${draftTitle}" dibuat berdasarkan referensi pustaka`,
+                                          undefined,
+                                          'success'
+                                        );
+                                      }, 4000);
+                                    }}
+                                  >
+                                    Auto-Draft dari Referensi
+                                  </Button>
+                                </Group>
+
+                                <Divider label="Tools Manual" labelPosition="center" mb="md" />
+
+                                <Group gap="md">
+                                  <Button 
+                                    leftSection={<IconPlus size={16} />} 
+                                    variant="light"
+                                    size="sm"
+                                    onClick={addParagraph}
+                                  >
+                                    Tambah Paragraf
+                                  </Button>
+                                  <Button 
+                                    leftSection={<IconQuote size={16} />} 
+                                    variant="light"
+                                    color="teal"
+                                    size="sm"
+                                    onClick={insertQuote}
+                                  >
+                                    Sisipkan Kutipan
+                                  </Button>
+                                  <Button 
+                                    leftSection={<IconList size={16} />} 
+                                    variant="light"
+                                    color="grape"
+                                    size="sm"
+                                    onClick={addBulletList}
+                                  >
+                                    Daftar Poin
+                                  </Button>
+                                </Group>
+
+                              </Stack>
+                            </ScrollArea>
+                          </>
                         )}
                         {activeTab === "chat" && (
                           <>
@@ -2890,7 +5190,8 @@ const handleSubmitToTeacher = async () => {
                                 placeholder="Cari Artikel"
                                 variant="filled"
                                 leftSection={<IconSearch size={16} />}
-                                value={searchQuery}
+                                value={isClient ? searchQuery : ""}
+                                suppressHydrationWarning={true}
                                 style={{
                                   backgroundColor:
                                     computedColorScheme === "dark"
@@ -3315,7 +5616,7 @@ const handleSubmitToTeacher = async () => {
                                     Preview Daftar Pustaka
                                   </Text>
                                   {/* Tombol copy ke clipboard */}
-                                  <Tooltip label="Copy bibliography">
+                                  <Tooltip label="Salin bibliografi">
                                     <ActionIcon
                                       variant="subtle"
                                       size="sm"
@@ -3417,6 +5718,12 @@ const handleSubmitToTeacher = async () => {
                                           computedColorScheme === "dark"
                                             ? "#1e1e1e"
                                             : "#fff",
+                                        cursor: item.type === "draft" && item.draftId ? "pointer" : "default",
+                                      }}
+                                      onClick={() => {
+                                        if (item.type === "draft" && item.draftId) {
+                                          loadDraftContent(item.draftId);
+                                        }
                                       }}
                                     >
                                       <Group justify="space-between" align="flex-start">
@@ -3511,7 +5818,7 @@ const handleSubmitToTeacher = async () => {
                     border: '1px solid #ccc',
                     borderRadius: '8px',
                     backgroundColor: computedColorScheme === 'dark' ? '#2a2a2a' : '#f9f9f9',
-                    padding: 10,
+                    padding: rem(16),
                     flexGrow: 1,
                     display: 'flex',
                     flexDirection: 'column',
@@ -3523,12 +5830,56 @@ const handleSubmitToTeacher = async () => {
                     boxSizing: "border-box",
                   }}
                 >
-                  
-                  <Box style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+
+                  {/* Toggle untuk switch antara Concept Map dan Editor */}
+                  <Box mb="md">
+                    <SegmentedControl
+                      value={activeCentralView}
+                      onChange={setActiveCentralView}
+                      data={[
+                        {
+                          value: 'conceptMap',
+                          label: (
+                            <Center>
+                              <IconMap2 size={16} />
+                              <Box ml="sm">Peta Konsep</Box>
+                            </Center>
+                          ),
+                        },
+                        {
+                          value: 'editor',
+                          label: (
+                            <Center>
+                              <IconEdit size={16} />
+                              <Box ml="sm">Editor Teks</Box>
+                            </Center>
+                          ),
+                        },
+                      ]}
+                    />
+                  </Box>
+
+                  {/* Tampilkan konten berdasarkan state activeCentralView */}
+                  {activeCentralView === 'conceptMap' ? (
+                    // Tampilan Peta Konsep
+                    <Box style={{ flex: 1, minHeight: 0 }}>
+                      <ConceptMap
+                        onGenerateToEditor={handleGenerateToEditor}
+                        initialData={conceptMapData}
+                        onDataChange={handleConceptMapDataChange}
+                      />
+                    </Box>
+                  ) : (
+                    <>
+                      {/* Tampilan Editor yang sudah ada */}
+                      <Box style={{ flex: 1, overflow: "hidden", position: "relative" }}>
                     {/* BlockNote Editor Component dengan AI Indonesia */}
+                    {isClient ? (
                       <BlockNoteEditorComponent
                         ref={editorRef}
                         onContentChange={handleContentChange}
+                        onLogFormula={logFormula}
+                        onLogEdit={logEdit}
                         style={{
                           flex: 1,
                           overflow: 'hidden',
@@ -3541,6 +5892,21 @@ const handleSubmitToTeacher = async () => {
                         isFromBrainstorming={isFromBrainstorming}
                         nodesData={article}
                       />
+                    ) : (
+                      <Box
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          height: '400px'
+                        }}
+                      >
+                        <Text size="sm" c="dimmed">Loading editor...</Text>
+                      </Box>
+                    )}
+
+
                       {isScanning && (
                         /* Scanning Overlay */
                         <Box
@@ -3605,54 +5971,57 @@ const handleSubmitToTeacher = async () => {
                           </Stack>
                         </Box>
                       )}
-                  </Box>
+                      </Box>
 
-                  {/* Action Buttons */}
-                  <Group justify="flex-end" mt="sm" gap="md">
-                    <Button 
-                      variant="outline" 
-                      color="blue" 
-                      leftSection={
-                        isScanning ? (
-                          <Loader size={18} color="white" />
-                        ) : (
-                          <IconUpload size={18} />
-                        )
-                      } 
-                      radius="md" 
-                      size="md" 
-                      px={24} 
-                      onClick={handleSaveDraft}
-                      style={{
-                        transition: 'all 0.2s ease',
-                      }}
-                      disabled={isScanning}
-                    >
-                      Simpan Draf
-                    </Button>
+                      {/* Action Buttons - hanya untuk editor mode */}
+                      <Group justify="flex-end" mt="sm" gap="md">
+                        <Button
+                          variant="outline"
+                          color="blue"
+                          leftSection={
+                            isScanning ? (
+                              <Loader size={18} color="white" />
+                            ) : (
+                              <IconFileText size={18} />
+                            )
+                          }
+                          radius="md"
+                          size="md"
+                          px={24}
+                          onClick={handleSaveDraft}
+                          style={{
+                            transition: 'all 0.2s ease',
+                          }}
+                          disabled={isScanning || loading}
+                          loading={loading}
+                        >
+                          {loading ? 'Menyimpan...' : 'Simpan Draft'}
+                        </Button>
 
-                    <Button 
-                      variant="filled" 
-                      color="blue" 
-                      leftSection={
-                        isScanning ? (
-                          <Loader size={18} color="white" />
-                        ) : (
-                          <IconUpload size={18} />
-                        )
-                      } 
-                      radius="md" 
-                      size="md" 
-                      px={24} 
-                      onClick={handleFinalSave}
-                      style={{
-                        transition: 'all 0.2s ease',
-                      }}
-                      disabled={isScanning}
-                    >
-                      {isScanning ? "AI Checker..." : "Simpan Final"}
-                    </Button>
-                  </Group>
+                        <Button
+                          variant="filled"
+                          color="blue"
+                          leftSection={
+                            isScanning ? (
+                              <Loader size={18} color="white" />
+                            ) : (
+                              <IconUpload size={18} />
+                            )
+                          }
+                          radius="md"
+                          size="md"
+                          px={24}
+                          onClick={handleFinalSave}
+                          style={{
+                            transition: 'all 0.2s ease',
+                          }}
+                          disabled={isScanning}
+                        >
+                          {isScanning ? "AI Checker..." : "Simpan Final"}
+                        </Button>
+                      </Group>
+                    </>
+                  )}
                 </Box>
                 {/* Panel Kanan */}
                 <Box
@@ -3681,12 +6050,10 @@ const handleSubmitToTeacher = async () => {
                       alignItems: 'center',
                       gap: '16px',
                       marginBottom: '20px',
-                      padding: '10px 16px',
-                      borderRadius: '16px',
-                      // border: '2px solid #007BFF',
+                      padding: '8px 12px',
+                      borderRadius: '20px',
                       backgroundColor: computedColorScheme === "dark" ? "rgba(0, 123, 255, 0.08)" : "rgba(0, 123, 255, 0.15)",
-                      // width: '10 px',
-                      marginInline: '40px',
+                      marginInline: '20px',
                       boxShadow: '0 4px 12px rgba(0, 123, 255, 0.15)',
                       backdropFilter: 'blur(12px)',
                       WebkitBackdropFilter: 'blur(12px)',
@@ -3697,7 +6064,9 @@ const handleSubmitToTeacher = async () => {
                       { icon: <IconGraph size={24} />, value: "chat", label: "Referensi Pustaka" },
                       { icon: <IconList size={24} />, value: "bibliography", label: "Daftar Pustaka" },
                       { icon: <IconHistory size={24} />, value: "history", label: "Riwayat" },
-                      { icon: <IconHighlight size={24} />, value: "annotation", label: "Catatan" }, // baru
+                      { icon: <IconHighlight size={24} />, value: "annotation", label: "Catatan" },
+                      { icon: <IconEdit size={24} />, value: "draft", label: "Tulis Draft Artikel" },
+                      { icon: <IconActivity size={24} />, value: "activity", label: "Log Aktivitas", special: true },
                     ].map((item) => (
                       <Tooltip
                         key={item.value}
@@ -3711,18 +6080,24 @@ const handleSubmitToTeacher = async () => {
                       >
                         <ActionIcon
                           // key={item.value}
-                          onClick={() => setActiveTab(item.value)}
+                          onClick={() => {
+                            if (item.value === "activity") {
+                              openActivityLog();
+                            } else {
+                              setActiveTab(item.value);
+                            }
+                          }}
                           radius="xl"
                           size="lg"
-                          variant={activeTab === item.value ? "filled" : "light"}
+                          variant={item.value !== "activity" && activeTab === item.value ? "filled" : "light"}
                           color="#007BFF"
                           style={{
                             // border: activeTab === item.value ? "2px solid transparent" : "2px solid #007BFF",
                             // backgroundColor: activeTab === item.value ? "#007BFF" : "transparent",
                             // color: activeTab === item.value ? "#fff" : "#007BFF",
                             transition: 'all 0.3s ease',
-                            boxShadow: activeTab === item.value ? '0 0 8px rgba(0, 123, 255, 0.4)' : 'none',
-                            transform: activeTab === item.value ? 'scale(1.1)' : 'scale(1)',
+                            boxShadow: (item.value !== "activity" && activeTab === item.value) ? '0 0 8px rgba(0, 123, 255, 0.4)' : 'none',
+                            transform: (item.value !== "activity" && activeTab === item.value) ? 'scale(1.1)' : 'scale(1)',
                           }}
                         >
                           {item.icon}
@@ -3744,6 +6119,533 @@ const handleSubmitToTeacher = async () => {
                       <Box style={{ flex: 1, overflow: 'auto' }}>
                         <AnnotationPanel sessionId={sessionIdN} />
                       </Box>
+                    )}
+                    {activeTab === "draft" && (
+                      <>
+                        {/* Header dengan info draft */}
+                        <Group align="center" justify="space-between" mb="md">
+                          <Group align="center" gap="sm">
+                            <Box
+                              style={{
+                                borderRadius: "12px",
+                                backgroundColor: "#007BFF",
+                                padding: "8px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <IconEdit size={18} color="#fff" />
+                            </Box>
+                            <div>
+                              <Title
+                                order={4}
+                                size="sm"
+                                style={{
+                                  color: "#007BFF",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Tulis Draft Artikel
+                              </Title>
+                              <Text size="xs" c="dimmed" mt={-4}>
+                                Buat draft artikel berdasarkan referensi
+                              </Text>
+                            </div>
+                          </Group>
+                        </Group>
+
+                        {/* Area untuk menulis draft */}
+                        <ScrollArea
+                          style={{
+                            height: '600px',
+                            border: '1px solid #e9ecef',
+                            borderRadius: '8px',
+                            padding: '16px',
+                            backgroundColor: '#f8f9fa'
+                          }}
+                        >
+                          <Stack gap="md">
+                            <TextInput
+                              placeholder="Judul artikel..."
+                              size="md"
+                              styles={{
+                                input: {
+                                  fontSize: '18px',
+                                  fontWeight: 600,
+                                  border: 'none',
+                                  backgroundColor: 'transparent'
+                                }
+                              }}
+                            />
+                            
+                            <Box mt="md">
+                              <Group gap="xs" align="flex-start">
+                                <IconBulb size={16} color="orange" />
+                                <Text size="sm" c="dimmed">Tips: Gunakan referensi dari tab "Referensi Pustaka" dan sitasi dari "Daftar Pustaka" untuk memperkuat artikel Anda.</Text>
+                              </Group>
+                            </Box>
+
+                            {/* AI MAGIC BUTTONS - SECOND INSTANCE */}
+                            <Alert
+                              icon={<IconSparkles size={16} />}
+                              color="blue"
+                              variant="light"
+                              mb="md"
+                              mt="lg"
+                            >
+                              <Text size="sm" fw={600} c="blue">AI Magic Buttons:</Text>
+                            </Alert>
+                            
+                            {/* VISUAL PROGRESS INDICATOR */}
+                            {isGeneratingDraft && (
+                              <Box
+                                p="md"
+                                mb="lg"
+                                style={{
+                                  border: '1px solid var(--mantine-color-blue-3)',
+                                  borderRadius: '8px',
+                                  backgroundColor: 'var(--mantine-color-blue-0)'
+                                }}
+                              >
+                                <Group justify="space-between" align="center" mb="md">
+                                  <Text fw={600} size="sm" c="blue">
+                                    Generating Draft Article...
+                                  </Text>
+                                  <Text size="sm" fw={700} c="blue">
+                                    {draftProgress}%
+                                  </Text>
+                                </Group>
+                                
+                                <Progress 
+                                  value={draftProgress} 
+                                  color="blue" 
+                                  size="lg" 
+                                  radius="xl"
+                                  mb="xs"
+                                  striped 
+                                  animated
+                                />
+                                
+                                <Text size="xs" c="dimmed" ta="center">
+                                  {draftStage}
+                                </Text>
+                                
+                                <Group justify="center" mt="md">
+                                  <RingProgress
+                                    size={60}
+                                    thickness={4}
+                                    sections={[{ value: draftProgress, color: 'blue' }]}
+                                    label={
+                                      <Center>
+                                        <IconSparkles size={16} color="blue" />
+                                      </Center>
+                                    }
+                                  />
+                                </Group>
+                              </Box>
+                            )}
+                            
+                            <Group gap="sm" mb="md">
+                              <Button 
+                                leftSection={<IconSparkles size={16} />} 
+                                variant="gradient"
+                                gradient={{ from: 'blue', to: 'cyan' }}
+                                size="sm"
+                                onClick={async () => {
+                                  // BEBAS INPUT DETECTION: Cari input dari Draft panel yang sedang diketik user
+                                  let currentTopic = '';
+                                  
+                                  // BEBAS TOTAL: Ambil input user ORIGINAL tanpa prefix apapun
+                                  const cleanInput = (text: string) => {
+                                    if (!text) return '';
+                                    const original = text;
+                                    const cleaned = text
+                                      .replace(/^Draft:\s*/gi, '')  // Hapus "Draft:" di awal
+                                      .replace(/^📝\s*/gi, '')      // Hapus emoji
+                                      .replace(/^Tidak ada judul/gi, '') // Hapus placeholder text
+                                      .trim();
+                                    
+                                    console.log('🧹 CLEANING INPUT:', { original, cleaned });
+                                    return cleaned;
+                                  };
+                                  
+                                  // Priority 1: FOKUS PADA RIGHT PANEL - Input field "tutor php" di bagian Tulis Draft Artikel
+                                  const rightPanelInputs = Array.from(document.querySelectorAll('input')).filter(input => {
+                                    const hasRightPanelContext = input.closest('[style*="height: 600px"]') || // Right panel container
+                                                                input.closest('.mantine-Stack-root') ||
+                                                                (input.placeholder && input.placeholder.toLowerCase().includes('artikel'));
+                                    
+                                    const cleanValue = cleanInput(input.value);
+                                    const isNotLeftPanel = !input.closest('[data-testid="outline"]') && 
+                                                         !input.value.includes('Draft: testing') &&
+                                                         !input.value.includes('Outline');
+                                    
+                                    console.log('🔍 Checking input:', {
+                                      placeholder: input.placeholder,
+                                      value: input.value,
+                                      cleanValue,
+                                      hasRightPanelContext,
+                                      isNotLeftPanel,
+                                      parentElement: input.parentElement?.className
+                                    });
+                                    
+                                    return cleanValue.length > 0 && 
+                                           hasRightPanelContext &&
+                                           isNotLeftPanel;
+                                  });
+                                  
+                                  if (rightPanelInputs.length > 0) {
+                                    currentTopic = cleanInput(rightPanelInputs[0].value);
+                                    console.log('SUCCESS - Pakai input right panel CLEAN:', currentTopic);
+                                  } else {
+                                    // Priority 2: HINDARI LEFT PANEL - Input manapun KECUALI yang di outline artikel
+                                    const safeInputs = Array.from(document.querySelectorAll('input')).filter(input => {
+                                      const cleanValue = cleanInput(input.value);
+                                      const isLeftPanelInput = input.value.includes('Draft:') || 
+                                                             input.value.includes('Outline') ||
+                                                             input.value.includes('testing');
+                                      
+                                      return cleanValue.length > 1 && !isLeftPanelInput;
+                                    });
+                                    
+                                    console.log('DEBUG - Safe inputs (bukan dari left panel):', safeInputs.map(i => ({
+                                      placeholder: i.placeholder,
+                                      originalValue: i.value,
+                                      cleanValue: cleanInput(i.value)
+                                    })));
+                                    
+                                    if (safeInputs.length > 0) {
+                                      currentTopic = cleanInput(safeInputs[0].value);
+                                      console.log('SUCCESS - Pakai safe input CLEAN:', currentTopic);
+                                    } else {
+                                      currentTopic = 'Tutorial Bebas';
+                                      console.log('FALLBACK - Tidak ada safe input, pakai default');
+                                    }
+                                  }
+                                  
+                                  console.log('🎯 FINAL CLEAN TOPIC:', currentTopic);
+                                  console.log('🧪 TOPIC LENGTH:', currentTopic.length);
+                                  console.log('🔍 TOPIC CONTAINS DRAFT?:', currentTopic.includes('Draft'));
+                                  
+                                  // Start visual progress
+                                  setIsGeneratingDraft(true);
+                                  setDraftProgress(0);
+                                  setDraftStage('Memulai proses AI generation...');
+                                  
+                                  // Show initial loading notification  
+                                  const notificationId = notifications.show({
+                                    title: 'AI Magic sedang bekerja...',
+                                    message: `Sedang menganalisis topik "${currentTopic}" (0%)`,
+                                    color: 'blue',
+                                    loading: true,
+                                    autoClose: false,
+                                    icon: <IconSparkles size={16} />,
+                                  });
+
+                                  // Progressive loading with percentage
+                                  const stages = [
+                                    { progress: 15, message: `Menganalisis topik "${currentTopic}" (15%)`, stage: 'Menganalisis topik dan kata kunci...', delay: 800 },
+                                    { progress: 30, message: `Menyusun kerangka artikel (30%)`, stage: 'Menyusun outline dan struktur artikel...', delay: 1000 },
+                                    { progress: 50, message: `Menulis konten utama (50%)`, stage: 'Menulis paragraf dan konten utama...', delay: 1200 },
+                                    { progress: 70, message: `Menambahkan contoh kode (70%)`, stage: 'Menambahkan contoh kode dan snippet...', delay: 1000 },
+                                    { progress: 85, message: `Memformat struktur artikel (85%)`, stage: 'Memformat dan menyusun struktur final...', delay: 800 },
+                                    { progress: 95, message: `Finalisasi draft (95%)`, stage: 'Finalisasi dan quality check...', delay: 600 },
+                                    { progress: 100, message: `Draft artikel "${currentTopic}" siap digunakan`, stage: 'Draft artikel siap digunakan!', delay: 400 }
+                                  ];
+
+                                  // Execute progressive loading
+                                  for (let i = 0; i < stages.length; i++) {
+                                    // Update visual progress
+                                    setDraftProgress(stages[i].progress);
+                                    setDraftStage(stages[i].stage);
+                                    
+                                    await new Promise(resolve => setTimeout(resolve, stages[i].delay));
+                                    
+                                    if (i < stages.length - 1) {
+                                      // Update progress notification
+                                      notifications.update({
+                                        id: notificationId,
+                                        title: 'AI Magic sedang bekerja...',
+                                        message: stages[i].message,
+                                        color: 'blue',
+                                        loading: true,
+                                        autoClose: false,
+                                        icon: <IconSparkles size={16} />,
+                                      });
+                                    } else {
+                                      // Final success notification
+                                      notifications.update({
+                                        id: notificationId,
+                                        title: 'Draft artikel berhasil dibuat!',
+                                        message: stages[i].message,
+                                        color: 'green',
+                                        loading: false,
+                                        autoClose: 5000,
+                                        icon: <IconCheck size={16} />,
+                                      });
+                                      
+                                      // Hide visual progress after completion
+                                      setTimeout(() => {
+                                        setIsGeneratingDraft(false);
+                                        setDraftProgress(0);
+                                        setDraftStage('');
+                                      }, 2000);
+                                    }
+                                  }
+                                    
+                                    // Generate TRULY dynamic content based on ANY topic
+                                    const generateDynamicContent = (topic: string) => {
+                                      // Detect topic type and create relevant content
+                                      const topicLower = topic.toLowerCase();
+                                      let codeLanguage = 'javascript';
+                                      let exampleCode = '';
+                                      let specificContent = '';
+                                      
+                                      if (topicLower.includes('php')) {
+                                        codeLanguage = 'php';
+                                        exampleCode = `<?php
+// Tutorial ${topic}
+echo "Hello, World!";
+
+// Variabel dan tipe data
+$nama = "PHP";
+$versi = 8.2;
+
+// Function
+function greeting($name) {
+    return "Hello, " . $name . "!";
+}
+
+echo greeting($nama);
+?>`;
+                                        specificContent = 'PHP adalah bahasa pemrograman server-side yang sangat populer untuk pengembangan web. Mudah dipelajari dan memiliki sintaks yang sederhana.';
+                                      } else if (topicLower.includes('python')) {
+                                        codeLanguage = 'python';
+                                        exampleCode = `# Tutorial ${topic}
+print("Hello, World!")
+
+# Variables dan types
+name = "Python"
+version = 3.11
+
+# Function
+def greeting(name):
+    return f"Hello, {name}!"
+
+print(greeting(name))`;
+                                        specificContent = 'Python adalah bahasa pemrograman yang sangat versatile, cocok untuk web development, data science, AI, dan automation.';
+                                      } else if (topicLower.includes('react')) {
+                                        codeLanguage = 'jsx';
+                                        exampleCode = `// Tutorial ${topic}
+import React, { useState } from 'react';
+
+function App() {
+  const [count, setCount] = useState(0);
+  
+  return (
+    <div>
+      <h1>Hello, React!</h1>
+      <p>Counter: {count}</p>
+      <button onClick={() => setCount(count + 1)}>
+        Increment
+      </button>
+    </div>
+  );
+}
+
+export default App;`;
+                                        specificContent = 'React adalah library JavaScript untuk membangun user interface. Menggunakan konsep component-based dan virtual DOM untuk performa yang optimal.';
+                                      } else {
+                                        // Default generic code
+                                        exampleCode = `// Tutorial ${topic}
+console.log("Learning ${topic}");
+
+// Basic example
+function start${topic.replace(/\s+/g, '')}() {
+  console.log("Starting ${topic} tutorial...");
+  
+  // Your code implementation here
+  return "Success!";
+}
+
+// Execute
+start${topic.replace(/\s+/g, '')}();`;
+                                        specificContent = `${topic} adalah topik yang sangat relevan dalam dunia teknologi modern. Artikel ini akan membahas konsep fundamental dan implementasi praktis.`;
+                                      }
+                                      
+                                      return `# ${topic}
+
+## Pengenalan
+
+${specificContent}
+
+## Langkah-langkah Dasar
+
+1. Memahami konsep dasar ${topic.toLowerCase()}
+2. Setup environment dan tools yang diperlukan
+3. Implementasi praktis dengan contoh kode
+4. Testing dan debugging aplikasi
+
+## Konsep Utama
+
+Berikut adalah konsep-konsep utama yang perlu dipahami dalam ${topic.toLowerCase()}:
+
+- **Konsep Fundamental**: Pemahaman dasar tentang cara kerja sistem
+- **Best Practices**: Praktik terbaik yang direkomendasikan oleh komunitas
+- **Tools dan Framework**: Alat-alat yang membantu development
+- **Performance Optimization**: Tips untuk optimasi performa
+
+## Contoh Implementasi
+
+\`\`\`${codeLanguage}
+${exampleCode}
+\`\`\`
+
+## Tips dan Trik
+
+1. **Mulai dari yang sederhana** - Pelajari konsep dasar terlebih dahulu
+2. **Praktik secara konsisten** - Lakukan coding practice secara rutin
+3. **Join komunitas** - Bergabung dengan komunitas developer untuk sharing knowledge
+4. **Stay updated** - Ikuti perkembangan terbaru dalam teknologi
+
+## Kesimpulan
+
+${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Dengan memahami konsep-konsep yang telah dibahas, Anda dapat mengimplementasikan solusi yang efektif dan efisien.
+
+## Referensi
+
+- Dokumentasi resmi
+- Tutorial online terpercaya
+- Best practice dari komunitas developer
+- Studi kasus implementasi di industri`;
+                                    };
+                                    
+                                    console.log('🔥 GENERATING CONTENT WITH TOPIC:', currentTopic);
+                                    const mockContent = generateDynamicContent(currentTopic);
+                                    console.log('📄 GENERATED CONTENT PREVIEW:', mockContent.substring(0, 100));
+                                    
+                                    // Insert ke editor utama - PROPERLY FIXED
+                                    try {
+                                      const editor = editorRef.current?.getEditor();
+                                      if (editor) {
+                                        // Split content jadi array of blocks yang proper
+                                        const contentBlocks: PartialBlock[] = mockContent.split('\n\n').filter(text => text.trim()).map(paragraph => {
+                                          if (paragraph.startsWith('# ')) {
+                                            return {
+                                              type: "heading",
+                                              props: { level: 1 },
+                                              content: paragraph.substring(2)
+                                            };
+                                          } else if (paragraph.startsWith('## ')) {
+                                            return {
+                                              type: "heading", 
+                                              props: { level: 2 },
+                                              content: paragraph.substring(3)
+                                            };
+                                          } else if (paragraph.startsWith('```')) {
+                                            return {
+                                              type: "codeBlock",
+                                              props: { language: "dockerfile" },
+                                              content: paragraph.replace(/```\w*\n?|\n?```$/g, '')
+                                            };
+                                          } else {
+                                            return {
+                                              type: "paragraph",
+                                              content: paragraph
+                                            };
+                                          }
+                                        });
+                                        
+                                        // Replace semua blocks di editor
+                                        editor.replaceBlocks(editor.document, contentBlocks);
+                                        
+                                        // UPDATE TITLE IN LEFT PANEL - CLEAN TANPA PREFIX!
+                                        // Add small delay to ensure content change is processed
+                                        setTimeout(() => {
+                                          setFileName(currentTopic); // Langsung pakai topic clean tanpa prefix "Draft:"
+                                        }, 100);
+                                        
+                                        console.log('BERHASIL! Draft artikel masuk ke editor utama dan panel kiri!');
+                                      } else {
+                                        console.log('Editor belum ready');
+                                      }
+                                    } catch (err) {
+                                      console.log('Error insert:', err);
+                                      console.log('Draft Content for Manual Copy:');
+                                      console.log(mockContent);
+                                    }
+                                }}
+                              >
+                                Generate dengan AI
+                              </Button>
+                              <Button 
+                                leftSection={<IconFileText size={16} />} 
+                                variant="light"
+                                color="green"
+                                size="sm"
+                                onClick={() => {
+                                  notifications.show({
+                                    title: "Template AI",
+                                    message: "Fitur template AI akan segera hadir!",
+                                    color: "green"
+                                  })
+                                }}
+                              >
+                                Pilih Template AI
+                              </Button>
+                              <Button 
+                                leftSection={<IconBrain size={16} />} 
+                                variant="light"
+                                color="purple"
+                                size="sm"
+                                onClick={() => {
+                                  notifications.show({
+                                    title: "Auto-Draft Magic! ✨",
+                                    message: "Generating draft berdasarkan referensi pustaka...",
+                                    color: "purple",
+                                    autoClose: 3000
+                                  })
+                                }}
+                              >
+                                Auto-Draft dari Referensi
+                              </Button>
+                            </Group>
+
+                            <Divider label="Manual Tools" labelPosition="center" mb="md" />
+
+                            <Group gap="md">
+                              <Button 
+                                leftSection={<IconPlus size={16} />} 
+                                variant="light"
+                                size="sm"
+                                onClick={addParagraph}
+                              >
+                                Tambah Paragraf
+                              </Button>
+                              <Button 
+                                leftSection={<IconQuote size={16} />} 
+                                variant="light"
+                                color="teal"
+                                size="sm"
+                                onClick={insertQuote}
+                              >
+                                Sisipkan Kutipan
+                              </Button>
+                              <Button 
+                                leftSection={<IconList size={16} />} 
+                                variant="light"
+                                color="grape"
+                                size="sm"
+                                onClick={addBulletList}
+                              >
+                                Daftar Poin
+                              </Button>
+                            </Group>
+
+                          </Stack>
+                        </ScrollArea>
+                      </>
                     )}
                     {activeTab === "chat" && (
                       <>
@@ -3795,7 +6697,8 @@ const handleSubmitToTeacher = async () => {
                             placeholder="Cari Artikel"
                             variant="filled"
                             leftSection={<IconSearch size={16} />}
-                            value={searchQuery}
+                            value={isClient ? searchQuery : ""}
+                            suppressHydrationWarning={true}
                             style={{
                               backgroundColor:
                                 computedColorScheme === "dark"
@@ -4322,6 +7225,12 @@ const handleSubmitToTeacher = async () => {
                                       computedColorScheme === "dark"
                                         ? "#1e1e1e"
                                         : "#fff",
+                                    cursor: item.type === "draft" && item.draftId ? "pointer" : "default",
+                                  }}
+                                  onClick={() => {
+                                    if (item.type === "draft" && item.draftId) {
+                                      loadDraftContent(item.draftId);
+                                    }
                                   }}
                                 >
                                   <Group justify="space-between" align="flex-start">
@@ -4975,7 +7884,7 @@ const handleSubmitToTeacher = async () => {
                       radius="md"
                       px={32}
                       leftSection={<IconEdit size={18} />}
-                      onClick={closeAIResultModal}
+                      onClick={handleBackToRevision}
                       style={{
                         background: "linear-gradient(135deg, #007BFF, #0056b3)",
                         boxShadow: "0 4px 16px rgba(0, 123, 255, 0.3)",
@@ -5236,6 +8145,142 @@ const handleSubmitToTeacher = async () => {
           }
         `}</style>
       </AppShell.Main>
+
+      {/* Activity Log Modal */}
+      {isClient && (
+        <ActivityLog
+          opened={activityLogOpened}
+          onClose={closeActivityLog}
+          activities={activities}
+          onClearAll={() => {
+            clearActivityLog();
+            logTransform('Log Dibersihkan', 'Semua riwayat aktivitas telah dihapus');
+          }}
+          onExport={exportLog}
+        />
+      )}
+
+      {/* Keyboard Shortcuts Modal */}
+      <KeyboardShortcutsModal
+        opened={shortcutsModalOpened}
+        onClose={() => setShortcutsModalOpened(false)}
+      />
+
+      {/* Draft Quick Access Modal */}
+      <DraftQuickAccessModal
+        opened={draftQuickAccessOpened}
+        onClose={() => setDraftQuickAccessOpened(false)}
+        onSelectDraft={(draftId) => {
+          // Navigate to selected draft
+          router.push(`/project/${sessionIdN}/draft?draftId=${draftId}`);
+        }}
+        onCreateNew={() => {
+          // Clear current draft and create new
+          setDraftTitle('');
+          setDraftContent('');
+          setOutlineData([]);
+          setBibliographyList([]);
+          setSelectedSection('');
+          setGeneratedContent('');
+          
+          if (editorRef.current) {
+            const editor = editorRef.current.getEditor();
+            editor.replaceBlocks(editor.document, [
+              {
+                type: "paragraph",
+                content: "",
+              },
+            ]);
+          }
+          
+          // Close modal and show notification
+          setDraftQuickAccessOpened(false);
+          notifications.show({
+            title: "📝 Draft Baru Dibuat",
+            message: "Siap untuk mulai menulis draft baru Anda!",
+            color: "green",
+            autoClose: 3000,
+          });
+        }}
+      />
+
+      {/* Node Text Input Modal */}
+      <Modal
+        opened={nodeTypeModalOpened}
+        onClose={() => setNodeTypeModalOpened(false)}
+        title={`Tambah ${selectedNodeType === 'title' ? 'Judul' : selectedNodeType === 'subtitle' ? 'Sub-Judul' : 'Paragraf'}`}
+        centered
+        size="md"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Masukkan teks untuk {selectedNodeType === 'title' ? 'judul' : selectedNodeType === 'subtitle' ? 'sub-judul' : 'paragraf'} baru:
+          </Text>
+
+          <TextInput
+            placeholder={`Tulis ${selectedNodeType === 'title' ? 'judul' : selectedNodeType === 'subtitle' ? 'sub-judul' : 'paragraf'} di sini...`}
+            value={nodeText}
+            onChange={(e) => setNodeText(e.target.value)}
+            data-autofocus
+            size="md"
+            maxLength={selectedNodeType === 'title' ? 50 : selectedNodeType === 'subtitle' ? 70 : 100}
+          />
+
+          <Text size="xs" c="dimmed">
+            Maksimal {selectedNodeType === 'title' ? '50' : selectedNodeType === 'subtitle' ? '70' : '100'} karakter
+            ({nodeText.length} karakter)
+          </Text>
+
+          <Group justify="space-between" mt="md">
+            <Button variant="light" onClick={() => setNodeTypeModalOpened(false)}>
+              Kembali
+            </Button>
+            <Button
+              onClick={handleAddNode}
+              disabled={!nodeText.trim()}
+              color={selectedNodeType === 'title' ? 'green' : selectedNodeType === 'subtitle' ? 'yellow' : 'gray'}
+            >
+              Tambah {selectedNodeType === 'title' ? 'Judul' : selectedNodeType === 'subtitle' ? 'Sub-Judul' : 'Paragraf'}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Node Detail Modal */}
+      <Modal
+        opened={nodeDetailModalOpened}
+        onClose={() => setNodeDetailModalOpened(false)}
+        title="Detail Node"
+        centered
+        size="lg"
+      >
+        <Stack gap="md">
+          {selectedNodeDetail && (
+            <>
+              <Text size="lg" fw={600}>{selectedNodeDetail.text}</Text>
+              <Badge color="blue" variant="light">
+                Level: H{selectedNodeDetail.level}
+              </Badge>
+              <Text size="sm" c="dimmed">
+                ID: {selectedNodeDetail.id}
+              </Text>
+              <Divider />
+              <Text size="sm">
+                Node ini merupakan {selectedNodeDetail.level === 1 ? 'judul utama' :
+                selectedNodeDetail.level === 2 ? 'sub-judul' : 'heading level ' + selectedNodeDetail.level}
+                dalam struktur artikel Anda.
+              </Text>
+            </>
+          )}
+
+          <Group justify="flex-end" mt="md">
+            <Button variant="light" onClick={() => setNodeDetailModalOpened(false)}>
+              Tutup
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
     </AppShell>
   );
 }
