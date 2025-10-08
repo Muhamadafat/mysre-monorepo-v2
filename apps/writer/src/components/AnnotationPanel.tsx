@@ -38,13 +38,15 @@ import {
   IconTrash,
   IconExternalLink,
   IconNote,
-  IconNotebook
+  IconNotebook,
+  IconCheck,
+  IconX
 } from '@tabler/icons-react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useHover } from '@mantine/hooks';
-import WebViewer from './WebViewer';
+import WebViewer from './WebViewer2';
 import { handleAnalytics } from './NodeDetail';
 import { modals } from '@mantine/modals';
 
@@ -60,6 +62,7 @@ interface Annotation {
     id: string;
     title: string;
     filePath: string;
+    att_url?: string; // ✅ Add att_url
   };
 };
 
@@ -72,10 +75,9 @@ interface Article {
 };
 
 export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
-  const { id: projectId } = useParams(); // Ini adalah projectId dari URL
+  const { id: projectId } = useParams();
   const searchParams = useSearchParams();
   
-  // Improved logic untuk menentukan sessionId yang tepat
   const urlSessionId = searchParams.get('sessionId');
   const isFromBrainstorming = !!urlSessionId;
   
@@ -103,14 +105,10 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
     try {
       let apiUrl = '/api/annotation?';
       
-      // Tentukan parameter yang tepat berdasarkan skenario
       if (isFromBrainstorming && urlSessionId) {
-        // Case 1: Ada sessionId di URL (dari brainstorming)
-        // Gunakan projectId sebagai sessionId karena itu adalah brainstormingSessionId
         apiUrl += `sessionId=${projectId}`;
         console.log('📤 Fetching annotations for brainstormingSessionId:', projectId);
       } else if (projectId) {
-        // Case 2: Direct access (projectId adalah writerSessionId)
         apiUrl += `projectId=${projectId}`;
         console.log('📤 Fetching annotations for writerSessionId:', projectId);
       } else {
@@ -124,17 +122,24 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
       if (res.ok) {
         const data = await res.json();
         console.log('📥 Annotations received:', data.length);
+        console.log('📥 First annotation sample:', data[0]); // ✅ Debug log
         setAnnotations(data);
+      } else if (res.status === 404) {
+        console.log('ℹ️ No annotations found for this project');
+        setAnnotations([]);
       } else {
         console.error('❌ Annotation API error:', res.status);
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Error details:', errorData);
       }
     } catch (error) {
       console.error('❌ Error fetching annotations:', error);
       notifications.show({
-        title: 'Error',
-        message: 'Gagal memuat daftar anotasi',
+        title: 'Tidak dapat memuat catatan',
+        message: 'Gagal memuat daftar anotasi Anda.',
         color: 'red',
         position: 'top-right',
+        icon: <IconSquareRoundedX size={16} />
       });
     } finally {
       setLoading(false);
@@ -150,7 +155,6 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
   }
 
   useEffect(() => {
-    // Only fetch annotations when we have the necessary parameters
     if (projectId) {
       fetchAnnotations();
     }
@@ -218,10 +222,11 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
 
       if (res.ok) {
         notifications.show({
-          title: 'Berhasil',
-          message: 'Anotasi berhasil dihapus',
+          title: 'Catatan berhasil dihapus',
+          message: 'Anotasi telah dihapus dari koleksi Anda',
           color: 'green',
           position: 'top-right',
+          icon: <IconCheck size={16} />
         });
         await fetchAnnotations();
       } else {
@@ -230,14 +235,50 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
     } catch (error) {
       console.error('Delete error:', error);
       notifications.show({
-        title: 'Gagal',
-        message: 'Gagal menghapus anotasi',
+        title: 'Gagal menghapus catatan',
+        message: 'Tidak dapat menghapus anotasi.',
         color: 'red',
         position: 'top-right',
+        icon: <IconX size={16} />
       });
     } finally {
       setDeletingId(null);
     }
+  };
+
+  // ✅ Helper function to get PDF URL
+  const getPdfUrl = (annotation: Annotation): string | null => {
+    // Priority: att_url > filePath
+    if (annotation.article.att_url) {
+      console.log('📄 Using att_url:', annotation.article.att_url);
+      return annotation.article.att_url;
+    }
+    if (annotation.article.filePath) {
+      console.log('📄 Using filePath:', annotation.article.filePath);
+      return annotation.article.filePath;
+    }
+    console.warn('⚠️ No PDF URL found for annotation:', annotation.id);
+    return null;
+  };
+
+  // ✅ Handle PDF open with proper URL
+  const handlePdfOpen = (annotation: Annotation) => {
+    const pdfUrl = getPdfUrl(annotation);
+    
+    if (!pdfUrl) {
+      notifications.show({
+        title: 'PDF tidak ditemukan',
+        message: 'URL artikel tidak tersedia',
+        color: 'red',
+        position: 'top-right',
+        icon: <IconX size={16} />
+      });
+      return;
+    }
+
+    console.log('📖 Opening PDF:', pdfUrl);
+    setSelectedPDF(pdfUrl);
+    setOpened(true);
   };
 
   const NoteCard = ({ annotation }: { annotation: Annotation }) => {
@@ -270,7 +311,6 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
           }
         }}
       >
-        {/* Sticky Note Style Header */}
         <Box
           style={{
             position: 'absolute',
@@ -284,9 +324,7 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
           }}
         />
         
-        {/* Main Content */}
         <Stack gap="sm">
-          {/* Quote Section */}
           <Box>
             <Group gap="xs" mb="xs" opacity={0.7}>
               <IconQuote size={12} />
@@ -308,7 +346,6 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
             </Text>
           </Box>
 
-          {/* Note Section */}
           {annotation.comment && (
             <Box>
               <Group gap="xs" mb="xs" opacity={0.7}>
@@ -331,7 +368,6 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
             </Box>
           )}
 
-          {/* Compact Footer */}
           <Group justify="space-between" align="center" mt="xs">
             <Group gap="xs">
               <Text
@@ -373,7 +409,6 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
           </Group>
         </Stack>
 
-        {/* Action Menu - Visible on hover or when menu is open */}
         <Transition mounted={hovered || menuOpened} transition="fade" duration={200}>
           {(styles) => (
             <Menu
@@ -385,23 +420,25 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
               onChange={setMenuOpened}
             >
               <Menu.Target>
-                <ActionIcon
-                  variant="subtle"
-                  color="gray"
-                  size="sm"
-                  style={{
-                    position: 'absolute',
-                    top: 8,
-                    right: 8,
-                    ...styles
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMenuOpened(true);
-                  }}
-                >
-                  <IconDots size={16} />
-                </ActionIcon>
+                <Tooltip label="Opsi artikel">
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    size="sm"
+                    style={{
+                      position: 'absolute',
+                      top: 8,
+                      right: 8,
+                      ...styles
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpened(true);
+                    }}
+                  >
+                    <IconDots size={16} />
+                  </ActionIcon>
+                </Tooltip>
               </Menu.Target>
 
               <Menu.Dropdown>
@@ -409,8 +446,7 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
                   leftSection={<IconEye size={16} />}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedPDF(`${annotation.article.filePath}`);
-                    setOpened(true);
+                    handlePdfOpen(annotation); // ✅ Use helper function
                   }}
                 >
                   Lihat Artikel
@@ -444,7 +480,6 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
           )}
         </Transition>
 
-        {/* Expanded Details */}
         <Transition mounted={isExpanded} transition="slide-down" duration={300}>
           {(styles) => (
             <Box
@@ -479,8 +514,7 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
                     leftSection={<IconEye size={14} />}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedPDF(`${annotation.article.filePath}`);
-                      setOpened(true);
+                      handlePdfOpen(annotation); // ✅ Use helper function
                     }}
                   >
                     Buka
@@ -516,7 +550,6 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
     }}>
       <LoadingOverlay visible={loading} />
       
-      {/* Minimal Header */}
       <Box p="md" style={{ flexShrink: 0 }}>
         <Group justify="space-between" mb="sm">
           <Group gap="sm">
@@ -540,7 +573,6 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
         </Group>
       </Box>
 
-      {/* Notes List */}
       <Box style={{ 
         flex: 1, 
         overflow: 'auto', 
@@ -588,7 +620,6 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
         )}
       </Box>
 
-      {/* Modal unchanged */}
       <Modal
         opened={opened}
         onClose={() => {
@@ -618,7 +649,11 @@ export default function AnnotationPanel({ sessionId }: { sessionId?: string }) {
       >
         {selectedPDF && (
           <div style={{ height: '100%', position: 'relative' }}>
-            <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} />
+            <WebViewer 
+              key={selectedPDF} 
+              fileUrl={selectedPDF} 
+              onAnalytics={handleAnalytics} 
+            />
           </div>
         )}
       </Modal>
