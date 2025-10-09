@@ -89,7 +89,7 @@ export default function SignUpPage() {
     <Box
       style={{
         height: "100vh",
-        backgroundImage: `url('/images/login-background.png')`,
+        backgroundImage: `url('/webp/login-background.webp')`,
         backgroundSize: "cover",
         backgroundPosition: "center",
         display: "flex",
@@ -123,7 +123,7 @@ export default function SignUpPage() {
         >
           <Image
             component={NextImage}
-            src='/images/logoSRE.png'
+            src='/webp/logoSRE.webp'
             alt="My-SRE Logo"
             width={170}
             height={50}

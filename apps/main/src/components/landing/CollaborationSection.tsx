@@ -57,7 +57,7 @@ export function CollaborationSection() {
                     fit="contain"
                   />
                   <Image
-                    src="/images/ub.png"
+                    src="/webp/ub.webp"
                     alt="Universitas Brawijaya Logo"
                     h={120}
                     w="auto"
@@ -111,7 +111,7 @@ export function CollaborationSection() {
                 </Title>
                 <Flex gap="md" w="100%" justify="center" align="center" wrap="wrap">
                   <Image
-                    src="/images/unpas.png"
+                    src="/webp/unpas.webp"
                     alt="Universitas Basundan Logo"
                     h={120}
                     w="auto"

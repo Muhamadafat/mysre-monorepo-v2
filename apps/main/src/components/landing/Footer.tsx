@@ -41,7 +41,7 @@ export function Footer() {
               {/* <IconBrain size={32} color="var(--mantine-color-blue-4)" /> */}
               <Box>
                 <Image
-                src='/images/logoSRE.png'
+                src='/webp/logoSRE.webp'
                 alt="My-SRE Dashboard"
                 height={40}
                 radius="xs"

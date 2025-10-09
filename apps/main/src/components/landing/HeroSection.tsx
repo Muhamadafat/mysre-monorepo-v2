@@ -76,7 +76,7 @@ export function HeroSection() {
 
           <Box mt={60} w="100vh" maw={1000}>
             <Image
-              src='/images/brainn.png'
+              src='/webp/brainn.webp'
               alt="My-SRE Dashboard"
               radius="lg"
               height={450}

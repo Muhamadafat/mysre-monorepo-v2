@@ -43,7 +43,7 @@ export function Header() {
           <Group gap="xs">
             <Box>
                 <Image
-                src='/images/logoSRE.png'
+                src='/webp/logoSRE.webp'
                 alt="My-SRE Dashboard"
                 height={40}
                 radius="xs"
