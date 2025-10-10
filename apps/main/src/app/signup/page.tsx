@@ -18,14 +18,8 @@ import { IconAlertCircle } from "@tabler/icons-react";
 import React, { useState } from "react";
 import NextImage from "next/image";
 
-// Import gambar
-// import logoImage from "../imageCollection/LogoSRE_Fix.png";
-// import backgroundImage from "../imageCollection/login-background.png";
-// import illustrationImage from "../imageCollection/signin-illustration.png";
-
 import { signUp } from "../actions";
 import { useRouter } from "next/navigation";
-// import { supabase } from "@/lib/supabase";
 
 export default function SignUpPage() {
   const [form, setForm] = useState({
@@ -44,6 +38,38 @@ export default function SignUpPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+
+    // Validasi manual untuk field yang wajib diisi
+    if (!form.fullName.trim()) {
+      setError("Nama Lengkap wajib diisi");
+      setLoading(false);
+      return;
+    }
+
+    if (!form.sid.trim()) {
+      setError("SID atau NIM wajib diisi");
+      setLoading(false);
+      return;
+    }
+
+    if (!form.email.trim()) {
+      setError("Email wajib diisi");
+      setLoading(false);
+      return;
+    }
+
+    if (!form.group) {
+      setError("Silakan pilih grup terlebih dahulu");
+      setLoading(false);
+      return;
+    }
+
+    if (!form.password.trim()) {
+      setError("Kata Sandi wajib diisi");
+      setLoading(false);
+      return;
+    }
+
     try {      
       const result = await signUp({
         fullName: form.fullName,
@@ -61,7 +87,6 @@ export default function SignUpPage() {
 
         const brainUrl = `${process.env.NEXT_PUBLIC_PROFILE_APP_URL || 'http://brain.lvh.me:3001'}/`;
         window.location.href = brainUrl;
-        // window.open(brainUrl, '_blank');
       } else {
         setError("Unexpected response from server");
         setLoading(false);
@@ -71,8 +96,16 @@ export default function SignUpPage() {
       setError('An unexpected error occured.Please try again');
       setLoading(false);
     }
-
   }
+
+  // Handler untuk SID/NIM - hanya menerima angka
+  const handleSidChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.currentTarget.value;
+    // Hanya izinkan angka
+    if (value === '' || /^\d+$/.test(value)) {
+      setForm({ ...form, sid: value });
+    }
+  };
 
   const inputStyles = {
     input: {
@@ -88,20 +121,22 @@ export default function SignUpPage() {
   return (
     <Box
       style={{
-        height: "100vh",
+        minHeight: "100vh",
         backgroundImage: `url('/webp/login-background.webp')`,
         backgroundSize: "cover",
         backgroundPosition: "center",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        padding: "20px",
       }}
     >
       <Box
         style={{
-          width: "90%",
+          width: "100%",
           maxWidth: 1100,
-          height: "85vh",
+          minHeight: "600px",
+          maxHeight: "90vh",
           display: "flex",
           boxShadow: "0 0 20px rgba(0,0,0,0.2)",
           borderRadius: 16,
@@ -158,7 +193,7 @@ export default function SignUpPage() {
             display: "flex",
             flexDirection: "column",
             justifyContent: "flex-start",
-            overflow: "hidden",
+            overflowY: "auto",
             backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
           }}
         >
@@ -190,6 +225,8 @@ export default function SignUpPage() {
                 onChange={(e) =>
                   setForm({ ...form, fullName: e.currentTarget.value })
                 }
+                required
+                disabled={loading}
                 styles={inputStyles}
               />
 
@@ -197,9 +234,12 @@ export default function SignUpPage() {
               <TextInput
                 placeholder="Masukkan SID atau NIM Anda..."
                 value={form.sid}
-                onChange={(e) =>
-                  setForm({ ...form, sid: e.currentTarget.value })
-                }
+                onChange={handleSidChange}
+                type="text"
+                inputMode="numeric"
+                pattern="\d*"
+                required
+                disabled={loading}
                 styles={inputStyles}
               />
 
@@ -210,6 +250,9 @@ export default function SignUpPage() {
                 onChange={(e) =>
                   setForm({ ...form, email: e.currentTarget.value })
                 }
+                type="email"
+                required
+                disabled={loading}
                 styles={inputStyles}
               />
 
@@ -217,10 +260,11 @@ export default function SignUpPage() {
               <Radio.Group
                 value={form.group}
                 onChange={(value) => setForm({ ...form, group: value })}
+                required
               >
                 <Group>
-                  <Radio value="A" label="Group A" />
-                  <Radio value="B" label="Group B" />
+                  <Radio value="A" label="Group A" disabled={loading} />
+                  <Radio value="B" label="Group B" disabled={loading} />
                 </Group>
               </Radio.Group>
 
@@ -231,13 +275,15 @@ export default function SignUpPage() {
                 onChange={(e) =>
                   setForm({ ...form, password: e.currentTarget.value })
                 }
+                required
+                disabled={loading}
                 styles={inputStyles}
               />
 
               <Button fullWidth mt="xs" color="blue" type="submit" loading={loading} disabled={loading}>
                 {loading ? "Daftar..." : "Daftar"}
               </Button>
-              {/* Tambahkan navigasi ke Sign In */}
+              
               <Text ta="center" size="sm" mt="md">
                 Sudah punya akun?{" "}
                 <Text 
