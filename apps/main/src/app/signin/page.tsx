@@ -18,11 +18,6 @@ import NextImage from "next/image";
 import { IconEye, IconEyeOff, IconAlertCircle } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 
-// Gambar
-// import logoImage from "../imageCollection/LogoSRE_Fix.png";
-// import backgroundImage from "../imageCollection/login-background.png";
-// import illustrationImage from "../imageCollection/login-illustration.png";
-
 import { signIn } from "../actions";
 
 export default function LoginPage() {
@@ -50,23 +45,13 @@ export default function LoginPage() {
         setError(result.error);
         setLoading(false);
       } else if (result?.success) {
-        // Tunggu sebentar untuk memastikan session ter-set
         await new Promise(resolve => setTimeout(resolve, 200));
         
-        // Client-side redirect ke brain app
-        // const brainUrl = `${process.env.NEXT_PUBLIC_BRAIN_APP_URL || 'http://brain.lvh.me:3001'}/`;
         const profileUrl = `${process.env.NEXT_PUBLIC_PROFILE_APP_URL || 'http://profile.lvh.me:3002/dashboard'}/`;
         console.log('Redirecting to:', profileUrl);
         
-        // Force full page navigation untuk cross-domain
         window.location.href = profileUrl;
-        // window.open(profileUrl, '_blank');
-        
-        // Alternative untuk same domain:
-        // router.push(brainUrl);
-        // router.refresh();
       } else {
-        // Jika tidak ada result atau result tidak sesuai ekspektasi
         setError("Unexpected response from server");
         setLoading(false);
       }
@@ -80,20 +65,22 @@ export default function LoginPage() {
   return (
     <Box
       style={{
-        height: "100vh",
+        minHeight: "100vh",
         backgroundImage: `url('/webp/login-background.webp')`,
         backgroundSize: "cover",
         backgroundPosition: "center",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        padding: "20px",
       }}
     >
       <Box
         style={{
-          width: "90%",
+          width: "100%",
           maxWidth: 1100,
-          height: "85vh",
+          minHeight: "600px",
+          maxHeight: "90vh",
           display: "flex",
           boxShadow: "0 0 20px rgba(0,0,0,0.2)",
           borderRadius: 16,
@@ -110,6 +97,7 @@ export default function LoginPage() {
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
+            overflowY: "auto",
           }}
         >
           <Box style={{ textAlign: "center", marginBottom: 24 }}>
@@ -202,7 +190,7 @@ export default function LoginPage() {
               >
                 {loading ? "Masuk..." : "Masuk"}
               </Button>
-              {/* Tambahkan navigasi ke Sign Up */}
+              
               <Text ta="center" size="sm" mt="md">
                 Belum punya akun?{" "}
                 <Text 
