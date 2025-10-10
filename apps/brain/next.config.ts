@@ -76,6 +76,10 @@ const nextConfig: NextConfig = {
     domains: [
       'vefmmrwuwritxbgowqyv.supabase.co',
     ]
+  },
+
+  compiler: {
+    removeConsole: true,
   }
 }
 

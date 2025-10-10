@@ -47,6 +47,10 @@ const nextConfig: NextConfig = {
     poweredByHeader: false,
     generateEtags: true,
   }),
+
+  compiler: {
+    removeConsole: true,
+  }
 }
 
 export default nextConfig;
