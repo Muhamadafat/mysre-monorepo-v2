@@ -682,8 +682,7 @@ const BlockNoteEditorComponent = forwardRef<BlockNoteEditorRef, BlockNoteEditorP
 
     // Remove everything from "## Daftar Pustaka" or "### Daftar Pustaka" to the end
 
-        return text.replace(/(#+\s*Daftar Pustaka[\s\S]*)$/i, '').trim();
-
+        return text.replace(/(\s*(\[[A-Za-z0-9\-]+\]\s*)+)+$/g, '').trim();
     }
 
     // LaTeX Modal state
