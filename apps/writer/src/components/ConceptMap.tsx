@@ -264,10 +264,11 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
     if (visJsRef.current) {
       console.log('Creating network with nodes:', nodes.get(), 'edges:', edges.get());
 
-      const hasNodes = nodes.length > 0;
+      const currentNodes = nodes.get();
+      const currentEdges = edges.get();
 
       const options = {
-        layout: hasNodes ?{
+        layout: {
           hierarchical: {
             enabled: true,
             direction: 'UD', // UD = Up-Down (Atas ke Bawah)
@@ -275,12 +276,8 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
             levelSeparation: 150, // Jarak antar level (atas-bawah)
             nodeSpacing: 200,     // Jarak antar node di level yang sama (kiri-kanan)
           },
-        } : {
-          randomSeed: 2,
         },
-        physics: {
-          enabled: false,
-        }, 
+        physics: false, 
         edges: {
           arrows: { to: { enabled: true, scaleFactor: 0.7 } },
           color: { color: colorScheme === 'dark' ? '#868e96' : '#adb5bd', highlight: theme.colors.blue[5] },
@@ -307,6 +304,14 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
               const newEdge = { id: uuidv4(), from: data.from, to: data.to };
               callback(newEdge);
               setActiveMode('none');
+
+              if (onDataChange){
+                setTimeout(() => {
+                  const currentNodes = nodes.get();
+                  const currentEdges = edges.get();
+                  onDataChange(currentNodes, currentEdges);
+                }, 100);
+              }
             } else {
               callback(null);
             }
