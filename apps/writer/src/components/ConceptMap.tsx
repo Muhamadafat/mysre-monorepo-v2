@@ -263,8 +263,11 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   useEffect(() => {
     if (visJsRef.current) {
       console.log('Creating network with nodes:', nodes.get(), 'edges:', edges.get());
+
+      const hasNodes = nodes.length > 0;
+
       const options = {
-        layout: {
+        layout: hasNodes ?{
           hierarchical: {
             enabled: true,
             direction: 'UD', // UD = Up-Down (Atas ke Bawah)
@@ -272,8 +275,12 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
             levelSeparation: 150, // Jarak antar level (atas-bawah)
             nodeSpacing: 200,     // Jarak antar node di level yang sama (kiri-kanan)
           },
+        } : {
+          randomSeed: 2,
         },
-        physics: false, 
+        physics: {
+          enabled: false,
+        }, 
         edges: {
           arrows: { to: { enabled: true, scaleFactor: 0.7 } },
           color: { color: colorScheme === 'dark' ? '#868e96' : '#adb5bd', highlight: theme.colors.blue[5] },
