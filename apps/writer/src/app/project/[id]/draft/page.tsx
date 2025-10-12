@@ -774,7 +774,6 @@ export default function Home() {
         syncEditorToConceptMap(result.editorContent);
 
         // Switch to editor view
-        setActiveCentralView('editor');
 
         // Wait for view to switch, then set content to editor
         setTimeout(() => {
@@ -782,6 +781,10 @@ export default function Home() {
             editorRef.current.setContent(result.editorContent);
             console.log('Draft content applied to editor:', result.editorContent.length, 'blocks');
           }
+
+          setTimeout(() => {
+            setActiveCentralView('editor');
+          }, 200);
         }, 100);
 
         // Show notification
@@ -2442,7 +2445,10 @@ const handleSubmitToTeacher = async () => {
       }
     }
     console.log("✅ Synced to concept map:", nodes.length, "nodes,", edges.length, "edges");
-    setConceptMapData({ nodes, edges });
+
+    setTimeout(() => {
+      setConceptMapData({ nodes, edges });
+    }, 100);
   };
 
   const truncateByWords = (text: string, limit: number) => {
