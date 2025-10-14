@@ -263,10 +263,6 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   useEffect(() => {
     if (visJsRef.current) {
       console.log('Creating network with nodes:', nodes.get(), 'edges:', edges.get());
-
-      const currentNodes = nodes.get();
-      const currentEdges = edges.get();
-
       const options = {
         layout: {
           hierarchical: {
@@ -304,14 +300,6 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
               const newEdge = { id: uuidv4(), from: data.from, to: data.to };
               callback(newEdge);
               setActiveMode('none');
-
-              if (onDataChange){
-                setTimeout(() => {
-                  const currentNodes = nodes.get();
-                  const currentEdges = edges.get();
-                  onDataChange(currentNodes, currentEdges);
-                }, 100);
-              }
             } else {
               callback(null);
             }
