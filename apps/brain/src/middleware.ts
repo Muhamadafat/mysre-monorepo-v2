@@ -42,6 +42,65 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(redirectUrl);
     }
 
+    const profileUrl = new URL('/api/check-group', request.url);
+    const profileResponse = await fetch(profileUrl.toString(), {
+      headers: {
+        'Cookie': request.headers.get('cookie') || '',
+      },
+    });
+
+    if (!profileResponse.ok) {
+      console.error("Brain: failed to fetch user group", profileResponse.status);
+      const redirectUrl = new URL('/signin', process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://main.lvh.me:3000');
+      redirectUrl.searchParams.set('error', 'fetch_group_failed');
+      return NextResponse.redirect(redirectUrl);
+    }
+
+    const { group, email } = await profileResponse.json();
+
+    if (group !== 'A'){
+      console.log('Brain: Access denied - User is not in Group A:', {
+        userId: session.user.id,
+        email: email,
+        group: group
+      });
+
+      const redirectUrl = new URL('/', process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://main.lvh.me:3000');
+      redirectUrl.searchParams.set('error', 'access_denied');
+      redirectUrl.searchParams.set('message', 'Brain app feature is only for group A users.');
+      return NextResponse.redirect(redirectUrl);
+    }
+
+    console.log('Brain: Access granted for Group A user:', {
+      userId: session.user.id,
+      email: email,
+      group: group
+    });
+
+    // const dbUser = await prisma.user.findUnique({
+    //   where: { id: session.user.id },
+    //   select: {
+    //     id: true,
+    //     email: true,
+    //     group: true,
+    //   },
+    // });
+
+    // if (!dbUser){
+    //   console.log("Brain: User not found");
+    //   const redirectUrl = new URL('/signin', process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://main.lvh.me:3000');
+    //   redirectUrl.searchParams.set('error', 'user_not_found');
+    //   return NextResponse.redirect(redirectUrl);
+    // }
+
+    // if (dbUser.group !== 'A'){
+    //   console.log("Brain: User not group A");
+    //   const redirectUrl = new URL('/', process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://main.lvh.me:3000');
+    //   redirectUrl.searchParams.set('error', 'access_denied');
+    //   redirectUrl.searchParams.set('message', 'Brain feature is only for group A users.');
+    //   return NextResponse.redirect(redirectUrl);
+    // }
+
     //generate sessionid
     const sessionId = `${session.user.id}_${Math.floor(session.expires_at! / 1000)}`;
 
