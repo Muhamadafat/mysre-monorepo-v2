@@ -263,20 +263,17 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   useEffect(() => {
     if (visJsRef.current) {
       console.log('Creating network with nodes:', nodes.get(), 'edges:', edges.get());
-      const layoutOptions = {
-        hierarchical: {
-          enabled: true,
-          direction: 'UD',
-          sortMethod: 'directed',
-          levelSeparation: 150,
-          nodeSpacing: 200,
-        }
-      }
-      const options: any = {
-        layout: layoutOptions,
-        physics: {
-          enabled: false
-        }, 
+      const options = {
+        layout: {
+          hierarchical: {
+            enabled: true,
+            direction: 'UD', // UD = Up-Down (Atas ke Bawah)
+            sortMethod: 'directed', // Mengatur node untuk meminimalkan persilangan garis
+            levelSeparation: 150, // Jarak antar level (atas-bawah)
+            nodeSpacing: 200,     // Jarak antar node di level yang sama (kiri-kanan)
+          },
+        },
+        physics: false, 
         edges: {
           arrows: { to: { enabled: true, scaleFactor: 0.7 } },
           color: { color: colorScheme === 'dark' ? '#868e96' : '#adb5bd', highlight: theme.colors.blue[5] },
