@@ -69,7 +69,7 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
     console.log("Has nodes:", initialData?.nodes?.length || 0);
     console.log("Has edges:", initialData?.edges?.length || 0);
 
-    if (initialData && (initialData.nodes.length > 0 || initialData.edges.length > 0)) {
+    if (initialData && initialData.nodes && initialData.nodes.length > 0) {
       console.log("Loading initial concept map data:", initialData);
 
       // Don't clear if we already have the same data
@@ -80,31 +80,58 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
       console.log("Current edges:", currentEdges.length);
 
       // Only reload if data is different
-      if (currentNodes.length !== initialData.nodes.length ||
-          currentEdges.length !== initialData.edges.length) {
+      const isDifferent = 
+        currentNodes.length !== initialData.nodes.length ||
+        currentEdges.length !== (initialData.edges?.length || 0);
 
+      if (isDifferent) {
         console.log("Data is different, reloading...");
 
-        // Clear existing data first
-        nodes.clear();
-        edges.clear();
+        try {
+          // Clear existing data first
+          nodes.clear();
+          edges.clear();
 
-        // Add initial data
-        if (initialData.nodes.length > 0) {
-          nodes.add(initialData.nodes);
-          console.log("Added", initialData.nodes.length, "nodes");
-        }
-        if (initialData.edges.length > 0) {
-          edges.add(initialData.edges);
-          console.log("Added", initialData.edges.length, "edges");
-        }
+          // Validate and add initial nodes with level-based positioning
+          const validNodes = initialData.nodes.filter((node: any) => {
+            return node && node.id && node.label;
+          }).map((node: any, index: number) => {
+            // Add positioning based on node type for better initial layout
+            const level = node.type === 'H1' ? 0 : node.type === 'H2_H4' ? 1 : 2;
+            return {
+              ...node,
+              level: level,
+              x: (index % 5) * 250, // Spread horizontally
+              y: level * 200 // Spread vertically by level
+            };
+          });
 
-        console.log("Initial data loaded successfully");
+          if (validNodes.length > 0) {
+            nodes.add(validNodes);
+            console.log("Added", validNodes.length, "nodes with positions");
+          }
+
+          // Validate and add initial edges
+          if (initialData.edges && initialData.edges.length > 0) {
+            const validEdges = initialData.edges.filter((edge: any) => {
+              return edge && edge.id && edge.from && edge.to;
+            });
+            
+            if (validEdges.length > 0) {
+              edges.add(validEdges);
+              console.log("Added", validEdges.length, "edges");
+            }
+          }
+
+          console.log("Initial data loaded successfully");
+        } catch (error) {
+          console.error("Error loading initial data:", error);
+        }
       } else {
         console.log("Data is same, skipping reload");
       }
     } else {
-      console.log("No initial data to load");
+      console.log("No initial data to load or empty nodes");
     }
   }, [initialData]);
 
@@ -261,53 +288,93 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   };
 
   useEffect(() => {
-    if (visJsRef.current) {
-      console.log('Creating network with nodes:', nodes.get(), 'edges:', edges.get());
-      const options = {
-        layout: {
-          hierarchical: {
-            enabled: true,
-            direction: 'UD', // UD = Up-Down (Atas ke Bawah)
-            sortMethod: 'directed', // Mengatur node untuk meminimalkan persilangan garis
-            levelSeparation: 150, // Jarak antar level (atas-bawah)
-            nodeSpacing: 200,     // Jarak antar node di level yang sama (kiri-kanan)
-          },
+    if (!visJsRef.current) return;
+    
+    console.log('Creating network with nodes:', nodes.get(), 'edges:', edges.get());
+    
+    // Get current data
+    const currentNodes = nodes.get();
+    const currentEdges = edges.get();
+    
+    // Check if we have nodes to determine layout
+    const hasNodes = currentNodes.length > 0;
+    
+    // SAFETY: Only use hierarchical if we have nodes
+    const options: any = {
+      layout: hasNodes ? {
+        hierarchical: {
+          direction: 'UD',
+          sortMethod: 'directed',
+          levelSeparation: 150,
+          nodeSpacing: 200,
+        }
+      } : {
+        randomSeed: 2
+      },
+      physics: {
+        enabled: false,
+        stabilization: false
+      },
+      edges: {
+        arrows: { 
+          to: { 
+            enabled: true, 
+            scaleFactor: 0.7 
+          } 
         },
-        physics: false, 
-        edges: {
-          arrows: { to: { enabled: true, scaleFactor: 0.7 } },
-          color: { color: colorScheme === 'dark' ? '#868e96' : '#adb5bd', highlight: theme.colors.blue[5] },
-          smooth: { // 👈 Tambahkan atau ubah blok ini
-            type: 'cubicBezier',
-            forceDirection: 'vertical',
-            roundness: 0.15
-          },
+        color: { 
+          color: colorScheme === 'dark' ? '#868e96' : '#adb5bd', 
+          highlight: theme.colors.blue[5] 
         },
-        nodes: {
-          shadow: { enabled: true, color: 'rgba(0,0,0,0.2)', size: 5, x: 2, y: 2 },
-        },
-        interaction: {
-          hover: true,
-          tooltipDelay: 200,
-          dragNodes: true,
-          dragView: true,
-          zoomView: true
-        },
-        manipulation: {
+        smooth: {
           enabled: true,
-          addEdge: function (data: { from: string; to: string }, callback: (edgeData: any) => void) {
-            if (data.from !== data.to) {
-              const newEdge = { id: uuidv4(), from: data.from, to: data.to };
-              callback(newEdge);
-              setActiveMode('none');
-            } else {
-              callback(null);
-            }
-          }
+          type: 'cubicBezier',
+          forceDirection: 'vertical',
+          roundness: 0.15
         },
-      };
+      },
+      nodes: {
+        shadow: { 
+          enabled: true, 
+          color: 'rgba(0,0,0,0.2)', 
+          size: 5, 
+          x: 2, 
+          y: 2 
+        },
+      },
+      interaction: {
+        hover: true,
+        tooltipDelay: 200,
+        dragNodes: true,
+        dragView: true,
+        zoomView: true
+      },
+      manipulation: {
+        enabled: true,
+        addEdge: function (data: { from: string; to: string }, callback: (edgeData: any) => void) {
+          if (data.from !== data.to) {
+            const newEdge = { id: uuidv4(), from: data.from, to: data.to };
+            callback(newEdge);
+            setActiveMode('none');
+            
+            // Auto-save after adding edge
+            if (onDataChange) {
+              setTimeout(() => {
+                const currentNodes = nodes.get();
+                const currentEdges = edges.get();
+                onDataChange(currentNodes, currentEdges);
+              }, 100);
+            }
+          } else {
+            callback(null);
+          }
+        }
+      },
+    };
 
-      const network = new Network(visJsRef.current, { nodes, edges }, options as any);
+    try {
+      console.log('Creating network with options:', JSON.stringify(options.layout));
+      const network = new Network(visJsRef.current, { nodes, edges }, options);
       networkInstance.current = network;
 
       network.on("click", (event) => {
@@ -344,17 +411,23 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
       });
 
       network.on("stabilizationIterationsDone", () => {
-        network.setOptions({ physics: false });
+        console.log("Network stabilization done, disabling physics");
+        network.setOptions({ physics: { enabled: false } });
       });
 
       network.once("afterDrawing", () => {
+        console.log("Network drawn, fitting view");
         network.fit();
       });
 
       return () => {
-        network.destroy();
-        networkInstance.current = null;
+        if (networkInstance.current) {
+          networkInstance.current.destroy();
+          networkInstance.current = null;
+        }
       };
+    } catch (error) {
+      console.error("Error creating network:", error);
     }
   }, [nodes, edges, colorScheme, theme]);
 
