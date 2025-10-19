@@ -69,7 +69,7 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
     console.log("Has nodes:", initialData?.nodes?.length || 0);
     console.log("Has edges:", initialData?.edges?.length || 0);
 
-    if (initialData && initialData.nodes && initialData.nodes.length > 0) {
+    if (initialData && (initialData.nodes.length > 0 || initialData.edges.length > 0)) {
       console.log("Loading initial concept map data:", initialData);
 
       // Don't clear if we already have the same data
@@ -80,58 +80,31 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
       console.log("Current edges:", currentEdges.length);
 
       // Only reload if data is different
-      const isDifferent = 
-        currentNodes.length !== initialData.nodes.length ||
-        currentEdges.length !== (initialData.edges?.length || 0);
+      if (currentNodes.length !== initialData.nodes.length ||
+          currentEdges.length !== initialData.edges.length) {
 
-      if (isDifferent) {
         console.log("Data is different, reloading...");
 
-        try {
-          // Clear existing data first
-          nodes.clear();
-          edges.clear();
+        // Clear existing data first
+        nodes.clear();
+        edges.clear();
 
-          // Validate and add initial nodes with level-based positioning
-          const validNodes = initialData.nodes.filter((node: any) => {
-            return node && node.id && node.label;
-          }).map((node: any, index: number) => {
-            // Add positioning based on node type for better initial layout
-            const level = node.type === 'H1' ? 0 : node.type === 'H2_H4' ? 1 : 2;
-            return {
-              ...node,
-              level: level,
-              x: (index % 5) * 250, // Spread horizontally
-              y: level * 200 // Spread vertically by level
-            };
-          });
-
-          if (validNodes.length > 0) {
-            nodes.add(validNodes);
-            console.log("Added", validNodes.length, "nodes with positions");
-          }
-
-          // Validate and add initial edges
-          if (initialData.edges && initialData.edges.length > 0) {
-            const validEdges = initialData.edges.filter((edge: any) => {
-              return edge && edge.id && edge.from && edge.to;
-            });
-            
-            if (validEdges.length > 0) {
-              edges.add(validEdges);
-              console.log("Added", validEdges.length, "edges");
-            }
-          }
-
-          console.log("Initial data loaded successfully");
-        } catch (error) {
-          console.error("Error loading initial data:", error);
+        // Add initial data
+        if (initialData.nodes.length > 0) {
+          nodes.add(initialData.nodes);
+          console.log("Added", initialData.nodes.length, "nodes");
         }
+        if (initialData.edges.length > 0) {
+          edges.add(initialData.edges);
+          console.log("Added", initialData.edges.length, "edges");
+        }
+
+        console.log("Initial data loaded successfully");
       } else {
         console.log("Data is same, skipping reload");
       }
     } else {
-      console.log("No initial data to load or empty nodes");
+      console.log("No initial data to load");
     }
   }, [initialData]);
 
@@ -373,7 +346,9 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
     };
 
     try {
-      console.log('Creating network with options:', JSON.stringify(options.layout));
+      console.log('Creating network with layout:', hasNodes ? 'hierarchical' : 'random');
+      
+      // CRITICAL: Create network inside try-catch to handle production errors
       const network = new Network(visJsRef.current, { nodes, edges }, options);
       networkInstance.current = network;
 
@@ -411,23 +386,78 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
       });
 
       network.on("stabilizationIterationsDone", () => {
-        console.log("Network stabilization done, disabling physics");
-        network.setOptions({ physics: { enabled: false } });
+        console.log("Network stabilization done");
+        // Already disabled in options
       });
 
       network.once("afterDrawing", () => {
         console.log("Network drawn, fitting view");
-        network.fit();
+        if (hasNodes) {
+          network.fit();
+        }
       });
 
       return () => {
         if (networkInstance.current) {
-          networkInstance.current.destroy();
+          try {
+            networkInstance.current.destroy();
+          } catch (e) {
+            console.warn('Error destroying network:', e);
+          }
           networkInstance.current = null;
         }
       };
     } catch (error) {
-      console.error("Error creating network:", error);
+      console.error("❌ Error creating network:", error);
+      
+      // FALLBACK: If hierarchical fails, try simple layout
+      if (hasNodes && options.layout.hierarchical) {
+        console.log("⚠️ Hierarchical failed, retrying with simple layout...");
+        options.layout = { randomSeed: 2 };
+        
+        try {
+          const network = new Network(visJsRef.current!, { nodes, edges }, options);
+          networkInstance.current = network;
+          
+          network.on("click", (event) => {
+            if (event.nodes.length > 0 && activeMode === 'none') {
+              handleNodeClick(event.nodes[0]);
+            }
+          });
+
+          network.on("selectNode", (event) => {
+            if (activeMode === 'none' && event.nodes.length > 0) {
+              const nodeId = event.nodes[0];
+              const nodeData = nodes.get(nodeId);
+              if (Array.isArray(nodeData) && nodeData.length > 0) {
+                setSelectedNodeData(nodeData[0]);
+                openNodeView();
+              } else if (nodeData && !Array.isArray(nodeData)) {
+                setSelectedNodeData(nodeData);
+                openNodeView();
+              }
+            }
+          });
+
+          network.on("oncontext", (event) => {
+            event.event.preventDefault();
+          });
+
+          network.on("doubleClick", (event) => {
+            if (event.nodes.length === 0) {
+              openTypeSelection();
+            }
+          });
+
+          network.once("afterDrawing", () => {
+            network.fit();
+          });
+          
+          console.log("✅ Fallback network created successfully");
+        } catch (fallbackError) {
+          console.error("❌ Fallback also failed:", fallbackError);
+        }
+      }
     }
   }, [nodes, edges, colorScheme, theme]);
 
