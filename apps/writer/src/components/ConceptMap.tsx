@@ -261,202 +261,105 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   };
 
   useEffect(() => {
-    if (!visJsRef.current) return;
-    
-    console.log('Creating network with nodes:', nodes.get(), 'edges:', edges.get());
-    
-    // Get current data
-    const currentNodes = nodes.get();
-    const currentEdges = edges.get();
-    
-    // Check if we have nodes to determine layout
-    const hasNodes = currentNodes.length > 0;
-    
-    // SAFETY: Only use hierarchical if we have nodes
-    const options: any = {
-      layout: hasNodes ? {
-        hierarchical: {
-          direction: 'UD',
-          sortMethod: 'directed',
-          levelSeparation: 150,
-          nodeSpacing: 200,
-        }
-      } : {
-        randomSeed: 2
-      },
-      physics: {
-        enabled: false,
-        stabilization: false
-      },
-      edges: {
-        arrows: { 
-          to: { 
-            enabled: true, 
-            scaleFactor: 0.7 
-          } 
+    if (visJsRef.current) {
+      console.log('Creating network with nodes:', nodes.get(), 'edges:', edges.get());
+      
+      const options = {
+        layout: {
+          hierarchical: {
+            enabled: true,
+            direction: 'UD',
+            sortMethod: 'directed',
+            levelSeparation: 150,
+            nodeSpacing: 200,
+          },
         },
-        color: { 
-          color: colorScheme === 'dark' ? '#868e96' : '#adb5bd', 
-          highlight: theme.colors.blue[5] 
+        physics: false, 
+        edges: {
+          arrows: { to: { enabled: true, scaleFactor: 0.7 } },
+          color: { color: colorScheme === 'dark' ? '#868e96' : '#adb5bd', highlight: theme.colors.blue[5] },
+          smooth: {
+            type: 'cubicBezier',
+            forceDirection: 'vertical',
+            roundness: 0.15
+          },
         },
-        smooth: {
+        nodes: {
+          shadow: { enabled: true, color: 'rgba(0,0,0,0.2)', size: 5, x: 2, y: 2 },
+        },
+        interaction: {
+          hover: true,
+          tooltipDelay: 200,
+          dragNodes: true,
+          dragView: true,
+          zoomView: true
+        },
+        manipulation: {
           enabled: true,
-          type: 'cubicBezier',
-          forceDirection: 'vertical',
-          roundness: 0.15
-        },
-      },
-      nodes: {
-        shadow: { 
-          enabled: true, 
-          color: 'rgba(0,0,0,0.2)', 
-          size: 5, 
-          x: 2, 
-          y: 2 
-        },
-      },
-      interaction: {
-        hover: true,
-        tooltipDelay: 200,
-        dragNodes: true,
-        dragView: true,
-        zoomView: true
-      },
-      manipulation: {
-        enabled: true,
-        addEdge: function (data: { from: string; to: string }, callback: (edgeData: any) => void) {
-          if (data.from !== data.to) {
-            const newEdge = { id: uuidv4(), from: data.from, to: data.to };
-            callback(newEdge);
-            setActiveMode('none');
-            
-            // Auto-save after adding edge
-            if (onDataChange) {
-              setTimeout(() => {
-                const currentNodes = nodes.get();
-                const currentEdges = edges.get();
-                onDataChange(currentNodes, currentEdges);
-              }, 100);
+          addEdge: function (data: { from: string; to: string }, callback: (edgeData: any) => void) {
+            if (data.from !== data.to) {
+              const newEdge = { id: uuidv4(), from: data.from, to: data.to };
+              callback(newEdge);
+              setActiveMode('none');
+            } else {
+              callback(null);
             }
-          } else {
-            callback(null);
           }
-        }
-      },
-    };
-
-    try {
-      console.log('Creating network with layout:', hasNodes ? 'hierarchical' : 'random');
-      
-      // CRITICAL: Create network inside try-catch to handle production errors
-      const network = new Network(visJsRef.current, { nodes, edges }, options);
-      networkInstance.current = network;
-
-      network.on("click", (event) => {
-        if (event.nodes.length > 0) {
-          if (activeMode === 'none') {
-            handleNodeClick(event.nodes[0]);
-          }
-        }
-      });
-
-      network.on("selectNode", (event) => {
-        if (activeMode === 'none' && event.nodes.length > 0) {
-          const nodeId = event.nodes[0];
-          const nodeData = nodes.get(nodeId);
-          if (Array.isArray(nodeData) && nodeData.length > 0) {
-            setSelectedNodeData(nodeData[0]); // Ambil elemen pertama dari array
-            openNodeView();
-          } else if (nodeData && !Array.isArray(nodeData)) {
-            // Fallback jika ternyata .get() mengembalikan satu objek
-            setSelectedNodeData(nodeData);
-            openNodeView();
-          }
-        }
-      });
-
-      network.on("oncontext", (event) => {
-        event.event.preventDefault();
-      });
-
-      network.on("doubleClick", (event) => {
-        if (event.nodes.length === 0) {
-          openTypeSelection();
-        }
-      });
-
-      network.on("stabilizationIterationsDone", () => {
-        console.log("Network stabilization done");
-        // Already disabled in options
-      });
-
-      network.once("afterDrawing", () => {
-        console.log("Network drawn, fitting view");
-        if (hasNodes) {
-          network.fit();
-        }
-      });
-
-      return () => {
-        if (networkInstance.current) {
-          try {
-            networkInstance.current.destroy();
-          } catch (e) {
-            console.warn('Error destroying network:', e);
-          }
-          networkInstance.current = null;
-        }
+        },
       };
-    } catch (error) {
-      console.error("❌ Error creating network:", error);
-      
-      // FALLBACK: If hierarchical fails, try simple layout
-      if (hasNodes && options.layout.hierarchical) {
-        console.log("⚠️ Hierarchical failed, retrying with simple layout...");
-        options.layout = { randomSeed: 2 };
-        
-        try {
-          const network = new Network(visJsRef.current!, { nodes, edges }, options);
-          networkInstance.current = network;
-          
-          network.on("click", (event) => {
-            if (event.nodes.length > 0 && activeMode === 'none') {
+
+      try {
+        const network = new Network(visJsRef.current, { nodes, edges }, options as any);
+        networkInstance.current = network;
+
+        network.on("click", (event) => {
+          if (event.nodes.length > 0) {
+            if (activeMode === 'none') {
               handleNodeClick(event.nodes[0]);
             }
-          });
+          }
+        });
 
-          network.on("selectNode", (event) => {
-            if (activeMode === 'none' && event.nodes.length > 0) {
-              const nodeId = event.nodes[0];
-              const nodeData = nodes.get(nodeId);
-              if (Array.isArray(nodeData) && nodeData.length > 0) {
-                setSelectedNodeData(nodeData[0]);
-                openNodeView();
-              } else if (nodeData && !Array.isArray(nodeData)) {
-                setSelectedNodeData(nodeData);
-                openNodeView();
-              }
+        network.on("selectNode", (event) => {
+          if (activeMode === 'none' && event.nodes.length > 0) {
+            const nodeId = event.nodes[0];
+            const nodeData = nodes.get(nodeId);
+            if (Array.isArray(nodeData) && nodeData.length > 0) {
+              setSelectedNodeData(nodeData[0]);
+              openNodeView();
+            } else if (nodeData && !Array.isArray(nodeData)) {
+              setSelectedNodeData(nodeData);
+              openNodeView();
             }
-          });
+          }
+        });
 
-          network.on("oncontext", (event) => {
-            event.event.preventDefault();
-          });
+        network.on("oncontext", (event) => {
+          event.event.preventDefault();
+        });
 
-          network.on("doubleClick", (event) => {
-            if (event.nodes.length === 0) {
-              openTypeSelection();
-            }
-          });
+        network.on("doubleClick", (event) => {
+          if (event.nodes.length === 0) {
+            openTypeSelection();
+          }
+        });
 
-          network.once("afterDrawing", () => {
-            network.fit();
-          });
-          
-          console.log("✅ Fallback network created successfully");
-        } catch (fallbackError) {
-          console.error("❌ Fallback also failed:", fallbackError);
-        }
+        network.on("stabilizationIterationsDone", () => {
+          network.setOptions({ physics: false });
+        });
+
+        network.once("afterDrawing", () => {
+          network.fit();
+        });
+
+        return () => {
+          network.destroy();
+          networkInstance.current = null;
+        };
+      } catch (error) {
+        console.error("Error creating network:", error);
+        // Don't create fallback - let it fail gracefully in production
+        // User will see error in console but app won't crash
       }
     }
   }, [nodes, edges, colorScheme, theme]);
