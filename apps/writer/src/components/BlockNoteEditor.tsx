@@ -679,11 +679,16 @@ const BlockNoteEditorComponent = forwardRef<BlockNoteEditorRef, BlockNoteEditorP
   };
 
   function removeDaftarPustakaSection(text: string): string {
+    if (!text) return text;
 
-    // Remove everything from "## Daftar Pustaka" or "### Daftar Pustaka" to the end
+    let cleaned = text.replace(/(\s*(\[[A-Za-z0-9\-]+\]\s*)+)+$/g, '').trim();
 
-        return text.replace(/(\s*(\[[A-Za-z0-9\-]+\]\s*)+)+$/g, '').trim();
+    if (/Anda belum memilih node\b/i.test(cleaned)){
+      return "Anda Belum Memiliki Artikel / Referensi Pustaka";
     }
+
+    return text.replace(/(\s*(\[[A-Za-z0-9\-]+\]\s*)+)+$/g, '').trim();
+  }
 
     // LaTeX Modal state
     const [isLatexModalOpen, setIsLatexModalOpen] = React.useState(false);
