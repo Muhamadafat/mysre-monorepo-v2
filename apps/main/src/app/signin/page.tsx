@@ -12,13 +12,14 @@ import {
   TextInput,
   Title,
   Alert,
+  Modal,
 } from "@mantine/core";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import NextImage from "next/image";
-import { IconEye, IconEyeOff, IconAlertCircle } from "@tabler/icons-react";
-import { useRouter } from "next/navigation";
+import { IconEye, IconEyeOff, IconAlertCircle, IconCheck } from "@tabler/icons-react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-import { signIn } from "../actions";
+import { signIn, resetPassword } from "../actions";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -28,7 +29,23 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   
+  // 🆕 Forgot Password Modal States
+  const [forgotPasswordOpened, setForgotPasswordOpened] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
+  
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // 🆕 Check for error from auth callback
+  useEffect(() => {
+    const errorFromCallback = searchParams.get('error');
+    if (errorFromCallback) {
+      setError(decodeURIComponent(errorFromCallback));
+    }
+  }, [searchParams]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +64,12 @@ export default function LoginPage() {
       } else if (result?.success) {
         await new Promise(resolve => setTimeout(resolve, 200));
         
-        const profileUrl = `${process.env.NEXT_PUBLIC_PROFILE_APP_URL || 'http://profile.lvh.me:3002/dashboard'}/`;
+        // Dynamic profile URL untuk production
+        const profileUrl = process.env.NEXT_PUBLIC_PROFILE_APP_URL || 
+                          (typeof window !== 'undefined' && window.location.hostname.includes('riset.web.id')
+                            ? 'https://profile.riset.web.id/dashboard'
+                            : 'http://profile.lvh.me:3002/dashboard');
+        
         console.log('Redirecting to:', profileUrl);
         
         window.location.href = profileUrl;
@@ -62,190 +84,292 @@ export default function LoginPage() {
     }
   };
 
+  // 🆕 Handle Reset Password
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetLoading(true);
+    setResetError("");
+    setResetSuccess("");
+
+    try {
+      const result = await resetPassword(resetEmail);
+
+      if (result?.error) {
+        setResetError(result.error);
+      } else if (result?.success) {
+        setResetSuccess("Link reset password telah dikirim!");
+        setResetEmail("");
+        
+        // Close modal after 3 seconds
+        setTimeout(() => {
+          setForgotPasswordOpened(false);
+          setResetSuccess("");
+        }, 3000);
+      }
+    } catch (error: any) {
+      setResetError("Terjadi kesalahan. Silakan coba lagi.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   return (
-    <Box
-      style={{
-        minHeight: "100vh",
-        backgroundImage: `url('/webp/login-background.webp')`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "20px",
-      }}
-    >
+    <>
       <Box
         style={{
-          width: "100%",
-          maxWidth: 1100,
-          minHeight: "600px",
-          maxHeight: "90vh",
+          minHeight: "100vh",
+          backgroundImage: `url('/webp/login-background.webp')`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
           display: "flex",
-          boxShadow: "0 0 20px rgba(0,0,0,0.2)",
-          borderRadius: 16,
-          overflow: "hidden",
-          backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "20px",
         }}
       >
-        {/* Panel Kiri - Form Login */}
         <Box
           style={{
-            width: "55%",
-            backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
-            padding: "48px",
+            width: "100%",
+            maxWidth: 1100,
+            minHeight: "600px",
+            maxHeight: "90vh",
             display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            overflowY: "auto",
+            boxShadow: "0 0 20px rgba(0,0,0,0.2)",
+            borderRadius: 16,
+            overflow: "hidden",
+            backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
           }}
         >
-          <Box style={{ textAlign: "center", marginBottom: 24 }}>
-            <Title order={1} fw={800} mb={4} style={{ color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))" }}>
-              MASUK
-            </Title>
-            <Text c="dimmed" size="sm">
-              Masukkan email Anda untuk login ke akun Anda
-            </Text>
+          {/* Panel Kiri - Form Login */}
+          <Box
+            style={{
+              width: "55%",
+              backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
+              padding: "48px",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              overflowY: "auto",
+            }}
+          >
+            <Box style={{ textAlign: "center", marginBottom: 24 }}>
+              <Title order={1} fw={800} mb={4} style={{ color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))" }}>
+                MASUK
+              </Title>
+              <Text c="dimmed" size="sm">
+                Masukkan email Anda untuk login ke akun Anda
+              </Text>
+            </Box>
+
+            <form onSubmit={handleSignIn}>
+              <Stack>
+                {error && (
+                  <Alert 
+                    icon={<IconAlertCircle size="1rem" />} 
+                    color="red" 
+                    variant="filled"
+                    mb="md"
+                  >
+                    {error}
+                  </Alert>
+                )}
+
+                <Text fw={600}>Email</Text>
+                <TextInput
+                  placeholder="Masukkan email Anda..."
+                  value={email}
+                  onChange={(e) => setEmail(e.currentTarget.value)}
+                  required
+                  type="email"
+                  disabled={loading}
+                  styles={{
+                    input: {
+                      backgroundColor: "light-dark(white, var(--mantine-color-dark-7))",
+                      borderColor: "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4))",
+                      color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))",
+                      '&::placeholder': {
+                        color: "light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))",
+                      }
+                    }
+                  }}
+                />
+
+                <Text fw={600}>Kata Sandi</Text>
+                <PasswordInput
+                  placeholder="Masukkan kata sandi Anda..."
+                  value={password}
+                  onChange={(e) => setPassword(e.currentTarget.value)}
+                  visible={showPassword}
+                  onVisibilityChange={setShowPassword}
+                  visibilityToggleIcon={({ reveal }) =>
+                    reveal ? <IconEyeOff /> : <IconEye />
+                  }
+                  required
+                  disabled={loading}
+                  styles={{
+                    input: {
+                      backgroundColor: "light-dark(white, var(--mantine-color-dark-7))",
+                      borderColor: "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4))",
+                      color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))",
+                      '&::placeholder': {
+                        color: "light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))",
+                      }
+                    }
+                  }}
+                />
+
+                <Group justify="space-between" mt="xs">
+                  <Checkbox
+                    label="Ingat saya"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.currentTarget.checked)}
+                    disabled={loading}
+                  />
+                  <Text 
+                    size="sm" 
+                    c="blue" 
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setForgotPasswordOpened(true)}
+                  >
+                    Lupa kata sandi?
+                  </Text>
+                </Group>
+
+                <Button 
+                  fullWidth 
+                  mt="md" 
+                  size="md" 
+                  color="blue" 
+                  radius="md" 
+                  type="submit"
+                  loading={loading}
+                  disabled={loading}
+                >
+                  {loading ? "Masuk..." : "Masuk"}
+                </Button>
+                
+                <Text ta="center" size="sm" mt="md">
+                  Belum punya akun?{" "}
+                  <Text 
+                    component="span" 
+                    c="blue" 
+                    fw={600}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => router.push('/signup')}
+                  >
+                    Daftar di sini
+                  </Text>
+                </Text>
+              </Stack>
+            </form>
           </Box>
 
-          <form onSubmit={handleSignIn}>
-            <Stack>
-              {error && (
-                <Alert 
-                  icon={<IconAlertCircle size="1rem" />} 
-                  color="red" 
-                  variant="filled"
-                  mb="md"
-                >
-                  {error}
-                </Alert>
-              )}
-
-              <Text fw={600}>Email</Text>
-              <TextInput
-                placeholder="Masukkan email Anda..."
-                value={email}
-                onChange={(e) => setEmail(e.currentTarget.value)}
-                required
-                type="email"
-                disabled={loading}
-                styles={{
-                  input: {
-                    backgroundColor: "light-dark(white, var(--mantine-color-dark-7))",
-                    borderColor: "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4))",
-                    color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))",
-                    '&::placeholder': {
-                      color: "light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))",
-                    }
-                  }
-                }}
-              />
-
-              <Text fw={600}>Kata Sandi</Text>
-              <PasswordInput
-                placeholder="Masukkan kata sandi Anda..."
-                value={password}
-                onChange={(e) => setPassword(e.currentTarget.value)}
-                visible={showPassword}
-                onVisibilityChange={setShowPassword}
-                visibilityToggleIcon={({ reveal }) =>
-                  reveal ? <IconEyeOff /> : <IconEye />
-                }
-                required
-                disabled={loading}
-                styles={{
-                  input: {
-                    backgroundColor: "light-dark(white, var(--mantine-color-dark-7))",
-                    borderColor: "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4))",
-                    color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))",
-                    '&::placeholder': {
-                      color: "light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))",
-                    }
-                  }
-                }}
-              />
-
-              <Group justify="space-between" mt="xs">
-                <Checkbox
-                  label="Ingat saya"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.currentTarget.checked)}
-                  disabled={loading}
-                />
-                <Text size="sm" c="blue" style={{ cursor: "pointer" }}>
-                  Lupa kata sandi?
-                </Text>
-              </Group>
-
-              <Button 
-                fullWidth 
-                mt="md" 
-                size="md" 
-                color="blue" 
-                radius="md" 
-                type="submit"
-                loading={loading}
-                disabled={loading}
-              >
-                {loading ? "Masuk..." : "Masuk"}
-              </Button>
-              
-              <Text ta="center" size="sm" mt="md">
-                Belum punya akun?{" "}
-                <Text 
-                  component="span" 
-                  c="blue" 
-                  fw={600}
-                  style={{ cursor: "pointer" }}
-                  onClick={() => router.push('/signup')}
-                >
-                  Daftar di sini
-                </Text>
-              </Text>
-            </Stack>
-          </form>
-        </Box>
-
-        {/* Panel Kanan - Ilustrasi */}
-        <Box
-          style={{
-            width: "45%",
-            backgroundColor: "#0057b7",
-            padding: "32px",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-            color: "white",
-          }}
-        >
-          <Image
-            component={NextImage}
-            src='/webp/logoSRE.webp'
-            alt="My-SRE Logo"
-            width={160}
-            height={50}
-            fit="contain"
-            style={{ alignSelf: "flex-start" }}
-          />
-
-          <Box style={{ textAlign: "center" }}>
+          {/* Panel Kanan - Ilustrasi */}
+          <Box
+            style={{
+              width: "45%",
+              backgroundColor: "#0057b7",
+              padding: "32px",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              color: "white",
+            }}
+          >
             <Image
               component={NextImage}
-              src='/images/login-illustration.png'
-              alt="Illustration"
-              width={350}
-              height={350}
+              src='/webp/logoSRE.webp'
+              alt="My-SRE Logo"
+              width={160}
+              height={50}
               fit="contain"
-              style={{ margin: "0 auto" }}
+              style={{ alignSelf: "flex-start" }}
             />
-          </Box>
 
-          <Text size="xs" style={{ textAlign: "center" }}>
-            My-SRE © 2025
-          </Text>
+            <Box style={{ textAlign: "center" }}>
+              <Image
+                component={NextImage}
+                src='/images/login-illustration.png'
+                alt="Illustration"
+                width={350}
+                height={350}
+                fit="contain"
+                style={{ margin: "0 auto" }}
+              />
+            </Box>
+
+            <Text size="xs" style={{ textAlign: "center" }}>
+              My-SRE © 2025
+            </Text>
+          </Box>
         </Box>
       </Box>
-    </Box>
+
+      {/* 🆕 Forgot Password Modal */}
+      <Modal
+        opened={forgotPasswordOpened}
+        onClose={() => {
+          setForgotPasswordOpened(false);
+          setResetError("");
+          setResetSuccess("");
+          setResetEmail("");
+        }}
+        title={<Text fw={700} size="lg">Reset Password</Text>}
+        centered
+      >
+        <form onSubmit={handleResetPassword}>
+          <Stack>
+            <Text size="sm" c="dimmed">
+              Masukkan email Anda dan kami akan mengirimkan link untuk reset password.
+            </Text>
+
+            {resetError && (
+              <Alert 
+                icon={<IconAlertCircle size="1rem" />} 
+                color="red"
+              >
+                {resetError}
+              </Alert>
+            )}
+
+            {resetSuccess && (
+              <Alert 
+                icon={<IconCheck size="1rem" />} 
+                color="green"
+              >
+                {resetSuccess}
+              </Alert>
+            )}
+
+            <TextInput
+              label="Email"
+              placeholder="email@example.com"
+              value={resetEmail}
+              onChange={(e) => setResetEmail(e.currentTarget.value)}
+              required
+              type="email"
+              disabled={resetLoading || !!resetSuccess}
+            />
+
+            <Group justify="flex-end" mt="md">
+              <Button 
+                variant="subtle" 
+                onClick={() => setForgotPasswordOpened(false)}
+                disabled={resetLoading}
+              >
+                Batal
+              </Button>
+              <Button 
+                type="submit" 
+                loading={resetLoading}
+                disabled={resetLoading || !!resetSuccess}
+              >
+                Kirim Link Reset
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+    </>
   );
 }

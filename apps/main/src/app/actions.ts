@@ -302,3 +302,67 @@ export async function signOut() {
   const loginUrl = `${process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://main.lvh.me:3000'}/signin`;
   redirect(loginUrl);
 }
+
+export async function resetPassword(email: string): Promise<AuthResult> {
+  const supabase = await createServerSupabaseClient();
+  
+  try {
+    // Auto-detect environment berdasarkan NEXT_PUBLIC_MAIN_APP_URL
+    let baseUrl: string;
+    
+    if (process.env.NEXT_PUBLIC_MAIN_APP_URL) {
+      baseUrl = process.env.NEXT_PUBLIC_MAIN_APP_URL;
+    } else if (process.env.NODE_ENV === 'production') {
+      baseUrl = 'https://riset.web.id';
+    } else {
+      baseUrl = 'http://main.lvh.me:3000';
+    }
+    
+    // PENTING: redirectTo harus EXACT URL yang akan di-click di email
+    // Supabase akan append token_hash & type otomatis
+    const redirectUrl = `${baseUrl}/api/auth/confirm?next=/reset-password`;
+    
+    console.log('Reset password redirect URL:', redirectUrl);
+    
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl,
+    });
+
+    if (error) {
+      console.error('Reset password error:', error);
+      return { error: error.message };
+    }
+
+    return { 
+      success: true, 
+      // message: 'Link reset password telah dikirim ke email Anda. Silakan cek inbox atau spam folder.' 
+    };
+  } catch (error: any) {
+    console.error('Reset password failed:', error);
+    return { error: 'Gagal mengirim email reset password. Silakan coba lagi.' };
+  }
+}
+
+// 🆕 NEW: Update Password Function (dipanggil setelah user klik link di email)
+export async function updatePassword(newPassword: string): Promise<AuthResult> {
+  const supabase = await createServerSupabaseClient();
+  
+  try {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword
+    });
+
+    if (error) {
+      console.error('Update password error:', error);
+      return { error: error.message };
+    }
+
+    return { 
+      success: true, 
+      // message: 'Password berhasil diperbarui. Silakan login dengan password baru Anda.' 
+    };
+  } catch (error: any) {
+    console.error('Update password failed:', error);
+    return { error: 'Gagal memperbarui password. Silakan coba lagi.' };
+  }
+}
