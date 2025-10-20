@@ -24,7 +24,9 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Buat Draft baru (bukan upsert, karena setiap save adalah versi baru)
+    console.log('💾 Saving draft with blocks:', contentBlocks.length);
+
+    // Buat Draft baru
     const draft = await prisma.draft.create({
       data: {
         userId: user.id,
@@ -33,92 +35,78 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Parse contentBlocks menjadi sections
-    const sectionsData = [];
-    let currentSection = { title: 'Content', content: [] as string[] };
+    // Helper function untuk extract text dari block content
+    const extractText = (content: any): string => {
+      if (!content) return '';
+      if (typeof content === 'string') return content;
+      if (Array.isArray(content)) {
+        return content
+          .map((item: any) => {
+            if (typeof item === 'string') return item;
+            if (item?.text) return item.text;
+            if (item?.type === 'text' && item?.text) return item.text;
+            return '';
+          })
+          .join('')
+          .trim();
+      }
+      return '';
+    };
 
+    // PENTING: Simpan sebagai JSON untuk preserve structure
+    const sectionsData = [];
+    
     for (let i = 0; i < contentBlocks.length; i++) {
       const block = contentBlocks[i];
+      const blockText = extractText(block.content);
       
-      if (block.type === 'heading') {
-        // Jika ada section sebelumnya, save dulu
-        if (currentSection.content.length > 0) {
-          sectionsData.push({
-            draftId: draft.id,
-            title: currentSection.title,
-            content: currentSection.content.join('\n'),
-          });
-        }
-        
-        // Mulai section baru dengan heading sebagai title
-        const headingText = Array.isArray(block.content) 
-          ? block.content.map((c: any) => c.text || '').join('').trim()
-          : block.content?.toString() || `Section ${sectionsData.length + 1}`;
-          
-        currentSection = {
-          title: headingText,
-          content: []
-        };
-      } else {
-        // Tambahkan content ke section saat ini
-        let blockText = '';
-        if (typeof block.content === 'string') {
-          blockText = block.content;
-        } else if (Array.isArray(block.content)) {
-          blockText = block.content
-            .map((item: any) => typeof item === 'string' ? item : item?.text || '')
-            .join(' ');
-        }
-        
-        if (blockText.trim()) {
-          currentSection.content.push(blockText.trim());
-        }
-      }
-    }
+      // Skip empty blocks
+      if (!blockText.trim()) continue;
 
-    // Jangan lupa section terakhir
-    if (currentSection.content.length > 0) {
+      // Simpan setiap block sebagai section terpisah dengan metadata lengkap
       sectionsData.push({
         draftId: draft.id,
-        title: currentSection.title,
-        content: currentSection.content.join('\n'),
+        title: blockText.substring(0, 100), // Truncate for title
+        content: JSON.stringify({
+          type: block.type,
+          props: block.props || {},
+          content: blockText,
+          originalBlock: block, // Simpan full block structure
+          order: i // CRITICAL: Simpan order untuk preserve urutan
+        }),
       });
     }
 
-    // Jika tidak ada sections, buat satu section default
+    // Jika tidak ada sections, buat satu default
     if (sectionsData.length === 0) {
-      const allText = contentBlocks
-        .map((block: any) => {
-          if (typeof block.content === 'string') return block.content;
-          if (Array.isArray(block.content)) {
-            return block.content.map((c: any) => c.text || '').join(' ');
-          }
-          return '';
-        })
-        .join('\n')
-        .trim();
-
-      if (allText) {
-        sectionsData.push({
-          draftId: draft.id,
-          title: title || 'Content',
-          content: allText,
-        });
-      }
+      sectionsData.push({
+        draftId: draft.id,
+        title: title || 'Empty Draft',
+        content: JSON.stringify({
+          type: 'paragraph',
+          props: {},
+          content: '',
+          order: 0
+        }),
+      });
     }
+
+    console.log('💾 Saving sections:', sectionsData.length);
 
     // Insert sections ke database
-    if (sectionsData.length > 0) {
-      await prisma.draftSection.createMany({
-        data: sectionsData,
-      });
-    }
+    await prisma.draftSection.createMany({
+      data: sectionsData,
+    });
 
     // Return draft dengan sections
     const completeDraft = await prisma.draft.findUnique({
       where: { id: draft.id },
       include: {
-        sections: true,
+        sections: {
+          orderBy: {
+            id: 'asc' // Order by creation
+          }
+        },
       }
     });
 
@@ -130,9 +118,10 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error saving draft:', error);
+    console.error('❌ Error saving draft:', error);
     return NextResponse.json({ 
-      message: "Internal server error" 
+      message: "Internal server error",
+      error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
 }

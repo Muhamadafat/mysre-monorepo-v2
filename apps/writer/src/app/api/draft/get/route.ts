@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       include: {
         sections: {
           orderBy: {
-            id: 'asc' // Maintain order
+            id: 'asc' // CRITICAL: Order by ID to preserve creation order
           }
         },
       },
@@ -40,29 +40,60 @@ export async function GET(req: NextRequest) {
       }, { status: 404 });
     }
 
-    // Convert sections back to BlockNote editor format
+    console.log('📖 Loading draft with sections:', draft.sections.length);
+
+    // Parse sections back to BlockNote format with proper ordering
+    const parsedSections = draft.sections
+      .map((section) => {
+        try {
+          const parsed = JSON.parse(section.content);
+          return {
+            ...parsed,
+            sectionId: section.id, // Keep section ID for reference
+          };
+        } catch (e) {
+          console.warn('⚠️ Failed to parse section, using fallback:', section.id);
+          // Fallback: treat as plain text paragraph
+          return {
+            type: 'paragraph',
+            props: {},
+            content: section.content,
+            order: 999999, // Put unparseable content at end
+            sectionId: section.id,
+          };
+        }
+      })
+      .sort((a, b) => (a.order || 0) - (b.order || 0)); // CRITICAL: Sort by saved order
+
+    console.log('📖 Parsed sections:', parsedSections.length);
+
+    // Reconstruct BlockNote blocks
     const editorBlocks: any[] = [];
 
-    draft.sections.forEach((section, index) => {
-      // Add heading if not the first section or if section has a meaningful title
-      if (index > 0 || (section.title && section.title !== 'Content')) {
-        editorBlocks.push({
-          type: 'heading',
-          props: {
-            level: 2
-          },
-          content: section.title
-        });
-      }
+    parsedSections.forEach((section) => {
+      // Reconstruct original block structure
+      if (section.originalBlock) {
+        // Use original block if available (preferred)
+        editorBlocks.push(section.originalBlock);
+      } else {
+        // Fallback: reconstruct from saved data
+        const block: any = {
+          type: section.type || 'paragraph',
+          props: section.props || {},
+        };
 
-      // Split content by lines and create paragraph blocks
-      const lines = section.content.split('\n').filter(line => line.trim());
-      lines.forEach((line) => {
-        editorBlocks.push({
-          type: 'paragraph',
-          content: line.trim()
-        });
-      });
+        // Handle content based on type
+        if (section.type === 'heading') {
+          block.content = section.content || '';
+        } else if (section.type === 'paragraph') {
+          block.content = section.content || '';
+        } else {
+          // Other block types
+          block.content = section.content || '';
+        }
+
+        editorBlocks.push(block);
+      }
     });
 
     // If no content, add empty paragraph
@@ -72,6 +103,9 @@ export async function GET(req: NextRequest) {
         content: ''
       });
     }
+
+    console.log('✅ Reconstructed blocks:', editorBlocks.length);
+    console.log('📋 Block types:', editorBlocks.map(b => `${b.type}${b.props?.level ? `-${b.props.level}` : ''}`).join(', '));
 
     return NextResponse.json({
       success: true,
@@ -85,9 +119,10 @@ export async function GET(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error loading draft:', error);
+    console.error('❌ Error loading draft:', error);
     return NextResponse.json({
-      message: "Internal server error"
+      message: "Internal server error",
+      error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
 }
