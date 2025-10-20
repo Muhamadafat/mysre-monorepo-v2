@@ -451,6 +451,10 @@ const animationStyles = `
     box-shadow: inset 4px 0 0 rgba(255, 107, 107, 0.4), 0 4px 12px rgba(255, 107, 107, 0.2) !important;
     transform: translateX(2px) !important;
   }
+  
+  .bn-editor {
+    padding-left: 40px !important;
+  }
 
   .ai-progress-container {
     animation: progress-pulse 2s infinite;
@@ -5179,6 +5183,11 @@ INSTRUKSI:
             mb="md"
             withBorder={false}
             style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              zIndex: 10,
               background: computedColorScheme === "dark"
                 ? 'linear-gradient(135deg, rgba(26, 27, 30, 0.8), rgba(30, 32, 36, 0.8))'
                 : 'linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.9))',
@@ -5513,7 +5522,7 @@ INSTRUKSI:
             </Box>
           )}
 
-          <div style={{ height: '100%', overflow: 'auto', position: 'relative' }}>
+          <div style={{ height: '100%', overflow: 'auto', position: 'relative', paddingTop: '60px' }}>
             <style>{`
               /* GLOBAL AGGRESSIVE RESPONSIVE FIXES */
               
@@ -6343,6 +6352,9 @@ INSTRUKSI:
                 .mantine-AppShell-aside::-webkit-scrollbar {
                   display: none !important;
                 }
+              }
+              .bn-editor {
+                padding-left: 40px !important;
               }
             `}</style>
             <BlockNoteView

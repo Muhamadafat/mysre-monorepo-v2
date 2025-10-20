@@ -957,33 +957,52 @@ useEffect(() => {
    * @returns Promise yang resolve dengan response dari API GPTZero.
    */
   const callGPTZeroAPI = async (text: string): Promise<GPTZeroResponse> => {
-    const apiKey = "987d28247b4b46dfabc2303a7bee9213"; // KUNCI API ANDA
+    const apiKeys = [
+      "224b52cc3eaf462a8cddfb0403455db1",
+      "2f7260c9ee6845e0a0d9ed50440dd7d8",
+    ]; // KUNCI API ANDA
 
-    try {
-      const response = await fetch("https://api.gptzero.me/v2/predict/text", {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          "X-Api-Key": apiKey,
-        },
-        body: JSON.stringify({
-          document: text,
-        }),
-      });
+    let lastError: any = null;
 
-      if (!response.ok) {
+    for (const [index, apiKey] of apiKeys.entries()) {
+      console.log(`Mencoba GPTZero API dengan kunci #${index + 1}...`);
+      try {
+        const response = await fetch("https://api.gptzero.me/v2/predict/text", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            "X-Api-Key": apiKey,
+          },
+          body: JSON.stringify({
+            document: text,
+          }),
+        });
+
+        // Jika response berhasil (status 2xx)
+        if (response.ok) {
+          console.log(`✅ Berhasil dengan kunci API #${index + 1}`);
+          const data = await response.json();
+          return data; // Langsung kembalikan data dan hentikan loop
+        }
+
+        // Jika response adalah error dari server (misal: 401, 403, 429)
         const errorBody = await response.json();
-        console.error("GPTZero API Error Body:", errorBody);
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+        console.warn(`⚠️ Kunci API #${index + 1} gagal dengan status ${response.status}:`, errorBody.detail || 'Pesan error tidak diketahui');
+        lastError = new Error(`HTTP error! status: ${response.status}. Detail: ${errorBody.detail}`);
+        // Lanjutkan loop untuk mencoba kunci berikutnya
 
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error("GPTZero API Fetch Error:", error);
-      throw error;
+      } catch (error) {
+        // Jika terjadi error jaringan (misal: gagal fetch)
+        console.warn(`❌ Gagal koneksi jaringan dengan kunci API #${index + 1}:`, error);
+        lastError = error;
+        // Lanjutkan loop untuk mencoba kunci berikutnya
+      }
     }
+
+    // 3. Jika semua kunci API gagal, baru lemparkan error terakhir
+    console.error("❌ Semua kunci API GPTZero gagal.");
+    throw lastError || new Error("Semua kunci API gagal setelah beberapa percobaan.");
   };
 
   /**
@@ -1016,7 +1035,7 @@ useEffect(() => {
       isSimulation: boolean = false
     ): AICheckResult => {
       let recommendation = "";
-      const isConsideredHuman = percentage <= 30;
+      const isConsideredHuman = percentage <= 10;
 
       if (isSimulation) {
         recommendation =
@@ -2375,63 +2394,112 @@ const handleSubmitToTeacher = async () => {
       const currentText = getTextFromBlock(currentBlock);
 
       // Skip blok kosong
-      if (currentText.trim() === "" && currentBlock.type === "paragraph") {
+      if (currentText.trim() === "") {
         continue;
       }
 
       // LOGIKA UTAMA: Cek heading H2/H3/H4 dan lihat blok selanjutnya
-      if (currentBlock.type === 'heading' && currentBlock.props?.level > 1) {
-        const level = currentBlock.props.level;
-        const nextBlock = content[i + 1];
-        const nextText = nextBlock ? getTextFromBlock(nextBlock) : "";
+      if (currentBlock.type === 'heading') {
+        const level = currentBlock.props?.level || 1;
 
         // JIKA blok selanjutnya adalah paragraf berisi teks -> GABUNGKAN
-        if (nextBlock && nextBlock.type === 'paragraph' && nextText.trim() !== '') {
-          const label = `${truncateByWords(currentText, 3)}\n${truncateByWords(nextText, 3)}`;
+        if (level <= 4) {
           nodeData = {
-            id: nodeId, label, title: `${currentText}\n\n${nextText}`, content: nextText,
-            type: 'H2_H4', shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
-            font: { multi: true, size: 14, bold: { size: 16 } },
-            color: { background: '#fcc419', border: '#f59f00' },
+            id: nodeId,
+            label: truncateByWords(currentText, 5),
+            title: currentText,
+            type: `H${level}`,
+            shape: 'box',
+            margin: { top: 10, right: 15, bottom: 10, left: 15 },
+            font: { size: 18 - (level * 2), bold: true },
+            color: { background: level === 1 ? '#40c057' : '#fcc419', border: level === 1 ? '#2f9e44' : '#f59f00' },
           };
-          i++; // 👈 PENTING: Lompati blok paragraf berikutnya karena sudah digabung
-        } else {
-          // JIKA TIDAK -> Buat sebagai node heading biasa (tanpa konten)
-          nodeData = {
-            id: nodeId, label: truncateByWords(currentText, 3), title: currentText, content: '',
-            type: 'H2_H4', shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
-            font: { size: 16, bold: true },
-            color: { background: '#fcc419', border: '#f59f00' },
-          };
-        }
-        
-        // Logika untuk menentukan parent & edge
-        if (level > 1) parentId = lastHeadingIds[level - 1];
-        if (!parentId) { for (let p = level - 2; p >= 1; p--) { if (lastHeadingIds[p]) { parentId = lastHeadingIds[p]; break; } } }
-        lastHeadingIds[level] = nodeId;
-        for (let j = level + 1; j <= 4; j++) { lastHeadingIds[j] = null; }
 
-      } else if (currentText.trim() !== '') {
-        // Logika untuk blok lainnya (H1 atau paragraf yang tidak digabung)
-        if (currentBlock.type === 'heading') { // Ini pasti H1
-          const level = 1;
-          nodeData = {
-            id: nodeId, label: truncateByWords(currentText, 3), title: currentText, type: 'H1',
-            shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
-            font: { size: 18, bold: true },
-            color: { background: '#40c057', border: '#2f9e44' },
-          };
+          // Tentukan induknya
+          if (level > 1) {
+            // Cari induk dari level di atasnya
+            for (let p = level - 1; p >= 1; p--) {
+              if (lastHeadingIds[p]) {
+                parentId = lastHeadingIds[p];
+                break;
+              }
+            }
+          }
+
+          // Simpan ID heading saat ini
           lastHeadingIds[level] = nodeId;
-          for (let j = level + 1; j <= 4; j++) { lastHeadingIds[j] = null; }
-        } else if (currentBlock.type === 'paragraph') {
-          nodeData = {
-            id: nodeId, label: truncateByWords(currentText, 3), title: currentText, type: 'Paragraph',
-            shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
-            font: { size: 14 },
-            color: { background: '#adb5bd', border: '#868e96' },
-          };
-          for (let p = 4; p >= 1; p--) { if (lastHeadingIds[p]) { parentId = lastHeadingIds[p]; break; } }
+          // Reset ID heading di bawahnya
+          for (let j = level + 1; j <= 4; j++) {
+            lastHeadingIds[j] = null;
+          }
+          
+          // const label = `${truncateByWords(currentText, 3)}\n${truncateByWords(nextText, 3)}`;
+          // nodeData = {
+          //   id: nodeId, label, title: `${currentText}\n\n${nextText}`, content: nextText,
+          //   type: 'H2_H4', shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
+          //   font: { multi: true, size: 14, bold: { size: 16 } },
+          //   color: { background: '#fcc419', border: '#f59f00' },
+          // };
+          // i++; // 👈 PENTING: Lompati blok paragraf berikutnya karena sudah digabung
+        } 
+        
+        // else {
+        //   // JIKA TIDAK -> Buat sebagai node heading biasa (tanpa konten)
+        //   nodeData = {
+        //     id: nodeId, label: truncateByWords(currentText, 3), title: currentText, content: '',
+        //     type: 'H2_H4', shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
+        //     font: { size: 16, bold: true },
+        //     color: { background: '#fcc419', border: '#f59f00' },
+        //   };
+        // }
+        
+        // // Logika untuk menentukan parent & edge
+        // if (level > 1) parentId = lastHeadingIds[level - 1];
+        // if (!parentId) { for (let p = level - 2; p >= 1; p--) { if (lastHeadingIds[p]) { parentId = lastHeadingIds[p]; break; } } }
+        // lastHeadingIds[level] = nodeId;
+        // for (let j = level + 1; j <= 4; j++) { lastHeadingIds[j] = null; }
+
+      } 
+      
+      else {
+        nodeData = {
+          id: nodeId,
+          label: truncateByWords(currentText, 5),
+          title: currentText,
+          type: 'Paragraph',
+          shape: 'box',
+          margin: { top: 10, right: 15, bottom: 10, left: 15 },
+          font: { size: 14 },
+          color: { background: '#adb5bd', border: '#868e96' },
+        };
+        // Cari induk terakhir yang tersedia, dari level terendah ke tertinggi
+        for (let p = 4; p >= 1; p--) {
+          if (lastHeadingIds[p]) {
+            parentId = lastHeadingIds[p];
+            break;
+          }
         }
+
+        // Logika untuk blok lainnya (H1 atau paragraf yang tidak digabung)
+        // if (currentBlock.type === 'heading') { // Ini pasti H1
+        //   const level = 1;
+        //   nodeData = {
+        //     id: nodeId, label: truncateByWords(currentText, 3), title: currentText, type: 'H1',
+        //     shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
+        //     font: { size: 18, bold: true },
+        //     color: { background: '#40c057', border: '#2f9e44' },
+        //   };
+        //   lastHeadingIds[level] = nodeId;
+        //   for (let j = level + 1; j <= 4; j++) { lastHeadingIds[j] = null; }
+        // } else if (currentBlock.type === 'paragraph') {
+        //   nodeData = {
+        //     id: nodeId, label: truncateByWords(currentText, 3), title: currentText, type: 'Paragraph',
+        //     shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
+        //     font: { size: 14 },
+        //     color: { background: '#adb5bd', border: '#868e96' },
+        //   };
+        //   for (let p = 4; p >= 1; p--) { if (lastHeadingIds[p]) { parentId = lastHeadingIds[p]; break; } }
+        // }
       }
 
       if (nodeData) {
@@ -2624,21 +2692,59 @@ const handleSubmitToTeacher = async () => {
 
   // Effect to restore content when switching back to editor (if no pending content)
   // FIXED: Removed editorContent from dependency to prevent infinite loop
-  useEffect(() => {
-    if (activeCentralView === 'editor' && pendingEditorContent.length === 0 && editorContent.length > 0 && editorRef.current) {
-      const restoreContent = () => {
-        try {
-          console.log("Restoring previous editor content:", editorContent.length, "blocks");
-          editorRef.current?.setContent(editorContent);
-        } catch (error) {
-          console.error("Error restoring editor content:", error);
-        }
-      };
 
-      // Only restore if not just loaded from draft (to avoid conflict)
-      setTimeout(restoreContent, 350);
+  // ========================================================================
+  // TAMBAHKAN useEffect BARU INI UNTUK MENGGANTIKAN YANG LAMA
+  // ========================================================================
+  useEffect(() => {
+    // Hanya jalankan logika saat view diubah
+    if (activeCentralView === 'editor') {
+      // KASUS 1: Ada konten BARU dari Peta Konsep yang menunggu untuk dimasukkan.
+      if (pendingEditorContent.length > 0) {
+        // Gunakan setTimeout untuk memastikan komponen editor sudah sepenuhnya siap
+        setTimeout(() => {
+          if (editorRef.current) {
+            console.log("AKSI: Memasukkan konten BARU dari Peta Konsep.");
+            editorRef.current.setContent(pendingEditorContent);
+            // Penting: Kosongkan antrian setelah konten dimasukkan
+            setPendingEditorContent([]);
+          }
+        }, 100); // Delay singkat sudah cukup
+      }
+      // KASUS 2: Tidak ada konten baru, pengguna hanya kembali ke editor.
+      else if (editorContent.length > 0 && editorRef.current) {
+        console.log("AKSI: Memulihkan konten LAMA ke editor.");
+        editorRef.current.setContent(editorContent);
+      }
+    } 
+    // KASUS 3: Pengguna beralih DARI editor KE Peta Konsep.
+    else if (activeCentralView === 'conceptMap' && editorRef.current) {
+      // Simpan konten editor saat ini ke dalam state React.
+      try {
+        const currentContent = editorRef.current.getContent();
+        console.log("AKSI: Menyimpan konten editor saat ini ke state.", currentContent.length, "blok");
+        setEditorContent(currentContent);
+      } catch (error) {
+        console.error("Gagal menyimpan konten editor:", error);
+      }
     }
-  }, [activeCentralView, pendingEditorContent.length]); // REMOVED editorContent to fix infinite loop
+  }, [activeCentralView]); // useEffect ini hanya bergantung pada perubahan view
+
+  // useEffect(() => {
+  //   if (activeCentralView === 'editor' && pendingEditorContent.length === 0 && editorContent.length > 0 && editorRef.current) {
+  //     const restoreContent = () => {
+  //       try {
+  //         console.log("Restoring previous editor content:", editorContent.length, "blocks");
+  //         editorRef.current?.setContent(editorContent);
+  //       } catch (error) {
+  //         console.error("Error restoring editor content:", error);
+  //       }
+  //     };
+
+  //     // Only restore if not just loaded from draft (to avoid conflict)
+  //     setTimeout(restoreContent, 350);
+  //   }
+  // }, [activeCentralView, pendingEditorContent.length]); // REMOVED editorContent to fix infinite loop
 
   // Node management handlers
   const handleNodeTypeSelection = (type: 'title' | 'subtitle' | 'paragraph') => {
@@ -4903,13 +5009,14 @@ const handleSubmitToTeacher = async () => {
                             </Group>
 
                             {/* Area untuk menulis draft */}
-                            <ScrollArea
+                            <Box
+                              p="lg"
                               style={{
-                                height: '600px',
-                                border: '1px solid #e9ecef',
+                                // height: '600px',
+                                border: `1px solid ${computedColorScheme === 'dark' ? '#2C2E33' : '#e9ecef'}`,
                                 borderRadius: '8px',
-                                padding: '16px',
-                                backgroundColor: '#f8f9fa'
+                                // padding: '16px',
+                                backgroundColor: computedColorScheme === 'dark' ? '#1A1B1E' : '#f8f9fa'
                               }}
                             >
                               <Stack gap="md">
@@ -5137,7 +5244,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                 </Group>
 
                               </Stack>
-                            </ScrollArea>
+                            </Box>
                           </>
                         )}
                         {activeTab === "chat" && (
@@ -5872,7 +5979,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                   ) : (
                     <>
                       {/* Tampilan Editor yang sudah ada */}
-                      <Box style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+                      <Box style={{ flex: 1, overflow: "hidden", position: "relative",}}>
                     {/* BlockNote Editor Component dengan AI Indonesia */}
                     {isClient ? (
                       <BlockNoteEditorComponent

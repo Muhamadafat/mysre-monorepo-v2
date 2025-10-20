@@ -9,14 +9,19 @@ import 'vis-network/styles/vis-network.css';
 import {
   Box, useMantineTheme, useMantineColorScheme, Center, Stack, Text,
   ActionIcon, Group, Tooltip, Modal, TextInput, Textarea, Button, Kbd, Paper, Divider, Badge, ColorPicker, ColorInput,
+  ThemeIcon,
+  Menu,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconPlus, IconArrowRight, IconZoomIn, IconZoomOut, IconBrain, IconFileExport,
   IconTrash, IconArrowUp, IconArrowDown, IconArrowLeft, IconArrowBigUp, IconArrowBigDown, IconHandStop,
-  IconMaximize, IconNetwork, IconEye
+  IconMaximize, IconNetwork, IconEye,
+  IconHistory
 } from '@tabler/icons-react';
 import { v4 as uuidv4 } from 'uuid';
+import { group } from 'console';
+import { notifications } from '@mantine/notifications';
 
 // Tipe data baru untuk Node kita
 interface MapNode {
@@ -57,7 +62,58 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   const [editNodeContent, setEditNodeContent] = useState('');
 
   const [activeMode, setActiveMode] = useState<'none' | 'addEdge' | 'delete'>('none');
+  // Data tambahan untuk menyimpan map VisJS
+  const [historyModalOpened, { open: openHistoryModal, close: closeHistoryModal }] = useDisclosure(false);
+  const [mapHistory, setMapHistory] = useState<any[]>([]);
 
+  //No.1 untuk map VisJS
+  const handleSaveMap = () => {
+    // 1. Ambil data saat ini dari DataSet
+    const currentNodes = nodes.get({ returnType: 'Array' });
+    const currentEdges = edges.get({ returnType: 'Array' });
+
+    // 2. Buat "snapshot" dengan timestamp
+    const snapshot = {
+      timestamp: new Date().toISOString(),
+      data: {
+        nodes: currentNodes,
+        edges: currentEdges,
+      },
+    };
+
+    // 3. Ambil riwayat lama, tambahkan snapshot baru, simpan kembali
+    const history = JSON.parse(localStorage.getItem('conceptMapHistory') || '[]');
+    history.unshift(snapshot); // Tambahkan yang baru di paling atas
+    localStorage.setItem('conceptMapHistory', JSON.stringify(history.slice(0, 10))); // Simpan 10 riwayat terakhir
+
+    notifications.show({
+      title: '✅ Peta Konsep Disimpan',
+      message: `Disimpan pada ${new Date(snapshot.timestamp).toLocaleTimeString()}`,
+      color: 'green',
+    });
+  };
+
+  //No.2 untuk map VisJS
+  const handleOpenHistory = () => {
+    const history = JSON.parse(localStorage.getItem('conceptMapHistory') || '[]');
+    setMapHistory(history);
+    openHistoryModal();
+  };
+
+  //No.3 untuk map VisJS
+  const handleLoadMap = (snapshotData: { nodes: any[], edges: any[] }) => {
+    nodes.clear();
+    edges.clear();
+    nodes.add(snapshotData.nodes);
+    edges.add(snapshotData.edges);
+
+    closeHistoryModal();
+    notifications.show({
+      title: '🔄 Peta Konsep Dimuat',
+      message: 'Berhasil memuat versi yang tersimpan.',
+      color: 'blue',
+    });
+  };
 
   const theme = useMantineTheme();
   const { colorScheme } = useMantineColorScheme();
@@ -263,22 +319,21 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   useEffect(() => {
     if (visJsRef.current) {
       console.log('Creating network with nodes:', nodes.get(), 'edges:', edges.get());
-      
       const options = {
         layout: {
           hierarchical: {
             enabled: true,
-            direction: 'UD',
-            sortMethod: 'directed',
-            levelSeparation: 150,
-            nodeSpacing: 200,
+            direction: 'UD', // UD = Up-Down (Atas ke Bawah)
+            sortMethod: 'directed', // Mengatur node untuk meminimalkan persilangan garis
+            levelSeparation: 150, // Jarak antar level (atas-bawah)
+            nodeSpacing: 200,     // Jarak antar node di level yang sama (kiri-kanan)
           },
         },
         physics: false, 
         edges: {
           arrows: { to: { enabled: true, scaleFactor: 0.7 } },
           color: { color: colorScheme === 'dark' ? '#868e96' : '#adb5bd', highlight: theme.colors.blue[5] },
-          smooth: {
+          smooth: { // 👈 Tambahkan atau ubah blok ini
             type: 'cubicBezier',
             forceDirection: 'vertical',
             roundness: 0.15
@@ -308,59 +363,54 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
         },
       };
 
-      try {
-        const network = new Network(visJsRef.current, { nodes, edges }, options as any);
-        networkInstance.current = network;
+      const network = new Network(visJsRef.current, { nodes, edges }, options as any);
+      networkInstance.current = network;
 
-        network.on("click", (event) => {
-          if (event.nodes.length > 0) {
-            if (activeMode === 'none') {
-              handleNodeClick(event.nodes[0]);
-            }
+      network.on("click", (event) => {
+        if (event.nodes.length > 0) {
+          if (activeMode === 'none') {
+            handleNodeClick(event.nodes[0]);
           }
-        });
+        }
+      });
 
-        network.on("selectNode", (event) => {
-          if (activeMode === 'none' && event.nodes.length > 0) {
-            const nodeId = event.nodes[0];
-            const nodeData = nodes.get(nodeId);
-            if (Array.isArray(nodeData) && nodeData.length > 0) {
-              setSelectedNodeData(nodeData[0]);
-              openNodeView();
-            } else if (nodeData && !Array.isArray(nodeData)) {
-              setSelectedNodeData(nodeData);
-              openNodeView();
-            }
+      network.on("selectNode", (event) => {
+        if (activeMode === 'none' && event.nodes.length > 0) {
+          const nodeId = event.nodes[0];
+          const nodeData = nodes.get(nodeId);
+          if (Array.isArray(nodeData) && nodeData.length > 0) {
+            setSelectedNodeData(nodeData[0]); // Ambil elemen pertama dari array
+            openNodeView();
+          } else if (nodeData && !Array.isArray(nodeData)) {
+            // Fallback jika ternyata .get() mengembalikan satu objek
+            setSelectedNodeData(nodeData);
+            openNodeView();
           }
-        });
+        }
+      });
 
-        network.on("oncontext", (event) => {
-          event.event.preventDefault();
-        });
+      network.on("oncontext", (event) => {
+        event.event.preventDefault();
+      });
 
-        network.on("doubleClick", (event) => {
-          if (event.nodes.length === 0) {
-            openTypeSelection();
-          }
-        });
+      network.on("doubleClick", (event) => {
+        if (event.nodes.length === 0) {
+          openTypeSelection();
+        }
+      });
 
-        network.on("stabilizationIterationsDone", () => {
-          network.setOptions({ physics: false });
-        });
+      network.on("stabilizationIterationsDone", () => {
+        network.setOptions({ physics: false });
+      });
 
-        network.once("afterDrawing", () => {
-          network.fit();
-        });
+      network.once("afterDrawing", () => {
+        network.fit();
+      });
 
-        return () => {
-          network.destroy();
-          networkInstance.current = null;
-        };
-      } catch (error) {
-        console.error("Error creating network:", error);
-        // Don't create fallback - let it fail gracefully in production
-        // User will see error in console but app won't crash
-      }
+      return () => {
+        network.destroy();
+        networkInstance.current = null;
+      };
     }
   }, [nodes, edges, colorScheme, theme]);
 
@@ -477,6 +527,30 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
 
           <Group ml="auto">
             <ActionIcon.Group>
+              <Menu shadow="md" width={200}>
+                <Menu.Target>
+                  <Tooltip label="Simpan / Muat Peta Konsep">
+                    <ActionIcon variant="default" color="orange" size="lg">
+                      <IconHistory size={20} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Opsi Penyimpanan</Menu.Label>
+                  <Menu.Item
+                    leftSection={<IconFileExport size={14}/>}
+                    onClick={handleSaveMap}
+                  >
+                    Simpan Versi Ini
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<IconEye size={14}/> }
+                    onClick={handleOpenHistory}
+                  >
+                    Buka Riwayat
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
                 <Tooltip label={activeMode === 'addEdge' ? "Mode Hubungan Node (Aktif)" : "Aktifkan Mode Hubungan Node"}>
                     <ActionIcon variant={activeMode === 'addEdge' ? "filled" : "default"} color="blue" size="lg" onClick={() => setMode('addEdge')}><IconNetwork size={20}/></ActionIcon>
                 </Tooltip>
@@ -528,25 +602,56 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
       <Modal
         opened={nodeCreationOpened}
         onClose={closeNodeCreation}
-        title={`Tambah ${nodeType === 'H1' ? 'Judul' : nodeType === 'H2_H4' ? 'Sub-Judul' : 'Paragraf'}`}
+        size="lg"
+        radius="lg"
+        shadow="xl"
+        overlayProps={{ backgroundOpacity: 0.55, blur: 3}}
+        title={
+          <Group gap="sm">
+            <ThemeIcon size="lg" radius="md" variant="gradient" gradient={{ from: 'blue', to: 'cyan'}}>
+              <IconPlus size={22} />
+            </ThemeIcon>
+            <Text fw={700} size="xl" variant="gradient" gradient={{ from: 'blue', to: 'cyan' }}>
+              {`Tambah ${nodeType === 'H1' ? 'Judul' : nodeType === 'H2_H4' ? 'Sub-Judul' : 'Paragraf'}`}
+            </Text>
+          </Group>
+        }  
         centered
       >
-        <Stack>
+        <Stack gap="lg">
+          {nodeType === 'Paragraph' ? (
+            <Textarea
+              label="Ide Pokok / Kalimat"
+              description="Tuliskan isi paragraf atau beberapa kalimat di sini."
+              placeholder="Contoh: Machine learning adalah cabang dari kecerdasan buatan (AI) yang berfokus pada..."
+              value={nodeTitle}
+              onChange={(e) => setNodeTitle(e.currentTarget.value)}
+              withAsterisk
+              size="md"
+              rows={5} // Ukuran tetap 5 baris
+            />
+          ) : (
             <TextInput
-                label={nodeType === 'Paragraph' ? 'Ide Pokok / Kalimat' : 'Judul'}
-                placeholder="Masukkan teks (jangan terlalu panjang)..."
+                label="Judul"
+                description="Masukkan teks ide (jangan terlalu panjang)..."
+                placeholder="Contoh: Pengenalan Machine Learning"
                 value={nodeTitle}
                 onChange={(e) => setNodeTitle(e.currentTarget.value)}
                 required
+                size="md"
+                withAsterisk
             />
+          )}
             {nodeType === 'H2_H4' && (
                 <Textarea
                     label="Kalimat Pendukung (Opsional)"
-                    placeholder="Masukkan detail kalimat (jangan terlalu panjang)..."
+                    description="Jelaskan ide utama dengan beberapa kalimat pendukung jika perlu."
+                    placeholder="Contoh: Machine learning adalah cabang AI yang..."
                     value={nodeContent}
                     onChange={(e) => setNodeContent(e.currentTarget.value)}
-                    autosize
-                    minRows={3}
+                    // autosize
+                    rows={4}
+                    size="md"
                 />
             )}
             <Group justify="flex-end" mt="md">
@@ -599,31 +704,104 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
       <Modal
         opened={editNodeOpened}
         onClose={closeEditNode}
-        title={`Edit ${selectedNodeData?.type === 'H1' ? 'Judul' : selectedNodeData?.type === 'H2_H4' ? 'Sub-Judul' : 'Paragraf'}`}
+        size="lg"
+        radius="lg"
         centered
+        shadow="xl"
+        overlayProps={{ backgroundOpacity: 0.55, blur:3}}
+        title={
+          <Group gap="sm">
+            <ThemeIcon size="lg" radius="md" variant="gradient" gradient={{ from: 'blue', to: 'cyan'}}>
+              <IconPlus size={22} />
+            </ThemeIcon>
+            <Text fw={700} size="xl" variant="gradient" gradient={{ from: 'blue', to: 'cyan' }}>
+              {`Edit ${selectedNodeData?.type === 'H1' ? 'Judul' : selectedNodeData?.type === 'H2_H4' ? 'Sub-Judul' : 'Paragraf'}`}
+            </Text>
+          </Group>
+        }
       >
-        <Stack>
+        <Stack gap="lg">
+
+          {nodeType === 'Paragraph' ? (
+            <Textarea
+              label="Ide Pokok / Kalimat"
+              description="Tuliskan isi paragraf atau beberapa kalimat di sini."
+              placeholder="Contoh: Machine learning adalah cabang dari kecerdasan buatan (AI) yang berfokus pada..."
+              value={editNodeTitle}
+              onChange={(e) => setEditNodeTitle(e.currentTarget.value)}
+              withAsterisk
+              size="md"
+              rows={5} // Ukuran tetap 5 baris
+            />
+          ) : (
             <TextInput
-                label={selectedNodeData?.type === 'Paragraph' ? 'Ide Pokok / Kalimat' : 'Judul'}
-                placeholder="Masukkan teks (jangan terlalu panjang)..."
+                label='Judul'
+                description="Masukkan teks ide (jangan terlalu panjang)..."
+                placeholder="Contoh: Pengenalan Machine Learning"
                 value={editNodeTitle}
                 onChange={(e) => setEditNodeTitle(e.currentTarget.value)}
                 required
+                withAsterisk
+                size="md"
             />
+          )}
             {selectedNodeData?.type === 'H2_H4' && (
                 <Textarea
                     label="Kalimat Pendukung (Opsional)"
-                    placeholder="Masukkan detail kalimat (jangan terlalu panjang)..."
+                    description="Jelaskan ide utama dengan beberapa kalimat pendukung jika perlu."
+                    placeholder="Contoh: Machine learning adalah cabang AI yang..."
                     value={editNodeContent}
                     onChange={(e) => setEditNodeContent(e.currentTarget.value)}
-                    autosize
-                    minRows={3}
+                    // autosize
+                    rows={4} 
+                    size="md"
                 />
             )}
             <Group justify="flex-end" mt="md">
                 <Button variant="default" onClick={closeEditNode}>Batal</Button>
                 <Button onClick={handleEditNode}>Simpan</Button>
             </Group>
+        </Stack>
+      </Modal>
+
+      {/* Modal Riwayat */}
+      <Modal
+        opened={historyModalOpened}
+        onClose={closeHistoryModal}
+        title="Riwayat Peta Konsep"
+        centered
+        size="lg"
+      >
+        <Stack>
+          {mapHistory.length > 0 ? (
+            mapHistory.map((snapshot, index) => (
+              <Paper
+                key={index}
+                withBorder
+                p="sm"
+                radius="md"
+                style={{ cursor: 'pointer', transition: 'background-color 0.2s ease'}}
+                className="hover:bg-gray-50 dark:hover:bg-gray-800"
+                onClick={() => handleLoadMap(snapshot.data)}
+              >
+                <Group justify="space-between">
+                  <Text fw={500}>
+                    Versi Disimpan #{mapHistory.length - index}
+                  </Text>
+                  <Text size="sm" c="dimmed">
+                    {new Date(snapshot.timestamp).toLocaleString('id-ID')}
+                  </Text>
+                </Group>
+                <Text size="xs" c="dimmed">
+                  {snapshot.data.nodes.length} Nodes, {snapshot.data.edges.length} Hubungan
+                </Text>
+              </Paper>
+            ))
+          ) : (
+            <Text c="dimmed" ta="center" py="lg">
+              Belum ada riwayat peta konsep yang tersimpan.
+            </Text>
+          )}
         </Stack>
       </Modal>
     </Stack>
