@@ -2572,18 +2572,50 @@ const handleSubmitToTeacher = async () => {
           content: [{ type: "text", text: node.title || node.label.replace(/\.\.\.$/, '') }]
         });
       } else if (node.type === 'H2_H4') {
-        const h2Title = node.title ? node.title.split('\n\n')[0] : node.label.split('\n')[0].replace(/^\*|\*$/g, '');
-        blocks.push({
-          type: "heading",
-          props: { level: 2 }, // Kita asumsikan H2 untuk subjudul
-          content: [{ type: "text", text: h2Title }]
-        });
-        if (node.content && node.content.trim()) {
+        const headingLevel = node.type.includes('H3') ? 3 : node.type.includes('H4') ? 4 : 2;
+
+        let h2Title = node.title || node.label || '';
+
+        if (h2Title.includes('\n\n')) {
+        h2Title = h2Title.split('\n\n')[0];
+        }
+        // Jika title mengandung \n biasa (dari label yang digabung), ambil bagian pertama
+        else if (h2Title.includes('\n')) {
+          h2Title = h2Title.split('\n')[0];
+        }
+        
+        // Bersihkan asterisk dan whitespace
+        h2Title = h2Title.replace(/^\*+|\*+$/g, '').trim();
+        
+        // Tambahkan heading block
+        if (h2Title) {
           blocks.push({
-            type: "paragraph",
-            content: [{ type: "text", text: node.content }]
+            type: "heading",
+            props: { level: headingLevel },
+            content: [{ type: "text", text: h2Title }]
           });
         }
+        
+        // PENTING: Tambahkan content sebagai paragraf jika ada
+        if (node.content && typeof node.content === 'string' && node.content.trim()) {
+          blocks.push({
+            type: "paragraph",
+            content: [{ type: "text", text: node.content.trim() }]
+          });
+        }
+        // let h2Title = node.title || node.label || '';
+        // const h2Title = node.title ? node.title.split('\n\n')[0] : node.label.split('\n')[0].replace(/^\*|\*$/g, '');
+        // blocks.push({
+        //   type: "heading",
+        //   props: { level: 2 }, // Kita asumsikan H2 untuk subjudul
+        //   content: [{ type: "text", text: h2Title }]
+        // });
+        // if (node.content && node.content.trim()) {
+        //   blocks.push({
+        //     type: "paragraph",
+        //     content: [{ type: "text", text: node.content }]
+        //   });
+        // }
       } else if (node.type === 'Paragraph') {
         const paragraphText = node.title || node.label.replace(/\.\.\.$/, '');
         blocks.push({
