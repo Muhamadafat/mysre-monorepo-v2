@@ -9,14 +9,16 @@ import 'vis-network/styles/vis-network.css';
 import {
   Box, useMantineTheme, useMantineColorScheme, Center, Stack, Text,
   ActionIcon, Group, Tooltip, Modal, TextInput, Textarea, Button, Kbd, Paper, Divider, Badge, ColorPicker, ColorInput,
+  ThemeIcon, Menu,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconPlus, IconArrowRight, IconZoomIn, IconZoomOut, IconBrain, IconFileExport,
   IconTrash, IconArrowUp, IconArrowDown, IconArrowLeft, IconArrowBigUp, IconArrowBigDown, IconHandStop,
-  IconMaximize, IconNetwork, IconEye
+  IconMaximize, IconNetwork, IconEye, IconHistory, IconDeviceFloppy
 } from '@tabler/icons-react';
 import { v4 as uuidv4 } from 'uuid';
+import { notifications } from '@mantine/notifications';
 
 // Tipe data baru untuk Node kita
 interface MapNode {
@@ -57,10 +59,63 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   const [editNodeContent, setEditNodeContent] = useState('');
 
   const [activeMode, setActiveMode] = useState<'none' | 'addEdge' | 'delete'>('none');
+  
+  // State untuk riwayat peta konsep
+  const [historyModalOpened, { open: openHistoryModal, close: closeHistoryModal }] = useDisclosure(false);
+  const [mapHistory, setMapHistory] = useState<any[]>([]);
 
 
   const theme = useMantineTheme();
   const { colorScheme } = useMantineColorScheme();
+
+  // Handler untuk simpan peta konsep
+  const handleSaveMap = () => {
+    // 1. Ambil data saat ini dari DataSet
+    const currentNodes = nodes.get({ returnType: 'Array' });
+    const currentEdges = edges.get({ returnType: 'Array' });
+
+    // 2. Buat "snapshot" dengan timestamp
+    const snapshot = {
+      timestamp: new Date().toISOString(),
+      data: {
+        nodes: currentNodes,
+        edges: currentEdges,
+      },
+    };
+
+    // 3. Ambil riwayat lama, tambahkan snapshot baru, simpan kembali
+    const history = JSON.parse(localStorage.getItem('conceptMapHistory') || '[]');
+    history.unshift(snapshot); // Tambahkan yang baru di paling atas
+    localStorage.setItem('conceptMapHistory', JSON.stringify(history.slice(0, 10))); // Simpan 10 riwayat terakhir
+
+    notifications.show({
+      title: '✅ Peta Konsep Disimpan',
+      message: `Disimpan pada ${new Date(snapshot.timestamp).toLocaleTimeString()}`,
+      color: 'green',
+    });
+  };
+
+  // Handler untuk buka riwayat
+  const handleOpenHistory = () => {
+    const history = JSON.parse(localStorage.getItem('conceptMapHistory') || '[]');
+    setMapHistory(history);
+    openHistoryModal();
+  };
+
+  // Handler untuk load peta konsep dari riwayat
+  const handleLoadMap = (snapshotData: { nodes: any[], edges: any[] }) => {
+    nodes.clear();
+    edges.clear();
+    nodes.add(snapshotData.nodes);
+    edges.add(snapshotData.edges);
+
+    closeHistoryModal();
+    notifications.show({
+      title: '🔄 Peta Konsep Dimuat',
+      message: 'Berhasil memuat versi yang tersimpan.',
+      color: 'blue',
+    });
+  };
 
   // Load initial data when component mounts or initialData changes
   useEffect(() => {
@@ -494,6 +549,31 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
 
           <Group ml="auto">
             <ActionIcon.Group>
+                <Menu shadow="md" width={200}>
+                  <Menu.Target>
+                    <Tooltip label="Simpan / Muat Peta Konsep">
+                      <ActionIcon variant="default" color="orange" size="lg">
+                        <IconHistory size={20} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Label>Opsi Penyimpanan</Menu.Label>
+                    <Menu.Item
+                      leftSection={<IconDeviceFloppy size={14}/>}
+                      onClick={handleSaveMap}
+                    >
+                      Simpan Versi Ini
+                    </Menu.Item>
+                    <Menu.Item
+                      leftSection={<IconEye size={14}/>}
+                      onClick={handleOpenHistory}
+                    >
+                      Buka Riwayat
+                    </Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
+
                 <Tooltip label={activeMode === 'addEdge' ? "Mode Hubungan Node (Aktif)" : "Aktifkan Mode Hubungan Node"}>
                     <ActionIcon variant={activeMode === 'addEdge' ? "filled" : "default"} color="blue" size="lg" onClick={() => setMode('addEdge')}><IconNetwork size={20}/></ActionIcon>
                 </Tooltip>
@@ -641,6 +721,46 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
                 <Button variant="default" onClick={closeEditNode}>Batal</Button>
                 <Button onClick={handleEditNode}>Simpan</Button>
             </Group>
+        </Stack>
+      </Modal>
+
+      {/* Modal Riwayat Peta Konsep */}
+      <Modal
+        opened={historyModalOpened}
+        onClose={closeHistoryModal}
+        title="Riwayat Peta Konsep"
+        centered
+        size="lg"
+      >
+        <Stack>
+          {mapHistory.length > 0 ? (
+            mapHistory.map((snapshot, index) => (
+              <Paper
+                key={index}
+                withBorder
+                p="sm"
+                radius="md"
+                style={{ cursor: 'pointer', transition: 'background-color 0.2s ease'}}
+                onClick={() => handleLoadMap(snapshot.data)}
+              >
+                <Group justify="space-between">
+                  <Text fw={500}>
+                    Versi Disimpan #{mapHistory.length - index}
+                  </Text>
+                  <Text size="sm" c="dimmed">
+                    {new Date(snapshot.timestamp).toLocaleString('id-ID')}
+                  </Text>
+                </Group>
+                <Text size="xs" c="dimmed">
+                  {snapshot.data.nodes.length} Nodes, {snapshot.data.edges.length} Hubungan
+                </Text>
+              </Paper>
+            ))
+          ) : (
+            <Text c="dimmed" ta="center" py="lg">
+              Belum ada riwayat peta konsep yang tersimpan.
+            </Text>
+          )}
         </Stack>
       </Modal>
     </Stack>
