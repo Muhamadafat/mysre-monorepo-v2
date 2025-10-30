@@ -958,11 +958,8 @@ useEffect(() => {
    */
   const callGPTZeroAPI = async (text: string): Promise<GPTZeroResponse> => {
     const apiKeys = [
-      "afe4c256cd844453bc4186745d0dbed7",
-      "15b4713014d141d0a0b86a83d316ebfa",
-      "b917edba508a4d24b54448893eedfe6f",
-      "3aebbbb53792479d88e8c68446c6e689",
-      "688ede214f9f4f38a8fb3da551305e4d",
+      "224b52cc3eaf462a8cddfb0403455db1",
+      "2f7260c9ee6845e0a0d9ed50440dd7d8",
     ]; // KUNCI API ANDA
 
     let lastError: any = null;
