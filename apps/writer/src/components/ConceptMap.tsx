@@ -307,10 +307,10 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
       let newPosition = { ...currentPosition };
 
       switch(direction) {
-          case 'up': newPosition.y -= moveDistance; break;
-          case 'down': newPosition.y += moveDistance; break;
-          case 'left': newPosition.x -= moveDistance; break;
-          case 'right': newPosition.x += moveDistance; break;
+          case 'up': newPosition.y += moveDistance; break;
+          case 'down': newPosition.y -= moveDistance; break;
+          case 'left': newPosition.x += moveDistance; break;
+          case 'right': newPosition.x -= moveDistance; break;
       }
       networkInstance.current.moveTo({ position: newPosition });
   };
