@@ -1,12 +1,10 @@
-import { prisma } from '@sre-monorepo/lib';
+import { prisma } from '@sre-monorepo/lib/server';
 import { NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { getServerSession } from '@sre-monorepo/lib/server';
 
 export async function POST(req: Request) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getServerSession();
+  const user = session?.user;
 
   if (!user) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
@@ -30,10 +28,8 @@ export async function POST(req: Request) {
 
 // app/api/writer-sessions/route.ts
 export async function GET() {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getServerSession();
+  const user = session?.user;
 
   if (!user) {
     return NextResponse.json([], { status: 401 });

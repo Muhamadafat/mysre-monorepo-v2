@@ -2,7 +2,7 @@
 // Enhanced version dengan writer session support - TANPA BATAS MINIMUM KATA
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@sre-monorepo/lib'; // sesuaikan dengan path prisma Anda
+import { prisma } from '@sre-monorepo/lib/server'; // sesuaikan dengan path prisma Anda
 
 export async function POST(request: NextRequest) {
   try {

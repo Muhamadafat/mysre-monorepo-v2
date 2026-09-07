@@ -1,16 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createServerSupabaseClient } from "@sre-monorepo/lib"
+import { getServerSession, changeUserPassword } from "@sre-monorepo/lib/server"
 
 export async function POST(request: NextRequest) {
   try {
     // Verify authentication
-    const supabase = await createServerSupabaseClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
+    const session = await getServerSession()
 
-    if (authError || !user) {
+    if (!session) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     }
 
@@ -25,15 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "New password must be at least 6 characters long" }, { status: 400 })
     }
 
-    // Update password using Supabase
-    const { error: updateError } = await supabase.auth.updateUser({
-      password: newPassword,
-    })
-
-    if (updateError) {
-      console.error("Password update error:", updateError)
-      return NextResponse.json({ error: updateError.message }, { status: 400 })
-    }
+    await changeUserPassword(session.user.id, newPassword)
 
     return NextResponse.json({
       success: true,

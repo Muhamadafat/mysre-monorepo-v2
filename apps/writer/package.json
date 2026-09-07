@@ -4,32 +4,35 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3003",
-    "build": "next build --no-lint",
+    "build": "next build",
     "lint": "next lint",
     "start:writer": "next start -p 6003"
   },
   "dependencies": {
-    "@ai-sdk/google": "^1.2.22",
-    "@blocknote/core": "^0.35.0",
-    "@blocknote/mantine": "^0.35.0",
-    "@blocknote/react": "^0.35.0",
+    "@ai-sdk/google": "^4.0.45",
+    "@blocknote/core": "^0.54.0",
+    "@blocknote/mantine": "^0.54.0",
+    "@blocknote/react": "^0.54.0",
     "@sre-monorepo/lib": "^1.0.0",
-    "ai": "^4.3.19",
-    "next": "15.4.2",
-    "react": "19.1.1",
-    "react-dom": "19.1.1",
+    "ai": "^7.0.68",
+    "next": "16.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "react-katex": "^3.1.0",
-    "react-split": "^2.0.14"
+    "react-split": "^2.0.14",
+    "y-partykit": "^0.0.33",
+    "y-prosemirror": "^1.3.7",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-katex": "^3.0.4",
     "eslint": "^9",
-    "eslint-config-next": "15.4.2",
+    "eslint-config-next": "16.3.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

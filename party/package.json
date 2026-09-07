@@ -1,0 +1,17 @@
+{
+  "name": "@sre-monorepo/party",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "partykit dev",
+    "deploy": "partykit deploy"
+  },
+  "dependencies": {
+    "y-partykit": "^0.0.33",
+    "yjs": "^13.6.32"
+  },
+  "devDependencies": {
+    "partykit": "^0.0.115",
+    "typescript": "^5"
+  }
+}

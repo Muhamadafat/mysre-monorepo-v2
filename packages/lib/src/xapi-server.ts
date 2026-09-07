@@ -1,5 +1,5 @@
-import { prisma } from  "@sre-monorepo/lib"
-import type { Session } from "@supabase/supabase-js"
+import { prisma } from './prisma'
+import type { AppSession } from './auth'
 
 interface XapiStatementPayload {
   actor: {
@@ -38,7 +38,7 @@ interface XapiStatementPayload {
 
 export async function sendXapiStatementServer(
   statement: Omit<XapiStatementPayload, "actor" | "userId">,
-  session: Session | null,
+  session: AppSession | null,
   subdomain: string,
 ) {
   if (!session?.user?.id) {
@@ -46,12 +46,12 @@ export async function sendXapiStatementServer(
     return
   }
 
-  const sessionId = `${session.user.id}_${Math.floor(session.expires_at! / 1000)}`;
+  const sessionId = `${session.user.id}_${Math.floor(session.expires_at / 1000)}`;
 
   const fullStatement: XapiStatementPayload = {
     actor: {
       mbox: `mailto:${session.user.email}`,
-      name: session.user.user_metadata?.name || session.user.email,
+      name: session.user.name || session.user.email,
     },
     userId: session.user.id,
     sessionId: sessionId,

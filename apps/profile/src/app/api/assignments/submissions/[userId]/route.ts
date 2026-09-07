@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { prisma } from '@sre-monorepo/lib';
-import { createServerSupabaseClient } from "@sre-monorepo/lib";
+import { prisma } from '@sre-monorepo/lib/server';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
   try {

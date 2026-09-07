@@ -1,4 +1,7 @@
-import type { Session } from "@supabase/supabase-js"
+interface ClientSession {
+  user: { id: string; email: string; name?: string | null }
+  expires_at: number
+}
 
 interface XapiStatementPayload {
   actor: {
@@ -36,7 +39,7 @@ interface XapiStatementPayload {
 
 export async function sendXapiStatement(
   statement: Omit<XapiStatementPayload, "actor" | "userId">,
-  session: Session | null,
+  session: ClientSession | null,
   currentPathname: string,
   subdomain: string,
 ) {
@@ -48,7 +51,7 @@ export async function sendXapiStatement(
   const fullStatement: XapiStatementPayload = {
     actor: {
       mbox: `mailto:${session.user.email}`,
-      name: session.user.user_metadata?.name || session.user.email,
+      name: session.user.name || session.user.email,
     },
     userId: session.user.id,
     context: {

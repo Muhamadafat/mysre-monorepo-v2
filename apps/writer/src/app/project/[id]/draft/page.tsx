@@ -10,6 +10,7 @@ import { PartialBlock } from "@blocknote/core";
 import { ExtendedEdge, ExtendedNode } from '@/types'
 import type { BlockNoteEditorRef } from '@/components/BlockNoteEditor';
 import AnnotationPanel from '@/components/AnnotationPanel';
+import ShareDraftModal from '@/components/ShareDraftModal';
 const BlockNoteEditorComponent = dynamic(() => import("@/components/BlockNoteEditor"), {
   ssr: false
 });
@@ -132,6 +133,7 @@ import {
    IconArticle,
    IconHeading,
    IconHelpCircle,
+   IconUsers,
   } from "@tabler/icons-react";
 import classes from '../../../container.module.css';
 // import'/images/LogoSRE_FIX.png'from '../../../imageCollection/LogoSRE_Fix.png';
@@ -296,6 +298,26 @@ export default function Home() {
   const [writerSessionLoading, setWriterSessionLoading] = useState(true);
   const [writerSession, setWriterSession] = useState<any>(null);
   const [writerSessionInitialized, setWriterSessionInitialized] = useState(false);
+  const [shareModalOpened, setShareModalOpened] = useState(false);
+
+  // Realtime collaboration config — one living document per writer session,
+  // synced via Yjs/PartyKit. See BlockNoteEditor's `collaboration` prop.
+  // IMPORTANT: room id must be the resolved WriterSession id (writerSession?.id),
+  // not the raw URL `projectId` — when arriving from a brainstorming session,
+  // `projectId` is actually the BrainstormingSession id until the WriterSession
+  // is resolved/created, which would otherwise room-key collaborators against
+  // an id no WriterSession row actually has.
+  const collaborationConfig = useMemo(() => {
+    if (!writerSession?.id || !dropdownUser?.id) return undefined;
+    const cursorColors = ['#f783ac', '#fa5252', '#fd7e14', '#f59f00', '#40c057', '#15aabf', '#4c6ef5', '#7950f2'];
+    let hash = 0;
+    for (let i = 0; i < dropdownUser.id.length; i++) hash = (hash * 31 + dropdownUser.id.charCodeAt(i)) | 0;
+    const color = cursorColors[Math.abs(hash) % cursorColors.length];
+    return {
+      roomId: writerSession.id,
+      user: { name: dropdownUser.name || dropdownUser.email || 'Anonim', color },
+    };
+  }, [writerSession?.id, dropdownUser?.id, dropdownUser?.name, dropdownUser?.email]);
 
   // State untuk draft
   const [draftTitle, setDraftTitle] = useState('');
@@ -3971,7 +3993,7 @@ const handleSubmitToTeacher = async () => {
 
           {/* ================== PANDUAN ================== */}
           <Tabs.Panel value="panduan" pt="md">
-            <Grid gutter="xl" align="stretch">
+            <Grid gap="xl" align="stretch">
               {/* Panel Kiri */}
               <Grid.Col span={{ base: 12, md: 4 }}>
                 <Paper
@@ -4684,7 +4706,8 @@ const handleSubmitToTeacher = async () => {
                             writerSession={writerSession}
                             projectId={projectId}
                             isFromBrainstorming={isFromBrainstorming}
-                            nodesData={article} 
+                            nodesData={article}
+                            collaboration={collaborationConfig}
                           />
 
 
@@ -4865,7 +4888,19 @@ const handleSubmitToTeacher = async () => {
                           disabled={isScanning || loading}
                           loading={loading}
                         >
-                          {loading ? 'Menyimpan...' : 'Simpan Draft'}
+                          {loading ? 'Menyimpan...' : 'Simpan Versi'}
+                        </Button>
+
+                        <Button
+                          variant="light"
+                          color="grape"
+                          leftSection={<IconUsers size={18} />}
+                          radius="md"
+                          size="md"
+                          disabled={!writerSession?.id}
+                          onClick={() => setShareModalOpened(true)}
+                        >
+                          Kolaborator
                         </Button>
 
                         <Button 
@@ -6030,6 +6065,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                         projectId={projectId}
                         isFromBrainstorming={isFromBrainstorming}
                         nodesData={article}
+                        collaboration={collaborationConfig}
                       />
                     ) : (
                       <Box
@@ -6134,7 +6170,19 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                           disabled={isScanning || loading}
                           loading={loading}
                         >
-                          {loading ? 'Menyimpan...' : 'Simpan Draft'}
+                          {loading ? 'Menyimpan...' : 'Simpan Versi'}
+                        </Button>
+
+                        <Button
+                          variant="light"
+                          color="grape"
+                          leftSection={<IconUsers size={18} />}
+                          radius="md"
+                          size="md"
+                          disabled={!writerSession?.id}
+                          onClick={() => setShareModalOpened(true)}
+                        >
+                          Kolaborator
                         </Button>
 
                         <Button
@@ -8419,6 +8467,13 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
           </Group>
         </Stack>
       </Modal>
+
+      <ShareDraftModal
+        opened={shareModalOpened}
+        onClose={() => setShareModalOpened(false)}
+        writerSessionId={writerSession?.id ?? ''}
+        isOwner={!!writerSession && !!dropdownUser && writerSession.userId === dropdownUser.id}
+      />
 
     </AppShell>
   );

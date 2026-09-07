@@ -3,9 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 model Article {
@@ -84,6 +82,10 @@ model User {
   group                String?
   nim                  String?
 
+  passwordResetToken   String?                @unique
+  passwordResetExpires DateTime?
+  emailVerifyToken     String?                @unique
+
   avatar_url           String?
   phone                String?
   bio                  String?
@@ -107,6 +109,7 @@ model User {
   brainstormingSession BrainstormingSession[]
   drafts               Draft[]
   writerSessions       WriterSession[]
+  writerSessionCollaborations WriterSessionCollaborator[]
   tokenUsages          TokenUsage[]
 
   createdAssignments   Assignment[]          @relation("AssignmentCreator")
@@ -116,14 +119,16 @@ model User {
 }
 
 model Draft {
-  id            String         @id @default(uuid())
-  userId        String?
-  title         String
-  createdAt     DateTime       @default(now())
-  writerId      String?
-  user          User?          @relation(fields: [userId], references: [id])
-  writerSession WriterSession? @relation(fields: [writerId], references: [id], onDelete: Cascade)
-  sections      DraftSection[]
+  id             String         @id @default(uuid())
+  userId         String?
+  title          String
+  createdAt      DateTime       @default(now())
+  writerId       String?
+  conceptMapData Json?
+  contentBlocks  Json?
+  user           User?          @relation(fields: [userId], references: [id])
+  writerSession  WriterSession? @relation(fields: [writerId], references: [id], onDelete: Cascade)
+  sections       DraftSection[]
 }
 
 model DraftSection {
@@ -193,20 +198,39 @@ model WriterSession {
   updatedAt    DateTime @updatedAt
   lastActivity DateTime @default(now())
   coverColor   String   @default("#4c6ef5")
+  shareToken   String?  @unique
   drafts       Draft[]
   user         User     @relation(fields: [userId], references: [id])
   brainstormingSession  BrainstormingSession? @relation(fields: [brainstormingSessionId], references: [id])
+  collaborators WriterSessionCollaborator[]
 }
 
-model Document {
-  id        String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  content   String
-  metadata  Json                   @default("{}")
-  embedding Unsupported("vector")?
-  createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+model WriterSessionCollaborator {
+  id              String        @id @default(uuid())
+  writerSessionId String
+  userId          String
+  role            String        @default("editor") // owner | editor
+  createdAt       DateTime      @default(now())
+  writerSession   WriterSession @relation(fields: [writerSessionId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("documents")
+  @@unique([writerSessionId, userId])
 }
+
+// Requires the pgvector Postgres extension, which isn't installed on the new
+// local Postgres yet (no code references prisma.document — only the separate
+// Python RAG service touches this table directly via raw SQL). Commented out
+// so `prisma db push` can create every other table; re-enable once pgvector
+// is installed locally (`CREATE EXTENSION vector;`) if embeddings search is needed.
+// model Document {
+//   id        String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+//   content   String
+//   metadata  Json                   @default("{}")
+//   embedding Unsupported("vector")?
+//   createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+//
+//   @@map("documents")
+// }
 
 model TokenUsage {
   id           String                @id @default(uuid())

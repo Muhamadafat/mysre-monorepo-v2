@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@sre-monorepo/lib';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { prisma } from '@sre-monorepo/lib/server';
+import { getServerSession } from '@sre-monorepo/lib/server';
+import { canAccessWriterSession } from '@/lib/writerSessionAccess';
 
 export async function POST(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const session = await getServerSession();
+  const user = session?.user;
 
   if (!user) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -19,9 +20,15 @@ export async function POST(req: NextRequest) {
     } = await req.json();
 
     if (!writerSessionId || !contentBlocks) {
-      return NextResponse.json({ 
-        message: "Missing required fields" 
+      return NextResponse.json({
+        message: "Missing required fields"
       }, { status: 400 });
+    }
+
+    if (!(await canAccessWriterSession(writerSessionId, user.id))) {
+      return NextResponse.json({
+        message: "Access denied to this writer session"
+      }, { status: 403 });
     }
 
     console.log('💾 Saving draft with blocks:', contentBlocks.length);

@@ -9,13 +9,10 @@ import {
   Title,
   Alert,
   Paper,
-  Loader,
-  Center,
 } from "@mantine/core";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { IconEye, IconEyeOff, IconAlertCircle, IconCheck } from "@tabler/icons-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createBrowserClient } from '@supabase/ssr';
 import { updatePassword } from "../actions";
 
 export default function ResetPasswordForm() {
@@ -26,89 +23,14 @@ export default function ResetPasswordForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [isValidToken, setIsValidToken] = useState(false);
-  const [checkingToken, setCheckingToken] = useState(true);
-  
+
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  useEffect(() => {
-    const verifySession = async () => {
-      setCheckingToken(true);
-      
-      try {
-        const supabase = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
-        
-        console.log('🔍 Checking session for password reset...');
-        
-        // 🔑 WORKAROUND: Cek access_token dari URL
-        const accessToken = searchParams.get('access_token');
-        const refreshToken = searchParams.get('refresh_token');
-        
-        if (accessToken && refreshToken) {
-          console.log('🔑 Tokens found in URL, setting session...');
-          
-          // Set session dari tokens
-          const { data, error: setSessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          
-          if (setSessionError) {
-            console.error('❌ Failed to set session:', setSessionError);
-            setError("Gagal mengatur session: " + setSessionError.message);
-            setIsValidToken(false);
-          } else if (data.session) {
-            console.log('✅ Session set successfully:', data.session.user.email);
-            setIsValidToken(true);
-            
-            // Clean URL (remove tokens from URL for security)
-            const cleanUrl = new URL(window.location.href);
-            cleanUrl.searchParams.delete('access_token');
-            cleanUrl.searchParams.delete('refresh_token');
-            window.history.replaceState({}, '', cleanUrl.toString());
-          } else {
-            setError("Gagal mendapatkan session.");
-            setIsValidToken(false);
-          }
-        } else {
-          // Fallback: Cek session normal dari cookies
-          console.log('⚠️ No tokens in URL, checking cookies...');
-          
-          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-          
-          if (sessionError) {
-            console.error('❌ Session error:', sessionError);
-            setError("Terjadi kesalahan saat memeriksa session.");
-            setIsValidToken(false);
-          } else if (session) {
-            console.log('✅ Valid session found in cookies:', session.user.email);
-            setIsValidToken(true);
-          } else {
-            console.log('❌ No session found');
-            console.log('🍪 Cookies:', document.cookie);
-            setError("Session tidak ditemukan. Link mungkin sudah kadaluarsa. Silakan request reset password baru.");
-            setIsValidToken(false);
-          }
-        }
-      } catch (err: any) {
-        console.error('❌ Unexpected error:', err);
-        setError("Terjadi kesalahan: " + err.message);
-        setIsValidToken(false);
-      }
-      
-      setCheckingToken(false);
-    };
-    
-    verifySession();
-  }, [searchParams]);
+  const token = searchParams.get("token");
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (newPassword !== confirmPassword) {
       setError("Password tidak cocok!");
       return;
@@ -119,53 +41,33 @@ export default function ResetPasswordForm() {
       return;
     }
 
+    if (!token) {
+      setError("Link reset password tidak valid.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     setSuccess("");
 
     try {
-      console.log('🔄 Updating password...');
-      const result = await updatePassword(newPassword);
+      const result = await updatePassword(token, newPassword);
 
       if (result?.error) {
-        console.error('❌ Update password failed:', result.error);
         setError(result.error);
       } else if (result?.success) {
-        console.log('✅ Password updated successfully');
         setSuccess("Password berhasil diperbarui!");
-        
+
         setTimeout(() => {
-          router.push('/signin');
+          router.push("/signin");
         }, 2000);
       }
     } catch (error: any) {
-      console.error('❌ Update password error:', error);
       setError("Terjadi kesalahan. Silakan coba lagi.");
     } finally {
       setLoading(false);
     }
   };
-
-  if (checkingToken) {
-    return (
-      <Box
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-7))",
-        }}
-      >
-        <Center>
-          <Stack align="center" gap="md">
-            <Loader size="lg" />
-            <Text c="dimmed">Memverifikasi session...</Text>
-          </Stack>
-        </Center>
-      </Box>
-    );
-  }
 
   return (
     <Box
@@ -197,20 +99,10 @@ export default function ResetPasswordForm() {
             </Text>
           </Box>
 
-          {!isValidToken && error ? (
-            <Alert 
-              icon={<IconAlertCircle size="1rem" />} 
-              color="red"
-              title="Session Tidak Valid"
-            >
-              {error}
-              <Button 
-                variant="subtle" 
-                size="sm" 
-                mt="md"
-                fullWidth
-                onClick={() => router.push('/signin')}
-              >
+          {!token ? (
+            <Alert icon={<IconAlertCircle size="1rem" />} color="red" title="Link Tidak Valid">
+              Link reset password tidak valid atau sudah kadaluarsa. Silakan request reset password baru.
+              <Button variant="subtle" size="sm" mt="md" fullWidth onClick={() => router.push("/signin")}>
                 Kembali ke Halaman Login
               </Button>
             </Alert>
@@ -218,20 +110,13 @@ export default function ResetPasswordForm() {
             <form onSubmit={handleUpdatePassword}>
               <Stack gap="md">
                 {error && (
-                  <Alert 
-                    icon={<IconAlertCircle size="1rem" />} 
-                    color="red"
-                  >
+                  <Alert icon={<IconAlertCircle size="1rem" />} color="red">
                     {error}
                   </Alert>
                 )}
 
                 {success && (
-                  <Alert 
-                    icon={<IconCheck size="1rem" />} 
-                    color="green"
-                    title="Berhasil!"
-                  >
+                  <Alert icon={<IconCheck size="1rem" />} color="green" title="Berhasil!">
                     {success}
                     <Text size="sm" mt="xs">Redirecting to login...</Text>
                   </Alert>
@@ -271,12 +156,12 @@ export default function ResetPasswordForm() {
                   }
                 />
 
-                <Button 
-                  fullWidth 
-                  mt="md" 
-                  size="md" 
-                  color="blue" 
-                  radius="md" 
+                <Button
+                  fullWidth
+                  mt="md"
+                  size="md"
+                  color="blue"
+                  radius="md"
                   type="submit"
                   loading={loading}
                   disabled={loading || !!success || !newPassword || !confirmPassword}
@@ -285,12 +170,12 @@ export default function ResetPasswordForm() {
                 </Button>
 
                 <Text ta="center" size="sm" mt="md">
-                  <Text 
-                    component="span" 
-                    c="blue" 
+                  <Text
+                    component="span"
+                    c="blue"
                     fw={600}
                     style={{ cursor: "pointer" }}
-                    onClick={() => router.push('/signin')}
+                    onClick={() => router.push("/signin")}
                   >
                     Kembali ke Login
                   </Text>

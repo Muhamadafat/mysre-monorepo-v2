@@ -1,8 +1,8 @@
 // apps/brain/middleware.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
-import { sendXapiFromMiddleware } from '@sre-monorepo/lib';
+import { getServerSession } from '@sre-monorepo/lib/server';
+import { sendXapiFromMiddleware } from '@sre-monorepo/lib/server';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -18,16 +18,14 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    const supabase = await createServerSupabaseClient();
-    const { data: { session }, error } = await supabase.auth.getSession();
-    
+    const session = await getServerSession();
+
     // Enhanced debug logging
     if (process.env.NODE_ENV === 'development') {
       console.log('=== BRAIN MIDDLEWARE DEBUG ===');
       console.log('Pathname:', pathname);
       console.log('Session exists:', !!session);
       console.log('Session user:', session?.user?.email);
-      console.log('Session error:', error);
       console.log('Cookies:', request.headers.get('cookie'));
       console.log('================================');
     }
@@ -92,6 +90,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  runtime: 'nodejs',
   matcher: [
     '/((?!api|_next/static|_next/image|favicon.ico|public).*)',
   ],

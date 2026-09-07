@@ -1,10 +1,10 @@
 import { NextResponse, NextRequest } from "next/server";
-import { prisma } from "@sre-monorepo/lib";
-import { createServerSupabaseClient } from "@sre-monorepo/lib";
+import { prisma } from "@sre-monorepo/lib/server";
+import { saveScreenshot } from "@/lib/storage";
 
 export async function POST(req: NextRequest){
 
-    try {   
+    try {
         const body = await req.json();
         const { sessionId, gazeData, screenshot } = body;
 
@@ -13,19 +13,15 @@ export async function POST(req: NextRequest){
         if (screenshot){
             const base64Data = screenshot.replace(/^data:image\/jpeg;base64,/, "");
             const buffer = Buffer.from(base64Data, 'base64');
-            const filePath = `public/${sessionId}/${Date.now()}.jpg`;
+            const filename = `${Date.now()}.jpg`;
 
-            const supabase = await createServerSupabaseClient();
-            const { data: uploadData, error: uploadError } = await supabase.storage.from('screenshots').upload(filePath, buffer, {
-                contentType: 'image/jpeg',
-                upsert: false,
-            });
-
-            if (uploadError){
-                throw new Error(`Supabase Storage Error: ${uploadError.message}`);
-            };
-            screenshotPath = uploadData.path;
-            console.log(`[API] screenshot uploaded to supabase storage: ${screenshotPath}`);
+            try {
+                const saved = await saveScreenshot(buffer, sessionId, filename);
+                screenshotPath = saved.path;
+                console.log(`[API] screenshot saved to local storage: ${screenshotPath}`);
+            } catch (uploadError: any) {
+                throw new Error(`Local storage error: ${uploadError.message}`);
+            }
         }
 
         await prisma.gazeEvent.create({

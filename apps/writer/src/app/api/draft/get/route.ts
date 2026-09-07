@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@sre-monorepo/lib';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { prisma } from '@sre-monorepo/lib/server';
+import { getServerSession } from '@sre-monorepo/lib/server';
+import { canAccessWriterSession } from '@/lib/writerSessionAccess';
 
 export async function GET(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const session = await getServerSession();
+  const user = session?.user;
 
   if (!user) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -21,10 +22,7 @@ export async function GET(req: NextRequest) {
     }
 
     const draft = await prisma.draft.findUnique({
-      where: {
-        id: draftId,
-        userId: user.id, // Ensure user owns this draft
-      },
+      where: { id: draftId },
       include: {
         sections: {
           orderBy: {
@@ -35,6 +33,16 @@ export async function GET(req: NextRequest) {
     });
 
     if (!draft) {
+      return NextResponse.json({
+        message: "Draft not found"
+      }, { status: 404 });
+    }
+
+    // Owner of the draft, OR owner/collaborator of the writer session it
+    // belongs to, may read it.
+    const isOwner = draft.userId === user.id;
+    const hasSessionAccess = draft.writerId ? await canAccessWriterSession(draft.writerId, user.id) : false;
+    if (!isOwner && !hasSessionAccess) {
       return NextResponse.json({
         message: "Draft not found"
       }, { status: 404 });

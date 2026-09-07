@@ -1,14 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createServerSupabaseClient } from "@sre-monorepo/lib"
-import { sendXapiStatementServer } from "@sre-monorepo/lib"
-import { prisma } from "@sre-monorepo/lib"
+import { getServerSession, signOutUser } from "@sre-monorepo/lib/server"
+import { sendXapiStatementServer } from "@sre-monorepo/lib/server"
+import { prisma } from "@sre-monorepo/lib/server"
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerSupabaseClient()
-
     //tambahxapi
-    const { data: { session}} = await supabase.auth.getSession();
+    const session = await getServerSession();
 
     if (session){
       const sessionId = `${session.user.id}_${Math.floor(session.expires_at! / 1000)}`
@@ -46,13 +44,7 @@ export async function POST(request: NextRequest) {
       }, session, subdomain)
     }
     
-    // Sign out dari Supabase
-    const { error } = await supabase.auth.signOut()
-
-    if (error) {
-      console.error("Supabase signOut error:", error)
-      return NextResponse.json({ error: "Failed to sign out" }, { status: 500 })
-    }
+    await signOutUser()
 
     return NextResponse.json({ success: true })
   } catch (error) {

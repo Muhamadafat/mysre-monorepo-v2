@@ -1,6 +1,6 @@
 // src/app/api/xapi/analytics/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from "@sre-monorepo/lib";
+import { prisma } from "@sre-monorepo/lib/server";
 
 export async function GET(request: NextRequest) {
   try {

@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { prisma } from "@sre-monorepo/lib"
+import { prisma } from "@sre-monorepo/lib/server"
 import { writeFile, mkdir } from "fs/promises"
 import { join } from "path"
-import { createServerSupabaseClient } from "@sre-monorepo/lib"
+import { getServerSession } from "@sre-monorepo/lib/server"
 
 // export async function POST(request: NextRequest) {
 //   try {
@@ -249,13 +249,10 @@ type FileMeta = {
 export async function POST(request: NextRequest) {
   try {
     // Verify authentication
-    const supabase = await createServerSupabaseClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
+    const session = await getServerSession()
+    const user = session?.user
 
-    if (authError || !user) {
+    if (!user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     }
 

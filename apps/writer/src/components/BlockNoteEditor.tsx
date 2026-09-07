@@ -1,7 +1,10 @@
 "use client";
 
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import * as Y from "yjs";
+import YPartyKitProvider from "y-partykit/provider";
 import { Block, BlockNoteEditor, PartialBlock, BlockNoteSchema, defaultInlineContentSpecs, defaultStyleSpecs, filterSuggestionItems, InlineContentSchema, StyleSchema, createStyleSpec } from "@blocknote/core";
+import { withCollaboration } from "@blocknote/core/yjs";
 import "@blocknote/core/fonts/inter.css";
 import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
@@ -118,6 +121,16 @@ interface BlockNoteEditorRef {
   canUndo: () => boolean;
   canRedo: () => boolean;
   openLatexModal: () => void;
+  isCollaborative: () => boolean;
+}
+
+interface CollaborationConfig {
+  /** Realtime room id — one living document per writer session. */
+  roomId: string;
+  user: {
+    name: string;
+    color: string;
+  };
 }
 
 //article interface
@@ -145,6 +158,10 @@ interface BlockNoteEditorProps {
   nodesData?: Article[];
   onLogFormula?: (formula: string, result: string) => void;
   onLogEdit?: (title: string, oldValue?: string, newValue?: string, wordCount?: number) => void;
+  /** When set, the editor syncs live via Yjs/PartyKit instead of being a
+   * standalone local document — multiple users editing the same roomId see
+   * each other's changes and cursors in realtime. */
+  collaboration?: CollaborationConfig;
 }
 
 interface ContinueWritingState {
@@ -484,14 +501,96 @@ const animationStyles = `
 `;
 
 
+// Module-level, ref-counted cache of {doc, provider} per collaboration room.
+// A plain useRef/useEffect pair here would get torn down and left dead by
+// React StrictMode's dev-only mount->cleanup->remount effect double-invoke
+// (the cleanup calls provider.destroy(), which is not reconnectable, and
+// nothing re-creates it on the immediate re-mount since creation happens
+// during render, not inside the effect). Keeping the doc/provider outside
+// the component's render/effect lifecycle — with a refcount — makes that
+// double-invoke a harmless increment/decrement instead of a real teardown.
+//
+// Two details matter for StrictMode specifically:
+// - Teardown on refCount 0 is deferred one macrotask. StrictMode's
+//   cleanup->re-setup for the *same* effect runs synchronously (no yield in
+//   between), so a release immediately followed by a re-acquire cancels the
+//   pending teardown instead of destroying and recreating the connection.
+// - `ref` is a single stable object reused for every acquire of the same
+//   entry (not a fresh `{doc, provider}` literal per call), so React state
+//   holding it (`collabRoom`) never changes identity across that same
+//   StrictMode blip — which would otherwise cause `useCreateBlockNote`'s
+//   `deps`-based memo to recreate the editor a second, unwanted time.
+type CollaborationRoomHandle = { doc: Y.Doc; provider: YPartyKitProvider };
+const collaborationRoomCache = new Map<
+  string,
+  CollaborationRoomHandle & { refCount: number; destroyTimer: ReturnType<typeof setTimeout> | null }
+>();
+
+function acquireCollaborationRoom(roomId: string): CollaborationRoomHandle {
+  let entry = collaborationRoomCache.get(roomId);
+  if (!entry) {
+    const doc = new Y.Doc({ guid: roomId });
+    const provider = new YPartyKitProvider(
+      process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
+      roomId,
+      doc
+    );
+    entry = { doc, provider, refCount: 0, destroyTimer: null };
+    collaborationRoomCache.set(roomId, entry);
+  }
+  if (entry.destroyTimer) {
+    clearTimeout(entry.destroyTimer);
+    entry.destroyTimer = null;
+  }
+  entry.refCount += 1;
+  return entry;
+}
+
+function releaseCollaborationRoom(roomId: string) {
+  const entry = collaborationRoomCache.get(roomId);
+  if (!entry) return;
+  entry.refCount -= 1;
+  if (entry.refCount <= 0) {
+    entry.destroyTimer = setTimeout(() => {
+      const current = collaborationRoomCache.get(roomId);
+      if (current && current.refCount <= 0) {
+        current.provider.destroy();
+        current.doc.destroy();
+        collaborationRoomCache.delete(roomId);
+      }
+    }, 0);
+  }
+}
+
 // Main component
 const BlockNoteEditorComponent = forwardRef<BlockNoteEditorRef, BlockNoteEditorProps>(
   function BlockNoteEditorComponent(
-    { onContentChange, style, onLogFormula, onLogEdit, mcpContext, writerSession, projectId, isFromBrainstorming, nodesData }: BlockNoteEditorProps,
+    { onContentChange, style, onLogFormula, onLogEdit, mcpContext, writerSession, projectId, isFromBrainstorming, nodesData, collaboration }: BlockNoteEditorProps,
     ref
   ) {
     const computedColorScheme = useComputedColorScheme("light");
     const [deleteConfirmationOpened, { open: openDeleteConfirmation, close: closeDeleteConfirmation }] = useDisclosure(false);
+
+    // Yjs doc + PartyKit provider for realtime collaboration, acquired from a
+    // ref-counted module-level cache (see acquireCollaborationRoom above) so
+    // React StrictMode's dev-mode effect double-invoke (mount -> cleanup ->
+    // remount) re-acquires a live connection instead of leaving the editor
+    // bound to a destroyed provider. Acquisition happens in an effect (not
+    // during render) so it pairs correctly with its cleanup.
+    const [collabRoom, setCollabRoom] = React.useState<{ doc: Y.Doc; provider: YPartyKitProvider } | null>(null);
+    const collaborationRoomId = collaboration?.roomId;
+
+    React.useEffect(() => {
+      if (!collaborationRoomId) {
+        setCollabRoom(null);
+        return;
+      }
+      const room = acquireCollaborationRoom(collaborationRoomId);
+      setCollabRoom(room);
+      return () => {
+        releaseCollaborationRoom(collaborationRoomId);
+      };
+    }, [collaborationRoomId]);
 
     // Add CSS animations to head
     React.useEffect(() => {
@@ -811,31 +910,48 @@ const BlockNoteEditorComponent = forwardRef<BlockNoteEditorRef, BlockNoteEditorP
       },
     });
 
-    const editor = useCreateBlockNote({
-      schema,
-      initialContent: [
-        {
-          type: "paragraph",
-          content: "",
-        },
-      ],
-      uploadFile: async (file: File) => {
-        const body = new FormData();
-        body.append("file", file);
+    const uploadFile = async (file: File) => {
+      const body = new FormData();
+      body.append("file", file);
 
-        try {
-          const response = await fetch("/api/upload", {
-            method: "POST",
-            body: body,
-          });
-          const json = await response.json();
-          return json.url;
-        } catch (error) {
-          console.error("Upload failed:", error);
-          return "";
-        }
-      },
-    });
+      try {
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          body: body,
+        });
+        const json = await response.json();
+        return json.url;
+      } catch (error) {
+        console.error("Upload failed:", error);
+        return "";
+      }
+    };
+
+    const editor = useCreateBlockNote(
+      collabRoom
+        ? withCollaboration({
+            schema,
+            collaboration: {
+              provider: collabRoom.provider,
+              fragment: collabRoom.doc.getXmlFragment("document-store"),
+              user: collaboration!.user,
+            },
+            uploadFile,
+          })
+        : {
+            schema,
+            initialContent: [
+              {
+                type: "paragraph",
+                content: "",
+              },
+            ],
+            uploadFile,
+          },
+      // Recreate the editor once the collaborative room becomes available so
+      // it binds to the real Yjs fragment instead of local-only content.
+      [collabRoom]
+    );
 
     // Text formatting shortcuts integration - COMPLETELY DISABLED FOR TESTING
     useTextFormattingShortcuts({
@@ -1999,6 +2115,7 @@ const BlockNoteEditorComponent = forwardRef<BlockNoteEditorRef, BlockNoteEditorP
       canUndo,
       canRedo,
       openLatexModal,
+      isCollaborative: () => !!collabRoom,
     }));
 
     // LaTeX Modal handlers
@@ -6358,6 +6475,7 @@ INSTRUKSI:
               }
             `}</style>
             <BlockNoteView
+              key={collaboration ? (collabRoom ? `collab-${collaboration.roomId}` : "collab-loading") : "local"}
               editor={editor}
               slashMenu={false}
               theme={computedColorScheme}

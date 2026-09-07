@@ -1,6 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { prisma } from "@sre-monorepo/lib";
-import { createServerSupabaseClient } from "@sre-monorepo/lib";
+import { prisma } from "@sre-monorepo/lib/server";
 
 export async function GET(req: NextRequest, { params } : { params: Promise<{ sessionId: string }>}){
     try {
@@ -104,19 +103,9 @@ export async function GET(req: NextRequest, { params } : { params: Promise<{ ses
         // Find screenshot from any event that has one
         const screenshotPath = gazeEvents.find(event => event.screenshotPath)?.screenshotPath || null;
 
-        let publicScreenshotUrl: string | null = null;
-        if (screenshotPath){
-            try {
-                const supabase = await createServerSupabaseClient();
-                const { data: signedUrlData } = await supabase.storage.from('screenshots').createSignedUrl(screenshotPath, 3600);
-
-                if (signedUrlData?.signedUrl){
-                    publicScreenshotUrl = signedUrlData.signedUrl;
-                }
-            } catch (error) {
-                console.error('Error generating signed URL:', error);
-            }
-        }
+        const publicScreenshotUrl: string | null = screenshotPath
+            ? `/api/screenshots/${screenshotPath}`
+            : null;
 
         // Calculate statistics
         const startTime = gazeEvents[0]?.createdAt;

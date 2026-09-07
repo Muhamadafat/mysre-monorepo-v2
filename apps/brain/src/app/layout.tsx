@@ -6,8 +6,8 @@ import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
-import { prisma } from '@sre-monorepo/lib';
+import { getServerSession } from '@sre-monorepo/lib/server';
+import { prisma } from '@sre-monorepo/lib/server';
 
 export const metadata = {
   title: "My-SRE IDE - AI-Powered Research Platform",
@@ -17,15 +17,14 @@ export const metadata = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Check authentication and group
-  const supabase = await createServerSupabaseClient();
-  const { data: { session }, error } = await supabase.auth.getSession();
+  const session = await getServerSession();
 
   console.log('=== BRAIN LAYOUT AUTH CHECK ===');
   console.log('Session exists:', !!session);
   console.log('User:', session?.user?.email);
 
   // Jika tidak ada session, redirect ke main app signin
-  if (!session || error) {
+  if (!session) {
     console.log('Brain Layout: No session, redirecting to signin');
     const mainAppUrl = process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://main.lvh.me:3000';
     redirect(`${mainAppUrl}/signin?redirectedFrom=brain`);

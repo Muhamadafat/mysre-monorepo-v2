@@ -1,16 +1,14 @@
 // apps/writer/src/app/api/test-auth/route.ts
 import { NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@sre-monorepo/lib'
+import { getServerSession } from '@sre-monorepo/lib/server'
 
 export async function GET() {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { session }, error } = await supabase.auth.getSession()
-    
+    const session = await getServerSession()
+
     return NextResponse.json({
       hasSession: !!session,
       userEmail: session?.user?.email,
-      error: error?.message,
       // NO DATABASE QUERY - pure auth test
     })
   } catch (error) {

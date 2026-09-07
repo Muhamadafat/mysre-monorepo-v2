@@ -1,16 +1,15 @@
 // apps/main/middleware.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
-import { sendXapiFromMiddleware } from '@sre-monorepo/lib';
+import { getServerSession } from '@sre-monorepo/lib/server';
+import { sendXapiFromMiddleware } from '@sre-monorepo/lib/server';
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
 
   try {
-    const supabase = await createServerSupabaseClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    
+    const session = await getServerSession();
+
     const { pathname } = request.nextUrl;
 
     //for xapi
@@ -99,6 +98,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  runtime: 'nodejs',
   matcher: [
     '/',
     '/signin',

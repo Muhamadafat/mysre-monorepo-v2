@@ -1,5 +1,5 @@
 // packages/lib/src/xapi-middleware.ts - NEW FILE
-import type { Session } from "@supabase/supabase-js"
+import type { AppSession } from './auth'
 import type { NextRequest } from 'next/server'
 
 interface XapiStatementPayload {
@@ -39,7 +39,7 @@ interface XapiStatementPayload {
 
 export async function sendXapiFromMiddleware(
   statement: Omit<XapiStatementPayload, "actor" | "userId">,
-  session: Session | null,
+  session: AppSession | null,
   subdomain: string,
   request: NextRequest
 ) {
@@ -48,12 +48,12 @@ export async function sendXapiFromMiddleware(
     return
   }
 
-  const sessionId = `${session.user.id}_${Math.floor(session.expires_at! / 1000)}`;
+  const sessionId = `${session.user.id}_${Math.floor(session.expires_at / 1000)}`;
 
   const fullStatement: XapiStatementPayload = {
     actor: {
       mbox: `mailto:${session.user.email}`,
-      name: session.user.user_metadata?.name || session.user.email,
+      name: session.user.name || session.user.email,
     },
     userId: session.user.id,
     sessionId: sessionId,

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { prisma } from "@sre-monorepo/lib"
+import { prisma, getServerSession } from "@sre-monorepo/lib/server"
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,6 +8,11 @@ export async function POST(request: NextRequest) {
 
     if (!userId) {
       return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    }
+
+    const session = await getServerSession()
+    if (!session || session.user.id !== userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
     // Update email verification status

@@ -1,23 +1,22 @@
 // apps/brain/src/app/api/session/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { getServerSession } from '@sre-monorepo/lib/server';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createServerSupabaseClient();
-    const { data: { session }, error } = await supabase.auth.getSession();
-    
-    if (error || !session) {
+    const session = await getServerSession();
+
+    if (!session) {
       return NextResponse.json({ user: null }, { status: 401 });
     }
 
-    const sessionId = `${session.user.id}_${Math.floor(session.expires_at! / 1000)}`;
-    
+    const sessionId = `${session.user.id}_${Math.floor(session.expires_at / 1000)}`;
+
     return NextResponse.json({
       user: {
         id: session.user.id,
         email: session.user.email,
-        name: session.user.user_metadata?.name
+        name: session.user.name
       },
       expires_at: session.expires_at,
       sessionId: sessionId

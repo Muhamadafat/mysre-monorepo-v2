@@ -112,7 +112,7 @@ export default function ArticleDetailTable({ nodes, activeArticles }: ArticleDet
 
   if (filteredNodes.length === 0) {
     return (
-      <Box style={{ position: 'relative', width: '100%', height: '610px', border: '1px solid black' }}>
+      <Box style={{ position: 'relative', width: '100%', height: '340px' }}>
         <Stack align="center" justify="center" gap="md" style={{ height: '100%' }}>
           <ThemeIcon variant="light" color="gray" size="xl">
             <IconArticle size={32} />
@@ -129,7 +129,7 @@ export default function ArticleDetailTable({ nodes, activeArticles }: ArticleDet
   }
 
   return (
-    <Box style={{ position: 'relative', width: '100%', height: '610px', border: '1px solid black' }}>
+    <Box style={{ position: 'relative', width: '100%', height: '340px' }}>
       <ScrollArea style={{ height: '100%' }}>
         <Stack gap="lg" p="md">
           {/* Header */}

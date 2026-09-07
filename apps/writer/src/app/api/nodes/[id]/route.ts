@@ -1,4 +1,4 @@
-import { prisma } from "@sre-monorepo/lib";
+import { prisma } from "@sre-monorepo/lib/server";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function DELETE(req: NextRequest, {params} : {
