@@ -33,7 +33,7 @@ export function CollaborationSection() {
           </Title>
         </Stack>
 
-        <Grid gutter="xl">
+        <Grid gap="xl">
           {/* Diprakarsai oleh */}
           <Grid.Col span={{ base: 12, md: 4 }}>
             <Card

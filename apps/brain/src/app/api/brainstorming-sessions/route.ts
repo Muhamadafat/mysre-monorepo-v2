@@ -1,6 +1,6 @@
-import { prisma } from '@sre-monorepo/lib';
+import { prisma } from '@sre-monorepo/lib/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@sre-monorepo/lib'; // asumsi file kamu tadi
+import { getServerSession } from '@sre-monorepo/lib/server';
 
 // CORS headers
 const corsHeaders = {
@@ -18,10 +18,8 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function POST(req: Request) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const authSession = await getServerSession();
+  const user = authSession?.user;
 
   if (!user) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
@@ -50,10 +48,8 @@ export async function GET(request: NextRequest) {
   console.log('API: Getting brainstorming sessions');
   console.log('API: Request headers:', Object.fromEntries(request.headers.entries()));
 
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getServerSession();
+  const user = session?.user;
 
   if (!user) {
     return NextResponse.json([], { status: 401 });

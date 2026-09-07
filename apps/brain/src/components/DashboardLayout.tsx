@@ -44,6 +44,9 @@ interface DashboardLayoutProps {
   onToggleSidebar: () => void;
   mounted: boolean;
   onSessionCreated?: () => void;
+  /** When true, the navbar is always shown as a narrow permanent icon rail
+   * instead of the collapsible 280px navbar (used by the project detail page). */
+  railMode?: boolean;
   // chatHistory: ChatHistoryItem[];
   // onChatSelect?: (chatId: number) => void;
   // onNewChat?: () => void;
@@ -55,6 +58,7 @@ export function DashboardLayout({
   onToggleSidebar,
   mounted,
   onSessionCreated,
+  railMode = false,
   // chatHistory,
   // onChatSelect,
   // onNewChat,
@@ -163,9 +167,9 @@ export function DashboardLayout({
     <AppShell
       header={{ height: 70 }}
       navbar={{
-        width: 280,
+        width: railMode ? 76 : 280,
         breakpoint: 'sm',
-        collapsed: { mobile: !sidebarOpened, desktop: !sidebarOpened },
+        collapsed: railMode ? { mobile: false, desktop: false } : { mobile: !sidebarOpened, desktop: !sidebarOpened },
       }}
       padding={0}
     >
@@ -174,16 +178,18 @@ export function DashboardLayout({
           sidebarOpened={sidebarOpened}
           onToggleSidebar={onToggleSidebar}
           mounted={mounted}
+          showUtilityIcons={!railMode}
         />
       </AppShellHeader>
 
-      <AppShellNavbar p="lg">
+      <AppShellNavbar p={railMode ? 'xs' : 'lg'}>
         <DashboardNavbar
           // chatHistory={chatHistory}
           brainstormingSessions={brainstormingSessions}
           mounted={mounted}
           onSessionSelect={handleSessionSelect}
           onNewSession={handleNewSession}
+          isCollapsed={railMode}
           // onChatSelect={onChatSelect}
           // onNewChat={onNewChat}
         />

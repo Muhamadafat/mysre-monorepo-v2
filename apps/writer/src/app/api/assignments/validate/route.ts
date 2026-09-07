@@ -2,7 +2,7 @@
 // Optional: API untuk validasi kode assignment secara real-time
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@sre-monorepo/lib';
+import { prisma } from '@sre-monorepo/lib/server';
 
 export async function POST(request: NextRequest) {
   try {

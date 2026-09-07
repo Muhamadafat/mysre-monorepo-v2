@@ -415,7 +415,7 @@ export default function Article(){
             display: 'flex',
             justifyContent: 'center'
         }}>
-            <Grid gutter='xl' h='100%'>
+            <Grid gap='xl' h='100%'>
                 <Card
                   shadow="sm"
                   padding="lg"

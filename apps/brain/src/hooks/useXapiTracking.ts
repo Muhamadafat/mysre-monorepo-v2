@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
 import { sendXapiStatement } from '@sre-monorepo/lib';
-import { createClient } from '@sre-monorepo/lib';
 import { useParams, usePathname } from 'next/navigation';
 import type { ExtendedNode, ExtendedEdge } from "../types"
 

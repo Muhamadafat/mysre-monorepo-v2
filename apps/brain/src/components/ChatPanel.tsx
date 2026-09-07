@@ -9,7 +9,7 @@ import {
   Group,
   ActionIcon,
   Stack,
-  TypographyStylesProvider,
+  Typography,
   useMantineColorScheme,
   useMantineTheme,
   Loader,

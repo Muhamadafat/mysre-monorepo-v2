@@ -14,17 +14,39 @@ const nextConfig: NextConfig = {
 
   ...(process.env.NODE_ENV === 'development' && {
     allowedDevOrigins: [
-      'http://localhost:3000',
-      'http://localhost:3001', 
-      'http://brain.lvh.me:3001',
-      'http://main.lvh.me:3000',
-      'brain.lvh.me:3001',
-      'main.lvh.me:3000',
+      'localhost',
+      'main.lvh.me',
+      'brain.lvh.me',
+      'profile.lvh.me',
+      'writer.lvh.me',
     ]
   }),
 
   reactStrictMode: true,
   transpilePackages: ['@sre-monorepo/lib', '@sre-monorepo/components'],
+
+  // @citation-js/core statically imports node-fetch/sync-fetch, but only ever
+  // calls them on the server (it switches to native fetch in the browser at
+  // runtime). Bundlers still need to resolve those Node-only packages for the
+  // client bundle, so point them at a no-op stub instead.
+  turbopack: {
+    resolveAlias: {
+      'node-fetch': './src/stubs/node-fetch-stub.ts',
+      'sync-fetch': './src/stubs/node-fetch-stub.ts',
+      '@mediapipe/face_mesh': './src/stubs/mediapipe-face-mesh-shim.ts',
+    },
+  },
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        'node-fetch': require.resolve('./src/stubs/node-fetch-stub.ts'),
+        'sync-fetch': require.resolve('./src/stubs/node-fetch-stub.ts'),
+        '@mediapipe/face_mesh': require.resolve('./src/stubs/mediapipe-face-mesh-shim.ts'),
+      };
+    }
+    return config;
+  },
 
   // Production-ready settings
   ...(process.env.NODE_ENV === 'production' && {
@@ -59,22 +81,6 @@ const nextConfig: NextConfig = {
           }
         ]
       }
-    ]
-  },
-
-  // Development settings
-  ...(process.env.NODE_ENV === 'development' && {
-    typescript: {
-      ignoreBuildErrors: false,
-    },
-    eslint: {
-      ignoreDuringBuilds: false,
-    },
-  }),
-
-  images: {
-    domains: [
-      'vefmmrwuwritxbgowqyv.supabase.co',
     ]
   },
 

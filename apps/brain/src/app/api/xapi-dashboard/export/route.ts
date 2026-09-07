@@ -1,6 +1,6 @@
 // src/app/api/xapi/export/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import {prisma} from "@sre-monorepo/lib"  // Sesuaikan path import sesuai struktur monorepo Anda
+import { prisma } from "@sre-monorepo/lib/server"  // Sesuaikan path import sesuai struktur monorepo Anda
 
 export async function POST(request: NextRequest) {
   try {

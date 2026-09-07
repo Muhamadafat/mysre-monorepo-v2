@@ -10,7 +10,7 @@ import {
   Paper,
   Group,
   ActionIcon,
-  TypographyStylesProvider,
+  Typography,
   useMantineTheme,
   ThemeIcon,
   CopyButton,
@@ -377,7 +377,7 @@ const ChatMessageItemComponent = ({
                               {msg.text}
                             </Text>
                           ) : (
-                            <TypographyStylesProvider className="ai-message-content">
+                            <Typography className="ai-message-content">
                               <ReactMarkdown
                                 remarkPlugins={[remarkGfm]}
                                 components={{
@@ -638,7 +638,7 @@ const ChatMessageItemComponent = ({
                                   </Stack>
                                 </Card>
                               )}
-                            </TypographyStylesProvider>
+                            </Typography>
                           )}
                         </Card>
                       )}

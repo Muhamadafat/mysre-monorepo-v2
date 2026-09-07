@@ -53,7 +53,6 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 import { useRouter } from 'next/navigation';
 import { eventBus } from '@sre-monorepo/lib';
 import { DebugAuth } from '@/components/DebugAuth';
-import { createClient } from '@sre-monorepo/lib';
 
 interface BrainstormingProject {
   id: string;

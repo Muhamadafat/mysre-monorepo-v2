@@ -3,33 +3,48 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -b",
-    "dev": "tsc --watch",
+    "build": "node --stack-size=65536 ../../node_modules/typescript/bin/tsc -b",
+    "dev": "node --stack-size=65536 ../../node_modules/typescript/bin/tsc --watch",
     "clean": "rm -rf dist",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prisma:generate": "prisma generate --schema ../../prisma/schema.prisma",
-    "prisma:migrate:dev": "prisma migrate dev --schema ../../prisma/schema.prisma",
-    "prisma:db:push": "prisma db push --schema ../../prisma/schema.prisma",
-    "prisma:db:pull": "prisma db pull --schema ../../prisma/schema.prisma",
-    "prisma:studio": "prisma studio --schema ../../prisma/schema.prisma",
-    "prisma:reset": "prisma migrate reset --schema ../../prisma/schema.prisma"
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:db:push": "prisma db push",
+    "prisma:db:pull": "prisma db pull",
+    "prisma:studio": "prisma studio",
+    "prisma:reset": "prisma migrate reset"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@prisma/client": "^6.12.0",
-    "@supabase/ssr": "^0.6.1",
-    "@supabase/supabase-js": "^2.52.0",
-    "mitt": "^3.0.1"
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "@types/pg": "^8.23.1",
+    "bcryptjs": "^2.4.3",
+    "jose": "^5.9.6",
+    "mitt": "^3.0.1",
+    "pg": "^8.23.0",
+    "resend": "^4.0.1"
   },
   "devDependencies": {
-    "prisma": "^6.12.0",
+    "@types/bcryptjs": "^2.4.6",
+    "prisma": "^7.9.1",
     "typescript": "^5.0.0"
   }
 }

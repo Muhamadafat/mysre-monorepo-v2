@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@sre-monorepo/lib';
+import { prisma } from '@sre-monorepo/lib/server';
 // import { chatAI } from '@/utils/chatAI';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { getServerSession } from '@sre-monorepo/lib/server';
 
 export async function POST(req: NextRequest){
 
@@ -433,10 +433,10 @@ let articleIdsForVectorDB: string[] = [];
 export async function GET(req: NextRequest) {
 
     try {
-        const supabase = await createServerSupabaseClient();
-        const { data: {user}, error} = await supabase.auth.getUser();
+        const authSession = await getServerSession();
+        const user = authSession?.user;
 
-        if (!user || error) {
+        if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 

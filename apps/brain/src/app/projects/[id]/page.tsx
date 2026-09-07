@@ -15,6 +15,7 @@ import {
   MultiSelect,
   Text,
   Modal,
+  Drawer,
   AppShell,
   AppShellMain,
   AppShellNavbar,
@@ -39,6 +40,7 @@ import {
   Tabs,
   TabsList,
   TabsTab,
+  TabsPanel,
   ScrollArea,
 } from '@mantine/core';
 import { 
@@ -68,6 +70,8 @@ import {
   IconHighlight,
   IconList,
   IconChartDots2,
+  IconTable,
+  IconArrowsExchange,
 } from '@tabler/icons-react';
 import { ExtendedEdge, ExtendedNode } from '@/types';
 import NetworkGraph from '@/components/NetworkGraph';
@@ -82,62 +86,25 @@ import dynamic from 'next/dynamic';
 // import Neo2 from '@/components/Neo2';
 import AnnotationPanel from '@/components/AnnotationPanel';
 import ArticleDetailTable from '@/components/ArticleDetailTable';
+import ArticleComparativeView from '@/components/ArticleComparativeView';
+import AnalysisControlsPanel from '@/components/AnalysisControlsPanel';
+import BackgroundTasksBar from '@/components/BackgroundTasksBar';
 import { Cite } from '@citation-js/core';
 import '@citation-js/plugin-ris';
-import { createClient } from '@sre-monorepo/lib';
+import { eventBus } from '@sre-monorepo/lib';
 import { useXapiTracking } from '@/hooks/useXapiTracking';
-import { RealUploadProgress } from '@/components/RealTimeUploadProgress';
 import WebGazerContext from '@/components/context/WebGazerContext';
+import {
+  relationMapping,
+  relationColors,
+  getRelationDisplayName,
+  getRelationColor,
+  getDisplayRelationKey,
+} from '@/utils/relations';
 
 // const Neograph = dynamic(() => import('@/components/NeoGraph'), {
 //     ssr: false,
 // });
-
-const relationMapping = {
-  'background': 'same_background',
-  'method': 'extended_method',
-  'goal': 'shares_goal',
-  'future': 'follows_future_work',
-  'gap': 'addresses_same_gap',
-};
-
-const relationColors = {
-  'background': 'blue',
-  'method': 'green',
-  'gap': 'red',
-  'future': 'purple',
-  'goal': 'orange'
-};
-
-function getRelationDisplayName(relation: string): string {
-  const displayNames = {
-    'background': 'Latar Belakang',
-    'method': 'Metodologi',
-    'goal': 'Tujuan',
-    'future': 'Arahan Masa Depan',
-    'gap': 'Gap Penelitian'
-  };
-
-  return displayNames[relation as keyof typeof displayNames] || relation.charAt(0).toUpperCase() + relation.slice(1);
-}
-
-function getRelationColor(relation: string): string {
-  const reverseMapping: Record<string, string> = {};
-  Object.entries(relationMapping).forEach(([display, api]) => {
-    reverseMapping[api] = display;
-  });
-
-  const displayRelation = reverseMapping[relation];
-  return relationColors[displayRelation as keyof typeof relationColors] || 'gray';
-}
-
-function getDisplayRelationKey(apiRelation: string): string{
-  const reverseMapping: Record<string, string> = {};
-  Object.entries(relationMapping).forEach(([display, api]) => {
-    reverseMapping[api] = display;
-  });
-  return reverseMapping[apiRelation] || apiRelation;
-}
 
 export default function Home() {
   const params = useParams();
@@ -200,8 +167,10 @@ export default function Home() {
   //for tab
   const [activeTab, setActiveTab] = useState<'chat' | 'annotation'>('chat');
 
-  //for graph
-  const [viewMode, setViewMode] = useState<'graph' | 'detail'>('graph');
+  //for analysis controls panel + table tab
+  const [analysisControlsOpened, setAnalysisControlsOpened] = useState(true);
+  const [tableTab, setTableTab] = useState<'tabel' | 'komparatif'>('tabel');
+  const [chatDrawerOpened, setChatDrawerOpened] = useState(false);
 
   //for reset
   const [resetChatContext, setResetChatContext] = useState(false);
@@ -217,7 +186,6 @@ export default function Home() {
   const risFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [session, setSession] = useState<any>(null);
-  const supabase = createClient();
 
   const hasSessionId = !!sessionId;
   const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
@@ -1270,6 +1238,38 @@ export default function Home() {
     setUploadModalOpened(true);
   };
 
+  const handleDeleteArticleClick = async (nodeId: string) => {
+    try {
+      const res = await fetch(`/api/articles/${nodeId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Gagal menghapus artikel');
+
+      setActiveArticles((prev) => prev.filter((id) => id !== nodeId));
+      eventBus.emit('articleDeleted');
+      await fetchData();
+
+      notifications.show({
+        title: 'Berhasil',
+        message: 'Artikel telah dihapus',
+        color: 'green',
+        position: 'top-right',
+      });
+    } catch (error) {
+      console.error('Error deleting article:', error);
+      notifications.show({
+        title: 'Gagal',
+        message: 'Gagal menghapus artikel',
+        color: 'red',
+        position: 'top-right',
+      });
+    }
+  };
+
+  const handleViewArticle = (node: ExtendedNode) => {
+    setSelectedEdge(null);
+    setSelectedNode({ ...node });
+    setDetailModalNode(node);
+  };
+
   const onFileChangeInModal = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1417,6 +1417,7 @@ export default function Home() {
         sidebarOpened={false}
         onToggleSidebar={() => {}}
         mounted={false}
+        railMode
         // chatHistory={chatHistory}
         // onChatSelect={handleChatSelect}
         // onNewChat={handleNewChat}
@@ -1449,412 +1450,259 @@ export default function Home() {
       sidebarOpened={sidebarOpened}
       onToggleSidebar={handleToggleSidebar}
       mounted={mounted}
+      railMode
     //   chatHistory={chatHistory}
     //   onChatSelect={handleChatSelect}
     //   onNewChat={handleNewChat}
     >
-      <Container fluid h="100%" p="xl">
-        <Grid gutter="xl" h="100%">
-          {/* Network Visualization Panel */}
-          <Grid.Col span={{ base: 12, lg: 6 }} h="100%">
-            <Card 
-              shadow="sm" 
-              padding="lg" 
-              radius="lg" 
-              h="100%" 
-              withBorder
-              style={{ display: 'flex', flexDirection: 'column' }}
-            >
-              <Group justify="space-between" mb="lg">
-                <Group gap="xs">
-                  <ThemeIcon variant="light" color="blue" size="lg">
-                    <IconCircleDot size={20} />
-                  </ThemeIcon>
-                  <Box>
-                    <Text size="xl" fw={700}>Peta Konsep</Text>
-                    <Text size="sm" c="dimmed">Visualisasi Artikel Penelitian</Text>
-                  </Box>
-                </Group>
+      <Container fluid h="100%" p="xl" style={{ height: 'calc(100vh - 70px)' }}>
+        <Flex gap="md" style={{ height: '100%' }} align="stretch">
+          {/* Analysis Controls sidebar */}
+          <Box style={{ width: 300, flexShrink: 0, height: '100%', overflow: 'auto' }}>
+            <AnalysisControlsPanel
+              nodes={nodes}
+              activeArticles={activeArticles}
+              onArticleSelectionChange={handleArticleSelectionChange}
+              showRelationFilters
+              activeRelations={activeRelations}
+              onRelationChange={handleRelationChange}
+              onUploadClick={handleUploadFile}
+              onViewArticle={handleViewArticle}
+              onDeleteArticle={handleDeleteArticleClick}
+              opened={analysisControlsOpened}
+              onClose={() => setAnalysisControlsOpened((o) => !o)}
+            />
+          </Box>
 
-                <Group gap="sm">
-                  {/* <input
-                        ref={fileInputRef}
-                        type="file"
-                        style={{ display: 'none'}}
-                        onChange={onFileChange}
-                        accept="application/pdf"
-                  /> */}
-                   {/* Dropdown View Mode */}
-                  <Select
-                    value={viewMode}
-                    onChange={(value) => setViewMode(value as 'graph' | 'detail')}
-                    data={[
-                      { 
-                        value: 'graph', 
-                        label: 'Graph',
-                        // leftSection: <IconChartDots2 size={16} />
-                      },
-                      { 
-                        value: 'detail', 
-                        label: 'Tabel',
-                        // leftSection: <IconList size={16} />
-                      },
-                    ]}
-                    size="sm"
-                    radius="md"
-                    withCheckIcon={false}
-                    w={120}
-                    styles={{
-                      input: {
-                        backgroundColor: dark ? theme.colors.dark[6] : 'white',
-                        border: `1px solid ${dark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-                        fontSize: theme.fontSizes.sm,
-                        fontWeight: 500
-                      },
-                      section: {
-                        pointerEvents: 'none'
-                      }
-                    }}
-                  />
-
-                  <Button
-                    variant="light"
-                    color="green"
-                    size="sm"
-                    leftSection={<IconUpload size={16} />}
-                    loading={uploading}
-                    onClick={handleUploadFile}
-                  >
-                    Upload
-                  </Button>
-                  
-                  <Button
-                    variant="light"
-                    color="blue"
-                    size="sm"
-                    leftSection={<IconEye size={16} />}
-                    onClick={() => {
-                      router.push(`/projects/${sessionId}/articles`)
-                      console.log('Lihat artikel clicked');
-                    }}
-                  >
-                    Lihat Artikel
-                  </Button>
-                  
-                  <Badge variant="light" color="blue" size="lg">
-                    {filteredNodes.length} Artikel
-                  </Badge>
-                </Group>
+          {/* Main content: graph + table */}
+          <Box style={{ flex: 1, minWidth: 0, height: '100%', overflow: 'auto' }}>
+            <Group justify="space-between" mb="md">
+              <Group gap="xs">
+                <ThemeIcon variant="light" color="blue" size="lg">
+                  <IconCircleDot size={20} />
+                </ThemeIcon>
+                <Box>
+                  <Text size="xl" fw={700}>Peta Konsep</Text>
+                  <Text size="sm" c="dimmed">Visualisasi Artikel Penelitian</Text>
+                </Box>
               </Group>
 
-              <Stack gap="md" mb="lg">
-                <MultiSelect
-                  label={
-                    <Group gap="xs" mb="xs">
-                      <IconSearch size={16} />
-                      <Text size="sm" fw={500}>Pilih Artikel</Text>
-                    </Group>
-                  }
-                  placeholder="Cari dan pilih artikel untuk divisualisasikan..."
-                  value={activeArticles}
-                  onChange={
-                    handleArticleSelectionChange
-                    // setActiveArticles(e);
-                    // setSelectedNode(null);
-                  }
-                  data={nodes.map((node) => ({
-                    value: String(node.id) || '',
-                    label: node.title || node.label || `Artikel ${node.id}`, // PERBAIKAN: Fallback yang lebih baik
-                  }))}
-                  searchable
-                  clearable
-                  radius="md"
+              <Group gap="sm">
+                <Button
+                  variant="light"
+                  color="blue"
+                  size="sm"
+                  leftSection={<IconEye size={16} />}
+                  onClick={() => router.push(`/projects/${sessionId}/articles`)}
+                >
+                  Lihat Artikel
+                </Button>
+                <Button
+                  variant="light"
+                  color="grape"
+                  size="sm"
+                  leftSection={<IconBrandHipchat size={16} />}
+                  onClick={() => setChatDrawerOpened(true)}
+                >
+                  AI Assistant
+                </Button>
+              </Group>
+            </Group>
+
+            <Stack gap="md">
+              <BackgroundTasksBar
+                uploadId={currentUploadId}
+                uploading={uploading}
+                fileName={selectedFile?.name}
+                onComplete={handleUploadComplete}
+              />
+
+              <Paper shadow="sm" radius="md" withBorder style={{ minHeight: 400 }}>
+                <NetworkGraph
+                  nodes={filteredNodes}
+                  edges={filteredEdges}
+                  onNodeClick={handleNodeClick}
+                  onEdgeClick={handleEdgeClick}
+                  key={`${fullPath}-visjs-${graphKey}`}
                 />
+              </Paper>
 
-                {viewMode === 'graph' && (
-                  <Box>
-                    <Group gap="xs" mb="sm">
-                      <IconFilter size={16} />
-                      <Text size="sm" fw={500}>Jenis Relasi</Text>
-                    </Group>
-                    <Group gap="sm">
-                      {Object.entries(relationColors).map(([relation, color]) => (
-                        <Checkbox
-                          key={relation}
-                          value={relation}
-                          color={color}
-                          label={
-                            <Group gap="xs">
-                              <Badge variant="dot" color={color} size="sm">
-                                {getRelationDisplayName(relation)}
-                              </Badge>
-                            </Group>
-                          }
-                          checked={activeRelations.includes(relation)}
-                          onChange={(event) => 
-                            handleRelationChange(relation, event.currentTarget.checked)
-                            /*
-                            if (event.currentTarget.checked) {
-                              setActiveRelations([...activeRelations, relation]);
-                            } else {
-                              setActiveRelations(activeRelations.filter(r => r !== relation));
-                            }
-                              */
-                            
-                          }
-                          styles={{
-                            input: { cursor: 'pointer' },
-                            label: { cursor: 'pointer' }
-                          }}
-                        />
-                      ))}
-                    </Group>
-                  </Box>
-                )}
+              <Paper shadow="sm" radius="md" withBorder p="xs">
+                <Tabs
+                  value={tableTab}
+                  onChange={(value) => setTableTab((value as 'tabel' | 'komparatif') || 'tabel')}
+                >
+                  <TabsList>
+                    <TabsTab value="tabel" leftSection={<IconTable size={14} />} tt="uppercase" fw={600}>
+                      Tabel
+                    </TabsTab>
+                    <TabsTab value="komparatif" leftSection={<IconArrowsExchange size={14} />} tt="uppercase" fw={600}>
+                      Komparatif
+                    </TabsTab>
+                  </TabsList>
+                  <TabsPanel value="tabel" pt="sm">
+                    <ArticleDetailTable
+                      nodes={nodes}
+                      activeArticles={activeArticles}
+                    />
+                  </TabsPanel>
+                  <TabsPanel value="komparatif" pt="sm">
+                    <ArticleComparativeView
+                      nodes={nodes}
+                      activeArticles={activeArticles}
+                    />
+                  </TabsPanel>
+                </Tabs>
+              </Paper>
+            </Stack>
+          </Box>
+        </Flex>
+      </Container>
 
-              </Stack>
-
-              <Paper 
-                shadow="sm" 
-                radius="md" 
-                withBorder
-                style={{ 
-                  flex: 1, 
-                  minHeight: 400,
-                  borderStyle: 'dashed',
-                  borderWidth: 2,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: dark 
-                    ? theme.colors.dark[8] 
-                    : theme.colors.gray[0]
+      {/* AI Assistant / Annotation Drawer */}
+      <Drawer
+        opened={chatDrawerOpened}
+        onClose={() => setChatDrawerOpened(false)}
+        position="right"
+        size="lg"
+        padding="lg"
+        title={null}
+      >
+        {/* Header Section dengan Tab Switcher */}
+        <Stack gap="sm" mb="sm">
+          {/* Tab Switcher - Circular Design */}
+          <Group justify="center" mb="sm">
+            <Group
+              gap={0}
+              style={{
+                padding: '0px',
+                backgroundColor: dark ? theme.colors.dark[6] : theme.colors.gray[1],
+                borderRadius: '50px',
+                border: `1px solid ${dark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
+              }}
+            >
+              <ActionIcon
+                variant={activeTab === 'chat' ? 'filled' : 'transparent'}
+                color={activeTab === 'chat' ? 'blue' : 'gray'}
+                size={34}
+                radius="xl"
+                onClick={() => setActiveTab('chat')}
+                style={{
+                  transition: 'all 0.2s ease',
+                  transform: activeTab === 'chat' ? 'scale(1.05)' : 'scale(1)',
+                  boxShadow: activeTab === 'chat' ? '0 2px 8px rgba(37, 99, 235, 0.3)' : 'none'
                 }}
               >
-                {/* Dropdown di pojok kiri atas */}
-                {viewMode === 'graph' ? (
-                  
-                  <Box style={{
-                    width: '100%',
-                    height: '100%',
-                    position: 'relative',
-                  }}>
-                  <Box
+                <IconMessage size={20} />
+              </ActionIcon>
+
+              <ActionIcon
+                variant={activeTab === 'annotation' ? 'filled' : 'transparent'}
+                color={activeTab === 'annotation' ? 'orange' : 'gray'}
+                size={34}
+                radius="xl"
+                onClick={() => setActiveTab('annotation')}
+                style={{
+                  transition: 'all 0.2s ease',
+                  transform: activeTab === 'annotation' ? 'scale(1.05)' : 'scale(1)',
+                  boxShadow: activeTab === 'annotation' ? '0 2px 8px rgba(255, 165, 0, 0.3)' : 'none'
+                }}
+              >
+                <IconHighlight size={20} />
+              </ActionIcon>
+            </Group>
+          </Group>
+
+          {/* Dynamic Title & Description - Hanya untuk Chat */}
+          {activeTab === 'chat' && (
+            <Group justify="space-between" align="flex-start">
+              <Group gap="xs">
+                <ThemeIcon
+                  variant="light"
+                  color="blue"
+                  size="lg"
+                  style={{
+                    transition: 'all 0.3s ease',
+                    transform: 'scale(1.1)'
+                  }}
+                >
+                  <IconBrandHipchat size={20} />
+                </ThemeIcon>
+                <Box>
+                  <Text
+                    size="xl"
+                    fw={700}
                     style={{
-                      position: 'absolute',
-                      top: 12,
-                      left: 12,
-                      zIndex: 10,
-                      minWidth: 120
-                    }}
-                  >
-                    {/* <Select
-                      value={graph}
-                      onChange={(value) => {
-                        if (value) {
-                          handleGraphTypeChange(value as 'visjs' | 'neovisjs');
-                        }}
-                      }
-                      data={[
-                        { value: 'visjs', label: 'Vis.js' },
-                        { value: 'neovisjs', label: 'Neo4j' },
-                      ]}
-                      size="sm"
-                      radius="md"
-                      withCheckIcon={false}
-                      styles={{
-                        input: {
-                          backgroundColor: dark ? theme.colors.dark[6] : 'white',
-                          border: `1px solid ${dark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-                          fontSize: theme.fontSizes.sm,
-                        }
-                      }}
-                    /> */}
-                  </Box>
-  
-                  {/* Graph Container */}
-                  <Box style={{ width: '100%', height: '100%' }}>
-                    
-                      <NetworkGraph
-                        nodes={filteredNodes}
-                        edges={filteredEdges}
-                        onNodeClick={handleNodeClick}
-                        onEdgeClick={handleEdgeClick}
-                        // key={`visjs-${graphKey}-${filteredNodes.length}-${filteredEdges.length}`}
-                        key ={`${fullPath}-visjs-${graphKey}`}
-                      />
-                  </Box>
-                  </Box>
-                  /* <NetworkGraph
-                    nodes={filteredNodes}
-                    edges={filteredEdges}
-                    onNodeClick={handleNodeClick}
-                    onEdgeClick={handleEdgeClick}
-                  /> */
-                ) : (
-                  <Box style={{ width: '100%', height: '100%', padding: '16px' }}>
-                    <ScrollArea style={{ height: '100%' }}>
-                      <ArticleDetailTable 
-                        nodes={nodes}
-                        activeArticles={activeArticles}
-                      />
-                    </ScrollArea>
-                  </Box>
-                )}
-              </Paper>
-            </Card>
-          </Grid.Col>
-
-          {/* Chat Panel */}
-          <Grid.Col span={{ base: 12, lg: 6 }} h="100%">
-            <Card 
-              shadow="sm" 
-              padding="lg" 
-              radius="lg" 
-              h="100%" 
-              withBorder
-              style={{ display: 'flex', flexDirection: 'column' }}
-            >
-              {/* Header Section dengan Tab Switcher */}
-              <Stack gap="sm" mb="sm">
-                {/* Tab Switcher - Circular Design */}
-                <Group justify="center" mb="sm">
-                  <Group 
-                    gap={0} 
-                    style={{ 
-                      padding: '0px',
-                      backgroundColor: dark ? theme.colors.dark[6] : theme.colors.gray[1],
-                      borderRadius: '50px',
-                      border: `1px solid ${dark ? theme.colors.dark[4] : theme.colors.gray[3]}`,
-                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
-                    }}
-                  >
-                    <ActionIcon
-                      variant={activeTab === 'chat' ? 'filled' : 'transparent'}
-                      color={activeTab === 'chat' ? 'blue' : 'gray'}
-                      size={34}
-                      radius="xl"
-                      onClick={() => setActiveTab('chat')}
-                      style={{
-                        transition: 'all 0.2s ease',
-                        transform: activeTab === 'chat' ? 'scale(1.05)' : 'scale(1)',
-                        boxShadow: activeTab === 'chat' ? '0 2px 8px rgba(37, 99, 235, 0.3)' : 'none'
-                      }}
-                    >
-                      <IconMessage size={20} />
-                    </ActionIcon>
-                    
-                    <ActionIcon
-                      variant={activeTab === 'annotation' ? 'filled' : 'transparent'}
-                      color={activeTab === 'annotation' ? 'orange' : 'gray'}
-                      size={34}
-                      radius="xl"
-                      onClick={() => setActiveTab('annotation')}
-                      style={{
-                        transition: 'all 0.2s ease',
-                        transform: activeTab === 'annotation' ? 'scale(1.05)' : 'scale(1)',
-                        boxShadow: activeTab === 'annotation' ? '0 2px 8px rgba(255, 165, 0, 0.3)' : 'none'
-                      }}
-                    >
-                      <IconHighlight size={20} />
-                    </ActionIcon>
-                  </Group>
-                </Group>
-
-                {/* Dynamic Title & Description - Hanya untuk Chat */}
-                {activeTab === 'chat' && (
-                  <Group justify="space-between" align="flex-start">
-                    <Group gap="xs">
-                      <ThemeIcon 
-                        variant="light" 
-                        color="blue" 
-                        size="lg"
-                        style={{
-                          transition: 'all 0.3s ease',
-                          transform: 'scale(1.1)'
-                        }}
-                      >
-                        <IconBrandHipchat size={20} />
-                      </ThemeIcon>
-                      <Box>
-                        <Text 
-                          size="xl" 
-                          fw={700}
-                          style={{
-                            backgroundImage: 'linear-gradient(45deg, #3B82F6, #1E40AF)',
-                            WebkitBackgroundClip: 'text',
-                            WebkitTextFillColor: 'transparent',
-                            backgroundClip: 'text',
-                            transition: 'all 0.3s ease'
-                          }}
-                        >
-                          AI Assistant
-                        </Text>
-                        <Text size="sm" c="dimmed">
-                          Diskusi dan Analisis Artikel
-                        </Text>
-                      </Box>
-                    </Group>
-                    
-                    {/* Status Badge */}
-                    {(selectedNode || selectedEdge) && (
-                      <Badge 
-                        variant="gradient" 
-                        gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
-                        size="lg"
-                        // rightSection={<IconChevronRight size={12} />}
-                        style={{
-                          animation: 'pulse 2s infinite'
-                        }}
-                      >
-                        {/* {selectedNode ? 'Node Terpilih' : 'Edge Terpilih'} */}
-                      </Badge>
-                    )}
-                  </Group>
-                )}
-
-                {/* Animated Divider - Hanya untuk Chat */}
-                {activeTab === 'chat' && (
-                  <Box
-                    style={{
-                      height: '2px',
-                      backgroundImage: 'linear-gradient(90deg, transparent, #3B82F6, transparent)',
-                      borderRadius: '1px',
+                      backgroundImage: 'linear-gradient(45deg, #3B82F6, #1E40AF)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
                       transition: 'all 0.3s ease'
                     }}
-                  />
-                )}
-              </Stack>
+                  >
+                    AI Assistant
+                  </Text>
+                  <Text size="sm" c="dimmed">
+                    Diskusi dan Analisis Artikel
+                  </Text>
+                </Box>
+              </Group>
 
-              {/* Content Area dengan Animasi */}
-              <Box 
-                style={{ 
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  minHeight: 0 // Penting untuk flex container
-                }}
-              > 
-                {activeTab === 'chat' ? (
-                  <Box>
-                    <ChatPanel 
-                      selectedNode={selectedNode} 
-                      selectedEdge={selectedEdge} 
-                      sessionId={sessionId}
-                      resetContext={resetChatContext}
-                      onContextReset={handleContextReset}
-                    />
-                  </Box>
-                ) : (
-                  <Box>
-                    <AnnotationPanel sessionId={sessionId} session={session} />
-                  </Box>
-                )}
-              </Box>
-            </Card>
-          </Grid.Col>
-        </Grid>
-      </Container>
+              {/* Status Badge */}
+              {(selectedNode || selectedEdge) && (
+                <Badge
+                  variant="gradient"
+                  gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
+                  size="lg"
+                  style={{
+                    animation: 'pulse 2s infinite'
+                  }}
+                >
+                </Badge>
+              )}
+            </Group>
+          )}
+
+          {/* Animated Divider - Hanya untuk Chat */}
+          {activeTab === 'chat' && (
+            <Box
+              style={{
+                height: '2px',
+                backgroundImage: 'linear-gradient(90deg, transparent, #3B82F6, transparent)',
+                borderRadius: '1px',
+                transition: 'all 0.3s ease'
+              }}
+            />
+          )}
+        </Stack>
+
+        {/* Content Area */}
+        <Box
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0
+          }}
+        >
+          {activeTab === 'chat' ? (
+            <Box>
+              <ChatPanel
+                selectedNode={selectedNode}
+                selectedEdge={selectedEdge}
+                sessionId={sessionId}
+                resetContext={resetChatContext}
+                onContextReset={handleContextReset}
+              />
+            </Box>
+          ) : (
+            <Box>
+              <AnnotationPanel sessionId={sessionId} session={session} />
+            </Box>
+          )}
+        </Box>
+      </Drawer>
 
       {/* Enhanced Modals */}
       <Modal
@@ -1973,11 +1821,6 @@ export default function Home() {
           </div>
         </div>
       )} */}
-      <RealUploadProgress 
-        uploadId={currentUploadId} // State baru
-        uploading={uploading}
-        onComplete={handleUploadComplete}
-      />
 
       {/* // Enhanced Upload Modal JSX */}
       <Modal

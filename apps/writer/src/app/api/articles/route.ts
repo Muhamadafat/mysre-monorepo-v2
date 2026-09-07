@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@sre-monorepo/lib";
+import { prisma } from "@sre-monorepo/lib/server";
 
 export async function GET(){
     try {

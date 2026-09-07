@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@sre-monorepo/lib';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { prisma } from '@sre-monorepo/lib/server';
+import { getServerSession } from '@sre-monorepo/lib/server';
+import { canAccessWriterSession } from '@/lib/writerSessionAccess';
 
 export async function POST(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const authSession = await getServerSession();
+  const user = authSession?.user;
 
   if (!user) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -70,15 +71,15 @@ export async function POST(req: NextRequest) {
         
         if (possibleWriterSession) {
           console.log('✅ Found existing WriterSession:', possibleWriterSession.id);
-          if (possibleWriterSession.userId === user.id) {
-            return NextResponse.json({ 
+          if (await canAccessWriterSession(possibleWriterSession.id, user.id)) {
+            return NextResponse.json({
               id: possibleWriterSession.id,
               writerSession: possibleWriterSession,
               type: 'existing_writer_from_case1'
             });
           } else {
-            return NextResponse.json({ 
-              message: "Access denied to this writer session" 
+            return NextResponse.json({
+              message: "Access denied to this writer session"
             }, { status: 403 });
           }
         }
@@ -174,11 +175,11 @@ export async function POST(req: NextRequest) {
         }, { status: 404 });
       }
 
-      // Cek apakah user memiliki akses ke writer session ini
-      if (writerSession.userId !== user.id) {
+      // Cek apakah user memiliki akses ke writer session ini (owner ATAU kolaborator)
+      if (!(await canAccessWriterSession(writerSession.id, user.id))) {
         console.log('❌ Access denied. WriterSession belongs to:', writerSession.userId, 'but user is:', user.id);
-        return NextResponse.json({ 
-          message: "Access denied to this writer session" 
+        return NextResponse.json({
+          message: "Access denied to this writer session"
         }, { status: 403 });
       }
 

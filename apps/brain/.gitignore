@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 certificates
+
+# user-uploaded content (replaces Supabase Storage)
+/public/uploads
+/storage-private

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@sre-monorepo/lib';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { prisma } from '@sre-monorepo/lib/server';
+import { getServerSession } from '@sre-monorepo/lib/server';
+import { canAccessWriterSession } from '@/lib/writerSessionAccess';
 
 export async function GET(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const session = await getServerSession();
+  const user = session?.user;
 
   if (!user) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -20,10 +21,15 @@ export async function GET(req: NextRequest) {
       }, { status: 400 });
     }
 
+    if (!(await canAccessWriterSession(writerSessionId, user.id))) {
+      return NextResponse.json({ drafts: [] });
+    }
+
+    // Version history is shared: every owner/collaborator sees all snapshots
+    // for this writer session, not just their own.
     const drafts = await prisma.draft.findMany({
       where: {
         writerId: writerSessionId,
-        userId: user.id,
       },
       include: {
         sections: true,

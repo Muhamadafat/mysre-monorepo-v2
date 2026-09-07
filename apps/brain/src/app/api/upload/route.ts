@@ -3,13 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createWriteStream, mkdirSync, existsSync } from "fs";
 import path from "path";
 import Busboy from "busboy";
-import { prisma } from "@sre-monorepo/lib";
+import { prisma } from "@sre-monorepo/lib/server";
 // import { readPDFContent } from "@/utils/pdfReader";
 // import { analyzeWithAI, ExtendedNode } from "@/utils/analyzeWithAI";
 import { Readable } from "stream";
-// import { supabase } from "@/lib/supabase";
-import { createServerSupabaseClient } from "@sre-monorepo/lib";
+import { getServerSession } from "@sre-monorepo/lib/server";
 import { sendProgress } from "@/lib/upload-progress-manager";
+import { saveUploadedFile } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -146,10 +146,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         message: 'Memverifikasi pengguna...'
       });
 
-      const supabase = await createServerSupabaseClient();
-      const { data: {user}, error } = await supabase.auth.getUser();
+      const session = await getServerSession();
+      const user = session?.user;
 
-      if (!user || error) {
+      if (!user) {
         sendProgress(uploadId, {
             type: 'error', // ✅ Tambah type
             stage: 'error',
@@ -173,12 +173,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           message: 'Mengunggah file ke cloud storage...'
         });
 
-        const {error: uploadError} = await supabase.storage.from("uploads").upload(uploadFileName, fileBuffer, {
-          contentType: "application/pdf",
-          upsert: true,
-        });
-
-        if (uploadError){
+        let publicUrl = "";
+        try {
+          const saved = await saveUploadedFile(fileBuffer, uploadFileName);
+          const baseUrl = process.env.NEXT_PUBLIC_BRAIN_APP_URL || "http://brain.lvh.me:3000";
+          publicUrl = `${baseUrl}${saved.url}`;
+        } catch (uploadError: any) {
           sendProgress(uploadId, {
             type: 'error', // ✅ Tambah type
             stage: 'error',
@@ -187,10 +187,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           });
           console.error("Upload gagal:", uploadError.message);
           throw new Error(`Upload failed: ${uploadError.message}`);
-        };
-
-        const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(uploadFileName);
-        const publicUrl = urlData?.publicUrl || "";
+        }
 
         sendProgress(uploadId, {
           type: 'progress',

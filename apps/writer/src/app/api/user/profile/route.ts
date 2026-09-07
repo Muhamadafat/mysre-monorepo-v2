@@ -1,21 +1,17 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createServerSupabaseClient } from "@sre-monorepo/lib"
-import { prisma } from "@sre-monorepo/lib"
+import { getServerSession } from "@sre-monorepo/lib/server"
+import { prisma } from "@sre-monorepo/lib/server"
 
 export async function GET(request: NextRequest) {
   try {
     console.log("=== API PROFILE START ===")
 
-    const supabase = await createServerSupabaseClient()
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser()
+    const session = await getServerSession()
+    const user = session?.user
 
-    console.log("Supabase user:", !!user)
-    console.log("Supabase error:", error)
+    console.log("Session user:", !!user)
 
-    if (error || !user) {
+    if (!user) {
       console.log("❌ Not authenticated")
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
     }

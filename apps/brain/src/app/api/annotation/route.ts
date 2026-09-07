@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@sre-monorepo/lib";
-import { createServerSupabaseClient } from "@sre-monorepo/lib";
+import { prisma } from "@sre-monorepo/lib/server";
+import { getServerSession } from "@sre-monorepo/lib/server";
 
 // api/annotation/route.ts - POST method
 export async function POST(req: NextRequest) {
-    
-    const supabase = await createServerSupabaseClient();
-    const { data: {user}, error} = await supabase.auth.getUser();
+
+    const session = await getServerSession();
+    const user = session?.user;
     if (!user) {
         return NextResponse.json({message: 'Unauthorized'}, {status: 401});
     }
@@ -92,10 +92,10 @@ export async function GET(req: NextRequest){
         searchParams: Object.fromEntries(searchParams)
     });
     
-    const supabase = await createServerSupabaseClient();
-    const { data: {user}, error} = await supabase.auth.getUser();
-    
-    console.log('👤 User from Supabase:', {
+    const session = await getServerSession();
+    const user = session?.user;
+
+    console.log('👤 User from session:', {
         userId: user?.id,
         email: user?.email,
         hasUser: !!user

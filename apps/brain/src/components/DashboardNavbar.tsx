@@ -26,6 +26,7 @@ import {
   IconArticleFilled,
   IconBrain,
 } from '@tabler/icons-react';
+import { HeaderUtilityIcons } from './HeaderUtilityIcons';
 
 const dashboard = [
   // {
@@ -111,7 +112,6 @@ export function DashboardNavbar({
             key={i}
             component={Link}
             href={dash.href}
-            leftSection={isCollapsed ? dash.icon : null}
             variant="gradient"
             gradient={{
               from: 'blue', to: 'cyan', deg: 45
@@ -120,7 +120,7 @@ export function DashboardNavbar({
             radius='md'
             fullWidth
             style={{
-              justifyItems: isCollapsed ? 'center' : 'flex-start',
+              justifyContent: isCollapsed ? 'center' : 'flex-start',
               minHeight: rem(36),
               padding: isCollapsed ? rem(8) : undefined,
             }}
@@ -143,8 +143,7 @@ export function DashboardNavbar({
         />
       )}
 
-      <Button 
-        leftSection={isCollapsed ? <IconPlus size={18} /> : null}
+      <Button
         variant="gradient"
         gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
         size="md"
@@ -243,6 +242,12 @@ export function DashboardNavbar({
           </Paper>
         ))}
       </Stack>
+
+      {isCollapsed && (
+        <Stack gap="xs" align="center" pt="xs" style={{ borderTop: `1px solid ${dark ? theme.colors.dark[4] : theme.colors.gray[3]}` }}>
+          <HeaderUtilityIcons mounted={mounted} orientation="vertical" />
+        </Stack>
+      )}
     </Stack>
   );
 }
