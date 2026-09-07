@@ -217,20 +217,18 @@ model WriterSessionCollaborator {
   @@unique([writerSessionId, userId])
 }
 
-// Requires the pgvector Postgres extension, which isn't installed on the new
-// local Postgres yet (no code references prisma.document — only the separate
-// Python RAG service touches this table directly via raw SQL). Commented out
-// so `prisma db push` can create every other table; re-enable once pgvector
-// is installed locally (`CREATE EXTENSION vector;`) if embeddings search is needed.
-// model Document {
-//   id        String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-//   content   String
-//   metadata  Json                   @default("{}")
-//   embedding Unsupported("vector")?
-//   createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-//
-//   @@map("documents")
-// }
+// Used only by the separate Python RAG service (raw SQL); no TS code references
+// prisma.document. Requires the pgvector extension (`CREATE EXTENSION vector;`),
+// which is installed on the local Postgres.
+model Document {
+  id        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  content   String
+  metadata  Json                        @default("{}")
+  embedding Unsupported("vector(1536)")?
+  createdAt DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("documents")
+}
 
 model TokenUsage {
   id           String                @id @default(uuid())
