@@ -6,12 +6,12 @@ import ConceptMap from '@/components/ConceptMap';
 import dynamic from 'next/dynamic';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { PartialBlock } from "@blocknote/core";
+import type { PartialBlock } from "@/lib/plateCompat/types";
 import { ExtendedEdge, ExtendedNode } from '@/types'
-import type { BlockNoteEditorRef } from '@/components/BlockNoteEditor';
+import type { PlateEditorRef } from '@/components/PlateEditor';
 import AnnotationPanel from '@/components/AnnotationPanel';
 import ShareDraftModal from '@/components/ShareDraftModal';
-const BlockNoteEditorComponent = dynamic(() => import("@/components/BlockNoteEditor"), {
+const PlateEditorComponent = dynamic(() => import("@/components/PlateEditor"), {
   ssr: false
 });
 const ActivityLog = dynamic(() => import("@/components/ActivityLog"), {
@@ -301,7 +301,7 @@ export default function Home() {
   const [shareModalOpened, setShareModalOpened] = useState(false);
 
   // Realtime collaboration config — one living document per writer session,
-  // synced via Yjs/PartyKit. See BlockNoteEditor's `collaboration` prop.
+  // synced via Yjs/PartyKit. See PlateEditor's `collaboration` prop.
   // IMPORTANT: room id must be the resolved WriterSession id (writerSession?.id),
   // not the raw URL `projectId` — when arriving from a brainstorming session,
   // `projectId` is actually the BrainstormingSession id until the WriterSession
@@ -315,7 +315,7 @@ export default function Home() {
     const color = cursorColors[Math.abs(hash) % cursorColors.length];
     return {
       roomId: writerSession.id,
-      user: { name: dropdownUser.name || dropdownUser.email || 'Anonim', color },
+      user: { id: dropdownUser.id, name: dropdownUser.name || dropdownUser.email || 'Anonim', color },
     };
   }, [writerSession?.id, dropdownUser?.id, dropdownUser?.name, dropdownUser?.email]);
 
@@ -1922,7 +1922,7 @@ const handleSubmitToTeacher = async () => {
       .join("\n\n");
   };
 
-  const editorRef = useRef<BlockNoteEditorRef>(null);
+  const editorRef = useRef<PlateEditorRef>(null);
 
   /**
    * =================================================================================
@@ -3604,8 +3604,9 @@ const handleSubmitToTeacher = async () => {
       if (!targetBlock) {
         console.log('🔍 OUTLINE NAVIGATION - Block not found by ID, searching by content...');
         targetBlock = blocks.find(block => {
-          if (block.type === 'heading' && block.content?.length > 0) {
-            const blockText = block.content.map((item: any) => item.text || "").join("").trim();
+          const content = block.content as any[] | undefined;
+          if (block.type === 'heading' && content && content.length > 0) {
+            const blockText = content.map((item: any) => item.text || "").join("").trim();
             return blockText === headingText;
           }
           return false;
@@ -4693,7 +4694,7 @@ const handleSubmitToTeacher = async () => {
                       
                       <Box style={{ flex: 1, overflow: "hidden", position: "relative" }}>
                         {/* BlockNote Editor Component dengan AI Indonesia */}
-                          <BlockNoteEditorComponent
+                          <PlateEditorComponent
                             ref={editorRef}
                             onContentChange={handleContentChange}
                             style={{
@@ -6049,7 +6050,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                       <Box style={{ flex: 1, overflow: "hidden", position: "relative",}}>
                     {/* BlockNote Editor Component dengan AI Indonesia */}
                     {isClient ? (
-                      <BlockNoteEditorComponent
+                      <PlateEditorComponent
                         ref={editorRef}
                         onContentChange={handleContentChange}
                         onLogFormula={logFormula}
