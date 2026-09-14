@@ -4,6 +4,7 @@ import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
+import { CursorBlink } from '@/components/CursorBlink';
 import type { ReactNode } from 'react';
 
 export const metadata = {
@@ -16,10 +17,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <ColorSchemeScript />
+        <ColorSchemeScript forceColorScheme="light" />
       </head>
       <body>
-        <MantineProvider defaultColorScheme="auto" theme={{primaryColor: 'blue'}}>
+        <CursorBlink />
+        <MantineProvider defaultColorScheme="light" forceColorScheme="light" theme={{primaryColor: 'blue'}}>
           <ModalsProvider>
             <Notifications />
             {children}

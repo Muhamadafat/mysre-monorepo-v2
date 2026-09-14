@@ -33,7 +33,7 @@ const footerLinks = {
 
 export function Footer() {
   return (
-    <Box component="footer" bg="var(--mantine-color-gray-9)" c="white">
+    <Box component="footer" bg="white" c="dark.9">
       <Container size="xl" py={60}>
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} spacing="xl">
           <Stack gap="md">
@@ -141,7 +141,7 @@ export function Footer() {
           </Stack>
         </SimpleGrid>
 
-        <Divider my="xl" color="gray.8" />
+        <Divider my="xl" color="gray.2" />
 
         <Group justify="space-between">
           <Text size="sm" c="dimmed">

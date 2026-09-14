@@ -1,6 +1,6 @@
 "use client"
 
-import { Container, Title, Text, Accordion, Stack, Badge, Box } from "@mantine/core"
+import { Container, Title, Text, Accordion, Stack, Badge, Box, Grid, Image, Group } from "@mantine/core"
 
 const faqs = [
   {
@@ -47,33 +47,118 @@ const faqs = [
 
 export function FAQSection() {
   return (
-    <Box id="faq" py={80}>
-      <Container size="md">
-        <Stack align="center" gap="xl" mb={60}>
-          <Badge size="lg" variant="light" color="blue" radius="xl">
-            Pertanyaan Umum
-          </Badge>
-          <Title order={2} size="2.5rem" fw={700} ta="center">
-            Pertanyaan yang Sering Diajukan
-          </Title>
-          <Text size="lg" c="dimmed" ta="center" maw={600}>
-            Temukan jawaban untuk pertanyaan umum tentang ResearchCraft dan bagaimana aplikasi ini dapat membantu 
-            menyederhanakan alur kerja penelitian Anda.
-          </Text>
-        </Stack>
-
-        <Accordion variant="separated" radius="md">
-          {faqs.map((faq, index) => (
-            <Accordion.Item key={index} value={index.toString()}>
-              <Accordion.Control>
-                <Text fw={500}>{faq.question}</Text>
-              </Accordion.Control>
-              <Accordion.Panel>
-                <Text c="dimmed">{faq.answer}</Text>
-              </Accordion.Panel>
-            </Accordion.Item>
-          ))}
-        </Accordion>
+    <Box 
+      id="faq" 
+      pt={{ base: 30, md: 40 }}
+      pb={{ base: 30, md: 40 }}
+      pos="relative"
+      style={{
+        backgroundImage: 'url(/images/faq-bg.png)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        overflow: 'hidden'
+      }}
+    >
+      <Container size="lg" pos="relative" style={{ zIndex: 1 }}>
+        <Grid gap={40} align="flex-start">
+          {/* Left Column */}
+          <Grid.Col span={{ base: 12, md: 5 }}>
+            <Box pos="relative" h="100%">
+              <Stack gap="md" pos="relative" style={{ zIndex: 3 }}>
+                <Group>
+                  <Badge 
+                    size="lg" 
+                    variant="light" 
+                    color="violet" 
+                    radius="xl"
+                    style={{ textTransform: 'none' }}
+                    leftSection={<Text fw={700} span>?</Text>}
+                  >
+                    PERTANYAAN UMUM
+                  </Badge>
+                </Group>
+                
+                <Title order={2} size="2rem" fw={800} lh={1.2}>
+                  <Text span inherit c="dark">Pertanyaan yang </Text>
+                  <br />
+                  <Text span inherit c="violet">Sering Diajukan</Text>
+                </Title>
+                
+                <Text size="sm" c="dimmed" maw={380} mb={10} lh={1.5}>
+                  Temukan jawaban untuk pertanyaan umum tentang ResearchCraft dan bagaimana aplikasi ini dapat membantu menyederhanakan alur kerja penelitian Anda.
+                </Text>
+              </Stack>
+              
+              <Image 
+                src="/images/faq-boy.png" 
+                alt="FAQ Illustration" 
+                w="100%"
+                maw={220}
+                mt={10}
+                style={{
+                  position: 'relative',
+                  zIndex: 2,
+                  objectFit: 'contain',
+                }}
+              />
+            </Box>
+          </Grid.Col>
+          
+          {/* Right Column */}
+          <Grid.Col span={{ base: 12, md: 7 }} pos="relative">
+            <Box
+              bg="white"
+              p={{ base: 12, sm: 20 }}
+              pos="relative"
+              style={{
+                borderRadius: 16,
+                boxShadow: '0 10px 30px rgba(0,0,0,0.05)',
+                zIndex: 3
+              }}
+            >
+              <Accordion
+                variant="separated"
+                radius="sm"
+                styles={{
+                  item: {
+                    backgroundColor: '#F8F9FA',
+                    border: '1px solid #E9ECEF',
+                    marginBottom: '8px',
+                  },
+                  control: {
+                    padding: '8px 12px',
+                  },
+                  content: {
+                    padding: '0 12px 10px 12px'
+                  }
+                }}
+              >
+                {faqs.map((faq, index) => (
+                  <Accordion.Item key={index} value={index.toString()}>
+                    <Accordion.Control>
+                      <Text fw={500} size="13px" c="dark.8">{faq.question}</Text>
+                    </Accordion.Control>
+                    <Accordion.Panel>
+                      <Text size="12px" c="dimmed" lh={1.5}>{faq.answer}</Text>
+                    </Accordion.Panel>
+                  </Accordion.Item>
+                ))}
+              </Accordion>
+            </Box>
+            
+            <Image 
+              src="/images/faq-clipboard.png" 
+              alt="Clipboard Illustration" 
+              w={150}
+              pos="absolute"
+              bottom={-20}
+              right={-20}
+              style={{ zIndex: 4 }}
+              visibleFrom="sm"
+            />
+          </Grid.Col>
+        </Grid>
       </Container>
     </Box>
   )

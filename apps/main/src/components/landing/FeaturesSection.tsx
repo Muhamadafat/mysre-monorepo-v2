@@ -1,127 +1,123 @@
 "use client"
 
-import { Container, Title, Text, SimpleGrid, Card, Group, ThemeIcon, Stack, Badge, Box } from "@mantine/core"
+import { Container, Title, Text, SimpleGrid, Card, Group, Stack, Badge, Box, Image, Grid } from "@mantine/core"
 import {
   IconPencil,
-  IconBrain,
-  IconFileText,
   IconQuote,
-  IconGraph,
+  IconFileText,
+  IconNetwork,
+  IconChartBar,
   IconMessageChatbot,
-  IconSearch,
-  IconDownload,
-  IconShare,
+  IconSparkles
 } from "@tabler/icons-react"
+import classes from "./FeaturesSection.module.css"
 
 const features = [
   {
     icon: IconPencil,
     title: "Penulis Cerdas",
-    description:
-      "Asisten penulisan bertenaga AI yang membantu Anda membuat draft penelitian yang menarik dengan saran cerdas dan panduan struktur.",
+    description: "AI canggih membantu Anda menulis, meringkas, dan memformat dengan kualitas akademik tinggi.",
     color: "blue",
-    category: "Tulis",
+    iconBg: "var(--mantine-color-blue-0)",
+    iconColor: "var(--mantine-color-blue-6)",
   },
   {
     icon: IconQuote,
     title: "Manajemen Sitasi",
-    description:
-      "Sitasi artikel dari basis pengetahuan Brain Anda dengan mudah, termasuk format otomatis dan pembuatan daftar referensi.",
+    description: "Kelola referensi, kutip otomatis, dan buat daftar pustaka dengan berbagai gaya sitasi.",
     color: "green",
-    category: "Tulis",
+    iconBg: "var(--mantine-color-green-0)",
+    iconColor: "var(--mantine-color-green-6)",
   },
   {
     icon: IconFileText,
     title: "Daftar Referensi",
-    description:
-      "Daftar referensi yang dibuat secara otomatis dan terformat yang diperbarui secara real-time saat Anda menambah sitasi.",
+    description: "Temukan jurnal, artikel, dan sumber relevan untuk memperkaya penelitian Anda.",
     color: "orange",
-    category: "Tulis",
+    iconBg: "var(--mantine-color-orange-0)",
+    iconColor: "var(--mantine-color-orange-6)",
   },
   {
-    icon: IconBrain,
+    icon: IconNetwork,
     title: "Peta Pengetahuan",
-    description:
-      "Sistem pemetaan pengetahuan visual yang mengorganisir artikel penelitian Anda menjadi jaringan grafik interaktif.",
-    color: "purple",
-    category: "Ide",
+    description: "Visualisasikan hubungan konsep dan temukan insight melalui peta interaktif.",
+    color: "grape",
+    iconBg: "var(--mantine-color-grape-0)",
+    iconColor: "var(--mantine-color-grape-6)",
   },
   {
-    icon: IconGraph,
+    icon: IconChartBar,
     title: "Grafik Interaktif",
-    description:
-      "Jelajahi koneksi antar artikel melalui node dan edge, mengungkap hubungan tersembunyi dalam penelitian Anda.",
-    color: "teal",
-    category: "Ide",
+    description: "Ubah data dan konsep kompleks menjadi visual yang mudah dipahami.",
+    color: "blue",
+    iconBg: "var(--mantine-color-blue-0)",
+    iconColor: "var(--mantine-color-blue-6)",
   },
   {
     icon: IconMessageChatbot,
     title: "Asisten Chat AI",
-    description: "Ajukan pertanyaan tentang koleksi penelitian Anda dan dapatkan wawasan cerdas dari basis pengetahuan.",
-    color: "red",
-    category: "Ide",
+    description: "Tanya, diskusi, dan dapatkan jawaban instan tentang topik penelitian Anda.",
+    color: "pink",
+    iconBg: "var(--mantine-color-pink-0)",
+    iconColor: "var(--mantine-color-pink-6)",
   },
-//   {
-//     icon: IconSearch,
-//     title: "Pencarian Cerdas",
-//     description:
-//       "Temukan artikel dan koneksi yang relevan di seluruh koleksi penelitian Anda dengan kemampuan pencarian semantik.",
-//     color: "indigo",
-//     category: "Inti",
-//   },
-//   {
-//     icon: IconDownload,
-//     title: "Opsi Unduh",
-//     description:
-//       "Unduh draft dan referensi Anda dalam berbagai format termasuk PDF, Word, LaTeX, dan gaya sitasi.",
-//     color: "cyan",
-//     category: "Inti",
-//   },
-//   {
-//     icon: IconShare,
-//     title: "Kolaborasi",
-//     description: "Bagikan draft penelitian dan grafik pengetahuan Anda dengan kolaborator untuk kerja tim yang seamless.",
-//     color: "yellow",
-//     category: "Inti",
-//   },
 ]
 
 export function FeaturesSection() {
   return (
-    <Box id="features" py={80}>
+    <Box id="features" py={{ base: 80, md: 120 }} className={classes.features}>
       <Container size="xl">
-        <Stack align="center" gap="xl" mb={60}>
-          <Badge size="lg" variant="light" color="blue" radius="xl">
-            Fitur
-          </Badge>
-          <Title order={2} size="2.5rem" fw={700} ta="center">
-            Semua yang Anda Butuhkan untuk Penelitian Unggul
-          </Title>
-          <Text size="lg" c="dimmed" ta="center" maw={600}>
-            Platform komprehensif kami menggabungkan alat penulisan cerdas dengan manajemen pengetahuan visual 
-            untuk merevolusi alur kerja penelitian Anda.
-          </Text>
-        </Stack>
+        <Grid gap={60} align="center" mb={60}>
+          <Grid.Col span={{ base: 12, md: 6 }}>
+            <Stack align="flex-start" gap="xl">
+              <Badge 
+                size="lg" 
+                variant="light" 
+                color="indigo" 
+                radius="xl"
+                leftSection={<IconSparkles size={14} style={{ color: '#FFD700', fill: '#FFD700' }} />}
+                style={{ padding: '0 16px', fontWeight: 600 }}
+              >
+                FITUR
+              </Badge>
+              <Title order={2} size="3rem" fw={800} className={classes.title} lh={1.2}>
+                Semua yang Anda Butuhkan untuk <Text component="span" c="blue" inherit>Penelitian Unggul</Text>
+              </Title>
+              <Text size="xl" c="dimmed" maw={600}>
+                Platform komprehensif kami menggabungkan alat penelitian cerdas dengan manajemen pengetahuan visual 
+                untuk merevolusi alur kerja penelitian Anda.
+              </Text>
+            </Stack>
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6 }}>
+            <Box pos="relative">
+              <Image
+                src='/animasi-fitur.png'
+                alt="Fitur Animasi"
+                w="100%"
+                fit="contain"
+                className={classes.featureAnimation}
+              />
+            </Box>
+          </Grid.Col>
+        </Grid>
 
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xl">
           {features.map((feature, index) => (
-            <Card key={index} shadow="sm" padding="xl" radius="md" withBorder>
-              <Stack gap="md">
-                <Group gap="md">
-                  <ThemeIcon size="xl" variant="light" color={feature.color}>
-                    <feature.icon size={24} />
-                  </ThemeIcon>
-                  <Badge size="sm" variant="dot" color={feature.color}>
-                    {feature.category}
-                  </Badge>
-                </Group>
-                <Title order={3} size="xl" fw={600}>
-                  {feature.title}
-                </Title>
-                <Text c="dimmed" size="sm">
-                  {feature.description}
-                </Text>
-              </Stack>
+            <Card key={index} padding="xl" radius="lg" className={classes.featureCard}>
+              <Group align="flex-start" wrap="nowrap" gap="md">
+                <Box className={classes.iconWrapper} style={{ backgroundColor: feature.iconBg }}>
+                  <feature.icon size={28} color={feature.iconColor} stroke={2} />
+                </Box>
+                <Stack gap="xs">
+                  <Text size="lg" fw={700} c="blue.7">
+                    {feature.title}
+                  </Text>
+                  <Text c="dimmed" size="sm" lh={1.6}>
+                    {feature.description}
+                  </Text>
+                </Stack>
+              </Group>
             </Card>
           ))}
         </SimpleGrid>
