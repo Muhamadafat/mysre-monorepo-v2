@@ -1,4 +1,4 @@
-"use client"
+'use client';
 
 import {
   Container,
@@ -13,10 +13,10 @@ import {
   Card,
   Center,
   Flex,
-} from "@mantine/core"
+} from '@mantine/core';
 
 export function CollaborationSection() {
-  const { colorScheme } = useMantineColorScheme()
+  const { colorScheme } = useMantineColorScheme();
 
   return (
     <Box
@@ -42,13 +42,19 @@ export function CollaborationSection() {
               radius="md"
               withBorder
               h="100%"
-              bg={colorScheme === "dark" ? "white" : "white"}
+              bg={colorScheme === 'dark' ? 'white' : 'white'}
             >
               <Stack align="center" gap="lg">
                 <Title order={3} size="xl" fw={600} ta="center" c="dimmed">
                   Diprakarsai oleh:
                 </Title>
-                <Flex gap="md" w="100%" justify="center" align="center" wrap="wrap">
+                <Flex
+                  gap="md"
+                  w="100%"
+                  justify="center"
+                  align="center"
+                  wrap="wrap"
+                >
                   <Image
                     src="/images/brin.jpg"
                     alt="BRIN Logo"
@@ -76,7 +82,7 @@ export function CollaborationSection() {
               radius="md"
               withBorder
               h="100%"
-              bg={colorScheme === "dark" ? "white" : "white"}
+              bg={colorScheme === 'dark' ? 'white' : 'white'}
             >
               <Stack align="center" gap="lg">
                 <Title order={3} size="xl" fw={600} ta="center" c="dimmed">
@@ -103,13 +109,19 @@ export function CollaborationSection() {
               radius="md"
               withBorder
               h="100%"
-              bg={colorScheme === "dark" ? "white" : "white"}
+              bg={colorScheme === 'dark' ? 'white' : 'white'}
             >
               <Stack align="center" gap="lg">
                 <Title order={3} size="xl" fw={600} ta="center" c="dimmed">
                   Didukung oleh:
                 </Title>
-                <Flex gap="md" w="100%" justify="center" align="center" wrap="wrap">
+                <Flex
+                  gap="md"
+                  w="100%"
+                  justify="center"
+                  align="center"
+                  wrap="wrap"
+                >
                   <Image
                     src="/webp/unpas.webp"
                     alt="Universitas Basundan Logo"
@@ -131,5 +143,5 @@ export function CollaborationSection() {
         </Grid>
       </Container>
     </Box>
-  )
+  );
 }

@@ -13,11 +13,12 @@ import {
   Badge,
   Box,
   Group,
-  Tabs,
-  useMantineColorScheme,
+  Grid
 } from "@mantine/core"
-import { IconCheck, IconX } from "@tabler/icons-react"
+import { IconCheck, IconX, IconSparkles } from "@tabler/icons-react"
 import { useState } from "react"
+import classes from "./PricingSection.module.css"
+import { WalkingPiggy } from "./WalkingPiggy"
 
 const plans = {
   monthly: [
@@ -148,92 +149,144 @@ const plans = {
 
 export function PricingSection() {
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly")
-  const { colorScheme } = useMantineColorScheme()
 
   return (
-    <Box
-      id="pricing"
-      py={80}
-      style={{
-        backgroundColor: 'light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-7))'
-      }}
-    >
+    <Box id="pricing" py={{ base: 80, md: 100 }} className={classes.pricing}>
       <Container size="xl">
-        <Stack align="center" gap="xl" mb={60}>
-          <Badge size="lg" variant="light" color="blue" radius="xl">
-            Harga
-          </Badge>
-          <Title order={2} size="2.5rem" fw={700} ta="center">
-            Harga Sederhana dan Transparan
-          </Title>
-          <Text size="lg" c="dimmed" ta="center" maw={600}>
-            Pilih paket yang sesuai dengan kebutuhan penelitian Anda. Semua paket termasuk uji coba gratis 14 hari.
-          </Text>
+        <Grid gap={40} align="center" mb={60}>
+          <Grid.Col span={{ base: 12, md: 5 }}>
+            <Stack align="flex-start" gap="md">
+              <Badge 
+                variant="light" 
+                color="violet" 
+                radius="xl"
+                size="lg"
+                leftSection={<IconSparkles size={14} />}
+                style={{ padding: '4px 16px', fontWeight: 600, letterSpacing: '0.5px' }}
+              >
+                HARGA
+              </Badge>
+              <Title order={2} size="3.2rem" fw={800} className={classes.title} lh={1.1}>
+                Harga Sederhana<br/>dan <Text component="span" c="violet.5" inherit>Transparan</Text>
+              </Title>
+              <Text size="lg" c="dimmed" maw={450} lh={1.6} mt="xs">
+                Pilih paket yang sesuai dengan kebutuhan penelitian Anda. Semua paket termasuk uji coba gratis 14 hari.
+              </Text>
+            </Stack>
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 7 }}>
+            <Box pos="relative" w="100%">
+              <WalkingPiggy />
+            </Box>
+          </Grid.Col>
+        </Grid>
 
-          <Tabs value={billingPeriod} onChange={(value) => setBillingPeriod(value as "monthly" | "yearly")}>
-            <Tabs.List grow>
-              <Tabs.Tab value="monthly">Bulanan</Tabs.Tab>
-              <Tabs.Tab value="yearly">
-                Tahunan
-                <Badge size="xs" variant="filled" color="green" ml="xs">
-                  Hemat 20%
-                </Badge>
-              </Tabs.Tab>
-            </Tabs.List>
-          </Tabs>
-        </Stack>
+        <Group justify="center" mb={50}>
+          <Box className={classes.toggleWrapper}>
+            <button 
+              className={`${classes.toggleButton} ${billingPeriod === 'monthly' ? classes.toggleActive : ''}`}
+              onClick={() => setBillingPeriod('monthly')}
+            >
+              Bulanan
+            </button>
+            <button 
+              className={`${classes.toggleButton} ${billingPeriod === 'yearly' ? classes.toggleActive : ''}`}
+              onClick={() => setBillingPeriod('yearly')}
+            >
+              Tahunan
+              <Badge size="sm" variant="filled" color="green.6" ml="xs" radius="xl" style={{ fontWeight: 700, padding: '0 8px' }}>
+                HEMAT 20%
+              </Badge>
+            </button>
+          </Box>
+        </Group>
 
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xl">
           {plans[billingPeriod].map((plan, index) => (
             <Card
               key={index}
-              shadow="sm"
               padding="xl"
-              radius="md"
-              withBorder
+              radius="lg"
+              className={classes.pricingCard}
               style={{
-                borderColor: plan.popular ? "var(--mantine-color-blue-6)" : undefined,
+                borderColor: plan.popular ? "#2563EB" : "transparent",
                 borderWidth: plan.popular ? 2 : 1,
+                borderStyle: 'solid',
+                transform: plan.popular ? 'scale(1.03)' : 'none',
+                zIndex: plan.popular ? 2 : 1,
               }}
             >
-              <Stack gap="md">
-                {plan.popular && (
-                  <Badge size="sm" variant="filled" color="blue" style={{ alignSelf: "center" }}>
-                    Paling Populer
-                  </Badge>
-                )}
+              <Stack gap="xl" h="100%">
+                <Stack gap="sm" ta="center" pos="relative">
+                  {plan.popular && (
+                    <Badge 
+                      size="md" 
+                      variant="filled" 
+                      color="blue.6" 
+                      style={{ 
+                        position: 'absolute', 
+                        top: -40, 
+                        left: '50%', 
+                        transform: 'translateX(-50%)', 
+                        borderRadius: '20px',
+                        padding: '6px 16px',
+                        height: 'auto',
+                        fontWeight: 700
+                      }}
+                    >
+                      PALING POPULER
+                    </Badge>
+                  )}
 
-                <Stack gap="xs" ta="center">
-                  <Title order={3} size="xl" fw={600}>
+                  <Title order={3} size="h4" fw={700} mt={plan.popular ? "sm" : 0} c="dark.9">
                     {plan.name}
                   </Title>
-                  <Group gap="xs" justify="center">
-                    <Text size="2.5rem" fw={700} c="blue">
+                  <Group gap={4} justify="center" align="flex-end" mt={4}>
+                    <Text size="3.5rem" fw={800} c="blue.6" lh={1}>
                       {plan.price}
                     </Text>
-                    <Text c="dimmed">{plan.period}</Text>
+                    <Text c="dimmed" size="md" pb={8} fw={500}>{plan.period}</Text>
                   </Group>
-                  <Text size="sm" c="dimmed">
+                  <Text size="sm" c="dimmed" mt={4} h={40}>
                     {plan.description}
                   </Text>
                 </Stack>
 
-                <List spacing="sm" size="sm" center>
+                <List spacing="sm" size="sm" center mt="md" style={{ flexGrow: 1 }}>
                   {plan.features.map((feature, featureIndex) => (
                     <List.Item
                       key={featureIndex}
                       icon={
-                        <ThemeIcon size="sm" variant="light" color={feature.included ? "green" : "red"}>
-                          {feature.included ? <IconCheck size={12} /> : <IconX size={12} />}
-                        </ThemeIcon>
+                        feature.included ? (
+                          <ThemeIcon size={20} variant="light" color="green.1" radius="xl" style={{ backgroundColor: '#ecfdf5' }}>
+                            <IconCheck size={14} stroke={4} color="#10b981" />
+                          </ThemeIcon>
+                        ) : (
+                          <ThemeIcon size={20} variant="light" color="red.1" radius="xl" style={{ backgroundColor: '#fef2f2' }}>
+                            <IconX size={14} stroke={4} color="#ef4444" />
+                          </ThemeIcon>
+                        )
                       }
                     >
-                      <Text c={feature.included ? undefined : "dimmed"}>{feature.text}</Text>
+                      <Text c={feature.included ? "dark.8" : "dimmed"} size="sm" fw={500}>{feature.text}</Text>
                     </List.Item>
                   ))}
                 </List>
 
-                <Button variant={plan.popular ? "filled" : "outline"} size="md" fullWidth mt="auto">
+                <Button 
+                  variant={plan.popular ? "filled" : "outline"} 
+                  color="blue.6"
+                  size="md" 
+                  radius="md" 
+                  fullWidth 
+                  mt="xl"
+                  fw={600}
+                  style={{
+                    backgroundColor: plan.popular ? '#2563EB' : 'transparent',
+                    borderColor: plan.popular ? 'transparent' : '#2563EB',
+                    color: plan.popular ? 'white' : '#2563EB'
+                  }}
+                >
                   {plan.cta}
                 </Button>
               </Stack>

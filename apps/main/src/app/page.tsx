@@ -1,15 +1,14 @@
-"use client"
-import { AppShell } from "@mantine/core" // Import AppShell
-import { Header } from "@/components/landing/Header"
-import { HeroSection } from "@/components/landing/HeroSection"
-import { FeaturesSection } from "@/components/landing/FeaturesSection"
-import { HowItWorksSection } from "@/components/landing/HowItWorksSection"
-import { TestimonialsSection } from "@/components/landing/TestimonialsSection"
-import { PricingSection } from "@/components/landing/PricingSection"
-import { FAQSection } from "@/components/landing/FAQSection"
-import { CTASection } from "@/components/landing/CTASection"
-import { Footer } from "@/components/landing/Footer"
-import { CollaborationSection } from "@/components/landing/CollaborationSection"
+'use client';
+import { AppShell } from '@mantine/core'; // Import AppShell
+import { Header } from '@/components/landing/Header';
+import { HeroSection } from '@/components/landing/HeroSection';
+import { FeaturesSection } from '@/components/landing/FeaturesSection';
+import { HowItWorksSection } from '@/components/landing/HowItWorksSection';
+import { TestimonialsSection } from '@/components/landing/TestimonialsSection';
+import { PricingSection } from '@/components/landing/PricingSection';
+import { FAQSection } from '@/components/landing/FAQSection';
+import { CTASection } from '@/components/landing/CTASection';
+import { Footer } from '@/components/landing/Footer';
 
 export default function HomePage() {
   return (
@@ -29,11 +28,10 @@ export default function HomePage() {
         <PricingSection />
         <FAQSection />
         <CTASection />
-        <CollaborationSection />
       </AppShell.Main>
 
       {/* Footer is typically outside AppShell.Main but within the overall layout */}
       <Footer />
     </AppShell>
-  )
+  );
 }

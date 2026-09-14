@@ -5,27 +5,15 @@ import {
   Button,
   Container,
   Group,
-  Text,
   UnstyledButton,
-  ActionIcon,
-  useMantineColorScheme,
   Image,
   Box
 } from "@mantine/core"
 import { useDisclosure } from "@mantine/hooks"
-import { IconSun, IconMoon, IconBrain } from "@tabler/icons-react"
+import { IconArrowRight } from "@tabler/icons-react"
 import Link from "next/link"
-import { useEffect, useState } from "react" // Import useEffect and useState
-import classes from "./HeroSection.module.css"
-
 export function Header() {
   const [opened, { toggle }] = useDisclosure(false)
-  const { colorScheme, toggleColorScheme } = useMantineColorScheme()
-  const [mounted, setMounted] = useState(false) // Add mounted state
-
-  useEffect(() => {
-    setMounted(true) // Set mounted to true after component mounts on client
-  }, [])
 
   const navItems = [
     { label: "Fitur", href: "#features" },
@@ -50,10 +38,6 @@ export function Header() {
                 // className={classes.heroImage}
                 />
             </Box>
-            {/* <IconBrain size={32} color="var(--mantine-color-blue-6)" /> */}
-            {/* <Text size="xl" fw={700} c="blue">
-              mySRE
-            </Text> */}
           </Group>
 
           {/* Desktop Navigation */}
@@ -75,24 +59,16 @@ export function Header() {
 
           {/* Desktop Actions */}
           <Group gap="md" visibleFrom="md">
-            <ActionIcon variant="subtle" size="lg" onClick={() => toggleColorScheme()} aria-label="Toggle color scheme">
-              {mounted && (colorScheme === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />)}
-              {!mounted && <IconMoon size={18} />} {/* Render a default icon on server */}
-            </ActionIcon>
             <Button variant="subtle" component={Link} href="/signin">
               Masuk
             </Button>
-            <Button component={Link} href="/signup">
+            <Button component={Link} href="/signup" rightSection={<IconArrowRight size={16} />}>
               Mulai Sekarang
             </Button>
           </Group>
 
           {/* Mobile Menu */}
           <Group gap="md" hiddenFrom="md">
-            <ActionIcon variant="subtle" size="lg" onClick={() => toggleColorScheme()} aria-label="Toggle color scheme">
-              {mounted && (colorScheme === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />)}
-              {!mounted && <IconMoon size={18} />} {/* Render a default icon on server */}
-            </ActionIcon>
             <Burger opened={opened} onClick={toggle} size="sm" />
           </Group>
         </Group>

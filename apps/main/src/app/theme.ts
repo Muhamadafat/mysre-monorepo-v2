@@ -1,27 +1,27 @@
-import { createTheme } from "@mantine/core"
+import { createTheme } from '@mantine/core';
 
 export const theme = createTheme({
-  primaryColor: "blue",
-  fontFamily: "Inter, sans-serif",
+  primaryColor: 'blue',
+  fontFamily: 'Inter, sans-serif',
   headings: {
-    fontFamily: "Inter, sans-serif",
-    fontWeight: "700",
+    fontFamily: 'Inter, sans-serif',
+    fontWeight: '700',
   },
   components: {
     Button: {
       defaultProps: {
-        radius: "md",
+        radius: 'md',
       },
     },
     Card: {
       defaultProps: {
-        radius: "md",
+        radius: 'md',
       },
     },
     Badge: {
       defaultProps: {
-        radius: "md",
+        radius: 'md',
       },
     },
   },
-})
+});
