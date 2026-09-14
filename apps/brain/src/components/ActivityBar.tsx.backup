@@ -1,0 +1,696 @@
+// components/ActivityBar.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import {
+  Tooltip,
+  ActionIcon,
+  Stack,
+  Box,
+  Divider,
+  rem,
+  useMantineColorScheme,
+  Menu,
+  Avatar,
+  Group,
+  Text,
+} from '@mantine/core';
+import {
+  IconHome2,
+  IconArticle,
+  IconPlus,
+  IconSettings,
+  IconPlayerRecord,
+  IconPlayerStop,
+  IconHelp,
+  IconSun,
+  IconMoon,
+  IconUser,
+  IconLogout,
+  IconHistory,
+} from '@tabler/icons-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useWebGazer } from './context/WebGazerContext';
+import { HelpGuideModal } from './HelpGuideModal';
+
+interface ActivityBarItem {
+  id: string;
+  icon: React.ReactNode;
+  label: string;
+  href?: string;
+  action?: () => void;
+  group?: 'top' | 'bottom';
+  isActive?: boolean;
+}
+
+interface ActivityBarProps {
+  // Called when user clicks a panel item (for in-page panel switching)
+  onFeatureSelect?: (featureId: string) => void;
+  activeFeature?: string;
+  // Called when user wants to add new session
+  onNewSession?: () => void;
+  // Project ID if inside a project
+  projectId?: string;
+}
+
+const ACTIVITY_BAR_WIDTH = 52;
+
+export function ActivityBar({
+  onFeatureSelect,
+  activeFeature,
+  onNewSession,
+  projectId,
+}: ActivityBarProps) {
+  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
+  const dark = colorScheme === 'dark';
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const [mounted, setMounted] = useState(false);
+  const [userData, setUserData] = useState<{
+    name: string;
+    email: string;
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [helpModalOpened, setHelpModalOpened] = useState(false);
+
+  const { isSessionActive, startSession, stopSession } = useWebGazer();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const fetchUserData = async () => {
+      try {
+        const response = await fetch('/api/user/profile');
+        if (response.ok) {
+          const data = await response.json();
+          setUserData({
+            name: data.user?.name || 'Unknown User',
+            email: data.user?.email || 'No email',
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch user:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchUserData();
+  }, [mounted]);
+
+  const handleLogout = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch('/api/auth/signout', { method: 'POST' });
+      if (response.ok) {
+        setUserData(null);
+        window.location.href = `${process.env.NEXT_PUBLIC_MAIN_APP_URL || 'http://localhost:3000'}/signin`;
+      }
+    } catch (error) {
+      console.error('Logout failed:', error);
+      setIsLoading(false);
+    }
+  };
+
+  const isHome = !pathname.includes('/projects/');
+
+  // Items untuk halaman projektif (di dalam project)
+  const projectItems: ActivityBarItem[] = [
+    {
+      id: 'articles',
+      icon: <IconArticle size={22} />,
+      label: 'Daftar Artikel',
+      group: 'top',
+    },
+  ];
+
+  const homeItems: ActivityBarItem[] = [];
+
+  const topItems = isHome ? homeItems : projectItems;
+
+  const handleItemClick = (item: ActivityBarItem) => {
+    if (item.action) {
+      item.action();
+      return;
+    }
+    if (item.href) {
+      router.push(item.href);
+      return;
+    }
+    if (onFeatureSelect) {
+      onFeatureSelect(item.id);
+    }
+  };
+
+  const isItemActive = (item: ActivityBarItem): boolean => {
+    if (item.href) {
+      return pathname === item.href;
+    }
+    return activeFeature === item.id;
+  };
+
+  const bg = dark ? '#1a1b23' : '#f0f2f5';
+  const borderColor = dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.09)';
+  const activeBg = dark ? 'rgba(99,102,241,0.18)' : 'rgba(99,102,241,0.12)';
+  const activeAccent = '#6366f1';
+  const iconColor = dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
+  const iconActiveColor = '#6366f1';
+
+  const renderItem = (item: ActivityBarItem) => {
+    const active = isItemActive(item);
+
+    return (
+      <Tooltip
+        key={item.id}
+        label={item.label}
+        position="right"
+        withArrow
+        arrowSize={6}
+        transitionProps={{ transition: 'slide-right', duration: 150 }}
+        styles={{
+          tooltip: {
+            fontSize: 12,
+            fontWeight: 500,
+            backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+            color: '#fff',
+            padding: '6px 10px',
+            borderRadius: 8,
+          },
+          arrow: {
+            backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+          },
+        }}
+      >
+        <Box style={{ position: 'relative' }}>
+          {/* Active indicator bar on left */}
+          {active && (
+            <Box
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: 3,
+                height: 24,
+                backgroundColor: activeAccent,
+                borderRadius: '0 3px 3px 0',
+                zIndex: 1,
+              }}
+            />
+          )}
+
+          <ActionIcon
+            variant="transparent"
+            size={44}
+            onClick={() => handleItemClick(item)}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              backgroundColor: active ? activeBg : 'transparent',
+              color: active ? iconActiveColor : iconColor,
+              transition: 'all 0.18s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            styles={{
+              root: {
+                '&:hover': {
+                  backgroundColor: active
+                    ? activeBg
+                    : dark
+                      ? 'rgba(255,255,255,0.06)'
+                      : 'rgba(0,0,0,0.06)',
+                  color: active
+                    ? iconActiveColor
+                    : dark
+                      ? 'rgba(255,255,255,0.85)'
+                      : 'rgba(0,0,0,0.7)',
+                  transform: 'scale(1.08)',
+                },
+              },
+            }}
+          >
+            {item.icon}
+          </ActionIcon>
+        </Box>
+      </Tooltip>
+    );
+  };
+
+  if (!mounted) {
+    return (
+      <Box
+        component="nav"
+        style={{
+          width: ACTIVITY_BAR_WIDTH,
+          minWidth: ACTIVITY_BAR_WIDTH,
+          maxWidth: ACTIVITY_BAR_WIDTH,
+          height: '100%',
+          backgroundColor: '#1a1b23',
+          borderRight: '1px solid rgba(255,255,255,0.07)',
+        }}
+      />
+    );
+  }
+
+  return (
+    <Box
+      component="nav"
+      aria-label="Activity Bar"
+      className="notranslate"
+      translate="no"
+      style={{
+        width: ACTIVITY_BAR_WIDTH,
+        minWidth: ACTIVITY_BAR_WIDTH,
+        maxWidth: ACTIVITY_BAR_WIDTH,
+        height: '100%',
+        backgroundColor: bg,
+        borderRight: `1px solid ${borderColor}`,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        paddingTop: rem(8),
+        paddingBottom: rem(8),
+        gap: 0,
+        flexShrink: 0,
+        zIndex: 100,
+        userSelect: 'none',
+      }}
+    >
+      {/* Top section - main feature items */}
+      <Stack
+        gap={4}
+        align="center"
+        style={{ flex: 1, width: '100%', paddingTop: 4 }}
+      >
+        {/* New session shortcut (at the top) */}
+        <Tooltip
+          label="Buat Sesi Baru"
+          position="right"
+          withArrow
+          arrowSize={6}
+          transitionProps={{ transition: 'slide-right', duration: 150 }}
+          styles={{
+            tooltip: {
+              fontSize: 12,
+              fontWeight: 500,
+              backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+              color: '#fff',
+              padding: '6px 10px',
+              borderRadius: 8,
+            },
+            arrow: {
+              backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+            },
+          }}
+        >
+          <ActionIcon
+            variant="transparent"
+            size={44}
+            onClick={onNewSession}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              backgroundColor: 'transparent',
+              color: iconColor,
+              transition: 'all 0.18s ease',
+            }}
+            styles={{
+              root: {
+                '&:hover': {
+                  backgroundColor: dark
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(0,0,0,0.06)',
+                  color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.7)',
+                  transform: 'scale(1.08)',
+                },
+              },
+            }}
+          >
+            <IconPlus size={22} />
+          </ActionIcon>
+        </Tooltip>
+
+        {/* Home button (always show) */}
+        <Tooltip
+          label="Home - Semua Proyek"
+          position="right"
+          withArrow
+          arrowSize={6}
+          transitionProps={{ transition: 'slide-right', duration: 150 }}
+          styles={{
+            tooltip: {
+              fontSize: 12,
+              fontWeight: 500,
+              backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+              color: '#fff',
+              padding: '6px 10px',
+              borderRadius: 8,
+            },
+            arrow: {
+              backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+            },
+          }}
+        >
+          <Box style={{ position: 'relative' }}>
+            {pathname === '/' && (
+              <Box
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: 3,
+                  height: 24,
+                  backgroundColor: activeAccent,
+                  borderRadius: '0 3px 3px 0',
+                  zIndex: 1,
+                }}
+              />
+            )}
+            <ActionIcon
+              variant="transparent"
+              size={44}
+              onClick={() => router.push('/')}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                backgroundColor: pathname === '/' ? activeBg : 'transparent',
+                color: pathname === '/' ? iconActiveColor : iconColor,
+                transition: 'all 0.18s ease',
+              }}
+              styles={{
+                root: {
+                  '&:hover': {
+                    backgroundColor:
+                      pathname === '/'
+                        ? activeBg
+                        : dark
+                          ? 'rgba(255,255,255,0.06)'
+                          : 'rgba(0,0,0,0.06)',
+                    color:
+                      pathname === '/'
+                        ? iconActiveColor
+                        : dark
+                          ? 'rgba(255,255,255,0.85)'
+                          : 'rgba(0,0,0,0.7)',
+                    transform: 'scale(1.08)',
+                  },
+                },
+              }}
+            >
+              <IconHome2 size={22} />
+            </ActionIcon>
+          </Box>
+        </Tooltip>
+
+        <Divider
+          orientation="horizontal"
+          style={{
+            width: 28,
+            borderColor: borderColor,
+            margin: '4px 0',
+          }}
+        />
+
+        {/* Feature items  */}
+        {topItems.map(renderItem)}
+      </Stack>
+
+      {/* Divider */}
+      <Divider
+        orientation="horizontal"
+        style={{
+          width: 28,
+          borderColor: borderColor,
+          margin: '4px 0',
+        }}
+      />
+
+      {/* Bottom section - global tools */}
+      <Stack gap={4} align="center" style={{ width: '100%', paddingBottom: 8 }}>
+        <Tooltip
+          label={
+            isSessionActive
+              ? 'Hentikan Sesi (Lacak & Rekam)'
+              : 'Mulai Sesi (Lacak & Rekam)'
+          }
+          position="right"
+          withArrow
+          transitionProps={{ transition: 'slide-right', duration: 150 }}
+          styles={{
+            tooltip: {
+              fontSize: 12,
+              fontWeight: 500,
+              backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+              color: '#fff',
+              borderRadius: 8,
+            },
+            arrow: { backgroundColor: dark ? '#2c2d3a' : '#1e1f26' },
+          }}
+        >
+          <ActionIcon
+            variant={isSessionActive ? 'filled' : 'transparent'}
+            color={isSessionActive ? 'red' : undefined}
+            onClick={isSessionActive ? stopSession : startSession}
+            size={44}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              color: isSessionActive ? '#fff' : iconColor,
+              transition: 'all 0.18s ease',
+            }}
+            styles={{
+              root: {
+                '&:hover': {
+                  backgroundColor: dark
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(0,0,0,0.06)',
+                  color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.7)',
+                  transform: 'scale(1.08)',
+                },
+              },
+            }}
+          >
+            {isSessionActive ? (
+              <IconPlayerStop size={22} />
+            ) : (
+              <IconPlayerRecord size={22} />
+            )}
+          </ActionIcon>
+        </Tooltip>
+
+        <Tooltip
+          label="Panduan Penggunaan"
+          position="right"
+          withArrow
+          transitionProps={{ transition: 'slide-right', duration: 150 }}
+          styles={{
+            tooltip: {
+              fontSize: 12,
+              fontWeight: 500,
+              backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+              color: '#fff',
+              borderRadius: 8,
+            },
+            arrow: { backgroundColor: dark ? '#2c2d3a' : '#1e1f26' },
+          }}
+        >
+          <ActionIcon
+            variant="transparent"
+            size={44}
+            onClick={() => setHelpModalOpened(true)}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              color: iconColor,
+              transition: 'all 0.18s ease',
+            }}
+            styles={{
+              root: {
+                '&:hover': {
+                  backgroundColor: dark
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(0,0,0,0.06)',
+                  color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.7)',
+                  transform: 'scale(1.08)',
+                },
+              },
+            }}
+          >
+            <IconHelp size={22} />
+          </ActionIcon>
+        </Tooltip>
+
+        <Tooltip
+          label={dark ? 'Light mode' : 'Dark mode'}
+          position="right"
+          withArrow
+          transitionProps={{ transition: 'slide-right', duration: 150 }}
+          styles={{
+            tooltip: {
+              fontSize: 12,
+              fontWeight: 500,
+              backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+              color: '#fff',
+              borderRadius: 8,
+            },
+            arrow: { backgroundColor: dark ? '#2c2d3a' : '#1e1f26' },
+          }}
+        >
+          <ActionIcon
+            variant="transparent"
+            size={44}
+            onClick={toggleColorScheme}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              color: iconColor,
+              transition: 'all 0.18s ease',
+            }}
+            styles={{
+              root: {
+                '&:hover': {
+                  backgroundColor: dark
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(0,0,0,0.06)',
+                  color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.7)',
+                  transform: 'scale(1.08)',
+                },
+              },
+            }}
+          >
+            {dark ? <IconSun size={22} /> : <IconMoon size={22} />}
+          </ActionIcon>
+        </Tooltip>
+
+        <Tooltip
+          label="Settings"
+          position="right"
+          withArrow
+          transitionProps={{ transition: 'slide-right', duration: 150 }}
+          styles={{
+            tooltip: {
+              fontSize: 12,
+              fontWeight: 500,
+              backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+              color: '#fff',
+              borderRadius: 8,
+            },
+            arrow: { backgroundColor: dark ? '#2c2d3a' : '#1e1f26' },
+          }}
+        >
+          <ActionIcon
+            variant="transparent"
+            size={44}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              color: iconColor,
+              transition: 'all 0.18s ease',
+            }}
+            styles={{
+              root: {
+                '&:hover': {
+                  backgroundColor: dark
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(0,0,0,0.06)',
+                  color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.7)',
+                  transform: 'scale(1.08)',
+                },
+              },
+            }}
+          >
+            <IconSettings size={22} />
+          </ActionIcon>
+        </Tooltip>
+
+        <Menu
+          shadow="lg"
+          width={220}
+          position="right-end"
+          offset={16}
+          withArrow
+          arrowPosition="center"
+        >
+          <Menu.Target>
+            <ActionIcon
+              variant="transparent"
+              size={44}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                transition: 'all 0.18s ease',
+              }}
+              styles={{ root: { '&:hover': { transform: 'scale(1.08)' } } }}
+            >
+              <Avatar
+                size="sm"
+                radius="xl"
+                variant="gradient"
+                className="notranslate"
+                gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
+                style={{ cursor: 'pointer' }}
+              >
+                {!mounted || isLoading
+                  ? '...'
+                  : userData?.name?.charAt(0).toUpperCase() || (
+                      <IconUser size={16} />
+                    )}
+              </Avatar>
+            </ActionIcon>
+          </Menu.Target>
+
+          <Menu.Dropdown className="notranslate" translate="no">
+            <Menu.Label>
+              <Group gap="xs">
+                <Avatar size="xs" color="blue">
+                  {userData?.name?.charAt(0).toUpperCase() || 'U'}
+                </Avatar>
+                <Text size="sm">Signed in as</Text>
+              </Group>
+            </Menu.Label>
+
+            <Menu.Item>
+              <Text size="sm" fw={600} suppressHydrationWarning>
+                {isLoading ? 'Loading...' : userData?.name || 'Unknown User'}
+              </Text>
+              <Text size="xs" c="dimmed" suppressHydrationWarning>
+                {isLoading ? 'Loading...' : userData?.email || 'No email'}
+              </Text>
+            </Menu.Item>
+
+            <Menu.Divider />
+
+            <Menu.Item
+              leftSection={<IconLogout size={16} />}
+              color="red"
+              onClick={handleLogout}
+              disabled={isLoading}
+            >
+              Sign out
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
+      </Stack>
+      <HelpGuideModal
+        opened={helpModalOpened}
+        onClose={() => setHelpModalOpened(false)}
+      />
+    </Box>
+  );
+}
+
+export { ACTIVITY_BAR_WIDTH };

@@ -1,0 +1,352 @@
+generator client {
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
+}
+
+model Article {
+  id          String       @id @default(uuid())
+  title       String
+  filePath    String       @map("file_path")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  userId      String?      @map("user_id")
+  projectId   String?      @map("project_id")
+  abstract    String?
+  author      String?
+  doi         String?
+  keywords    String?
+  year        String?
+  annotations Annotation[]
+  project     Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User?        @relation(fields: [userId], references: [id])
+
+  @@map("article")
+}
+
+model Analytics {
+  id        Int      @id @default(autoincrement())
+  action    String
+  document  String?
+  userId    String   @map("user_id")
+  metadata  Json?
+  timestamp DateTime @default(now())
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("analytics")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  password  String
+  role      Role     @default(USER)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  group     String?
+  nim       String?
+
+  avatar_url      String?   @map("avatar_url")
+  phone           String?
+  bio             String?
+  university      String?
+  faculty         String?
+  major           String?
+  semester        Int?
+  address         String?
+  birthDate       String?   @map("birth_date")
+  linkedin        String?
+  github          String?
+  website         String?
+  isEmailVerified Boolean?  @default(false) @map("is_email_verified")
+  isPhoneVerified Boolean?  @default(false) @map("is_phone_verified")
+  lastActive      DateTime? @map("last_active")
+  token_balance   Int?      @default(0) @map("token_balance")
+  settings        Json?
+
+  annotations    Annotation[]
+  articles       Article[]
+  chatSessions   ChatSession[]
+  projects       Project[]
+  chatMessages   ChatMessage[]
+  drafts         Draft[]
+  writerSessions WriterSession[]
+  tokenUsages    TokenUsage[]
+
+  createdAssignments Assignment[]           @relation("AssignmentCreator")
+  submissions        AssignmentSubmission[]
+  analytics          Analytics[]
+  xapiStatements     XapiStatement[]
+
+  @@map("user")
+}
+
+model Draft {
+  id            String         @id @default(uuid())
+  userId        String?        @map("user_id")
+  title         String
+  createdAt     DateTime       @default(now()) @map("created_at")
+  writerId      String?        @map("writer_id")
+  user          User?          @relation(fields: [userId], references: [id])
+  writerSession WriterSession? @relation(fields: [writerId], references: [id], onDelete: Cascade)
+  sections      DraftSection[]
+
+  @@map("draft")
+}
+
+model DraftSection {
+  id          String       @id @default(uuid())
+  draftId     String       @map("draft_id")
+  title       String
+  content     String
+  annotations Annotation[]
+  draft       Draft        @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@map("draft_section")
+}
+
+model Annotation {
+  id              String        @id @default(uuid())
+  userId          String?       @map("user_id")
+  articleId       String?       @map("article_id")
+  page            Int
+  highlightedText String        @map("highlighted_text")
+  comment         String
+  semanticTag     String?       @map("semantic_tag")
+  draftSectionId  String?       @map("draft_section_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  article         Article?      @relation(fields: [articleId], references: [id])
+  draftSection    DraftSection? @relation(fields: [draftSectionId], references: [id])
+  user            User?         @relation(fields: [userId], references: [id])
+
+  @@map("annotation")
+}
+
+model Project {
+  id                     String          @id @default(uuid())
+  title                  String
+  description            String?
+  userId                 String          @map("user_id")
+  selectedFilterArticles String[]        @default([]) @map("selected_filter_articles")
+  lastSelectedNodeId     String?         @map("last_selected_node_id")
+  lastSelectedEdgeId     String?         @map("last_selected_edge_id")
+  graphFilters           Json?           @map("graph_filters")
+  comparativeTabs        Json?           @map("comparative_tabs")
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+  lastActivity           DateTime        @default(now()) @map("last_activity")
+  coverColor             String          @default("#4c6ef5") @map("cover_color")
+  articles               Article[]
+  user                   User            @relation(fields: [userId], references: [id])
+  chatSessions           ChatSession[]
+  chatMessages           ChatMessage[]
+  tokenUsages            TokenUsage[]
+  writerSessions         WriterSession[]
+  gazeEvents             GazeEvent[]
+  documentChunks         DocumentChunk[]
+
+  @@map("project")
+}
+
+model ChatMessage {
+  id            String       @id @default(uuid())
+  userId        String       @map("user_id")
+  projectId     String       @map("project_id")
+  chatSessionId String?      @map("chat_session_id")
+  userQuery     String       @map("user_query")
+  aiResponse    String       @map("ai_response")
+  references    Json?
+  metadata      Json?
+  createdAt     DateTime     @default(now()) @map("created_at")
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chatSession   ChatSession? @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  @@index([chatSessionId])
+  @@map("chat_message")
+}
+
+model ChatSession {
+  id              String        @id @default(uuid())
+  projectId       String        @map("project_id")
+  userId          String        @map("user_id")
+  title           String        @default("New Chat")
+  lastPreview     String?       @map("last_preview")
+  mode            String?
+  contextSnapshot Json?         @map("context_snapshot")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  lastActivity    DateTime      @default(now()) @map("last_activity")
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatMessages    ChatMessage[]
+
+  @@index([projectId, userId, lastActivity])
+  @@index([userId])
+  @@map("chat_session")
+}
+
+model WriterSession {
+  id           String   @id @default(uuid())
+  title        String
+  description  String?
+  userId       String   @map("user_id")
+  projectId    String?  @map("brainstorming_project_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  lastActivity DateTime @default(now()) @map("last_activity")
+  coverColor   String   @default("#4c6ef5") @map("cover_color")
+  drafts       Draft[]
+  user         User     @relation(fields: [userId], references: [id])
+  project      Project? @relation(fields: [projectId], references: [id])
+
+  @@map("writer_session")
+}
+
+model Document {
+  id        String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  content   String
+  metadata  Json                   @default("{}")
+  embedding Unsupported("vector")?
+  createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("documents")
+}
+
+model TokenUsage {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  projectId    String?  @map("project_id")
+  tokensUsed   Int      @map("tokens_used")
+  inputTokens  Int      @default(0) @map("input_tokens")
+  outputTokens Int      @default(0) @map("output_tokens")
+  model        String
+  purpose      String
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  project      Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([projectId])
+  @@map("token_usage")
+}
+
+model Assignment {
+  id              String    @id @default(uuid())
+  title           String
+  description     String
+  week_number     Int
+  assignment_code String
+  file_url        String?
+  file_name       String?
+  due_date        DateTime?
+  is_active       Boolean   @default(true)
+  created_by      String
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  target_classes  String?
+
+  creator     User                   @relation("AssignmentCreator", fields: [created_by], references: [id], onDelete: Cascade)
+  submissions AssignmentSubmission[]
+
+  @@index([week_number])
+  @@index([is_active])
+  @@map("assignment")
+}
+
+model AssignmentSubmission {
+  id                    String           @id @default(uuid())
+  assignment_id         String
+  student_id            String
+  assignment_code_input String
+  file_url              String?
+  file_name             String?
+  submission_text       String?
+  status                SubmissionStatus @default(pending)
+  grade                 Int?
+  feedback              String?
+  submitted_at          DateTime         @default(now()) @map("submitted_at")
+  graded_at             DateTime?        @map("graded_at")
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
+
+  assignment Assignment @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  student    User       @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([assignment_id])
+  @@index([student_id])
+  @@index([status])
+  @@map("assignment_submission")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum SubmissionStatus {
+  pending
+  submitted
+  graded
+}
+
+model XapiStatement {
+  id        String   @id @default(uuid())
+  actor     Json
+  verb      Json
+  object    Json
+  result    Json?
+  context   Json?
+  timestamp DateTime @default(now())
+  userId    String?  @map("user_id")
+  user      User?    @relation(fields: [userId], references: [id])
+  projectId String?  @map("project_id")
+  sequence  Int?
+
+  @@index([userId])
+  @@index([timestamp])
+  @@index([projectId])
+  @@map("xapi_statement")
+}
+
+model GazeEvent {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  gazeData       Json    @map("gaze_data")
+  screenshotPath String? @map("screenshot_path")
+  projectId      String  @map("project_id")
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("gaze_event")
+}
+
+model DocumentChunk {
+  id              String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String?                      @map("user_id")
+  projectId       String?                      @map("project_id")
+  fileHash        String                       @map("file_hash")
+  title           String
+  chunkIndex      Int                          @map("chunk_index")
+  metadataHeader  String?                      @map("metadata_header")
+  content         String
+  embedding       Unsupported("vector(1536)")?
+  embeddingStatus String                       @default("PENDING") @map("embedding_status")
+  errorLog        String?                      @map("error_log")
+  createdAt       DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastTriedAt     DateTime?                    @map("last_tried_at") @db.Timestamptz(6)
+  Project         Project?                     @relation(fields: [projectId], references: [id])
+
+  @@unique([userId, projectId, fileHash, chunkIndex])
+  @@map("document_chunk")
+}
