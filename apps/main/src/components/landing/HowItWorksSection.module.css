@@ -1,0 +1,76 @@
+.howItWorks {
+  background-image: url('/bg-carakerja.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+  overflow: hidden;
+}
+
+.title {
+  color: var(--mantine-color-dark-9);
+}
+
+[data-mantine-color-scheme="dark"] .title {
+  color: var(--mantine-color-gray-0);
+}
+
+.stepCard {
+  background-color: var(--mantine-color-white);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.35s ease;
+  border: none;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.stepCard:hover {
+  transform: translateX(10px) scale(1.02);
+  box-shadow: 0 15px 35px rgba(59, 130, 246, 0.18);
+}
+
+[data-mantine-color-scheme="dark"] .stepCard {
+  background-color: var(--mantine-color-dark-7);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.iconWrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+@keyframes pendulumFloat {
+  0% {
+    transform: translateY(0px) translateX(0px) rotate(-1.5deg);
+  }
+  25% {
+    transform: translateY(-14px) translateX(12px) rotate(1.5deg);
+  }
+  50% {
+    transform: translateY(-22px) translateX(0px) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-10px) translateX(-12px) rotate(-1.5deg);
+  }
+  100% {
+    transform: translateY(0px) translateX(0px) rotate(-1.5deg);
+  }
+}
+
+@keyframes howItWorksGlow {
+  0%, 100% {
+    filter: drop-shadow(0 10px 25px rgba(139, 92, 246, 0.12));
+  }
+  50% {
+    filter: drop-shadow(0 20px 45px rgba(139, 92, 246, 0.28)) drop-shadow(0 0 25px rgba(59, 130, 246, 0.1));
+  }
+}
+
+.animationImage {
+  /* mix-blend-mode removed */
+  animation: pendulumFloat 5.5s ease-in-out infinite, howItWorksGlow 4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
