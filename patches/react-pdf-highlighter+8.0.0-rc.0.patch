@@ -1,0 +1,22 @@
+diff --git a/node_modules/react-pdf-highlighter/dist/src/components/PdfHighlighter.js b/node_modules/react-pdf-highlighter/dist/src/components/PdfHighlighter.js
+index d64a8a4..08b6821 100644
+--- a/node_modules/react-pdf-highlighter/dist/src/components/PdfHighlighter.js
++++ b/node_modules/react-pdf-highlighter/dist/src/components/PdfHighlighter.js
+@@ -280,7 +280,7 @@ class PdfHighlighter extends PureComponent {
+     this.unsubscribe();
+   }
+   findOrCreateHighlightLayer(page) {
+-    const { textLayer } = this.viewer.getPageView(page - 1) || {};
++    const pageView = this.viewer && this.viewer.getPageView(page - 1); if (!pageView) return null; const { textLayer } = pageView;
+     if (!textLayer) {
+       return null;
+     }
+@@ -345,7 +345,7 @@ class PdfHighlighter extends PureComponent {
+     rects,
+     usePdfCoordinates
+   }) {
+-    const viewport = this.viewer.getPageView(pageNumber - 1).viewport;
++    const pageView = this.viewer && this.viewer.getPageView(pageNumber - 1); if (!pageView) return { boundingRect: { left: 0, top: 0, width: 0, height: 0 }, rects: [], pageNumber }; const viewport = pageView.viewport;
+     return {
+       boundingRect: scaledToViewport(boundingRect, viewport, usePdfCoordinates),
+       rects: (rects || []).map(
