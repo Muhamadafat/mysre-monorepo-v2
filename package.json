@@ -2,6 +2,7 @@
   "name": "sre-monorepo",
   "private": true,
   "scripts": {
+    "postinstall": "patch-package",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
@@ -13,16 +14,15 @@
     "db:pull": "npm -w @sre-monorepo/lib run prisma:db:pull",
     "db:studio": "npm -w @sre-monorepo/lib run prisma:studio",
     "db:reset": "npm -w @sre-monorepo/lib run prisma:reset",
-
     "build:main": "turbo run build --filter=main",
     "build:brain": "turbo run build --filter=brain",
     "start": "turbo run start",
     "start:main": "cd apps/main && npm start",
     "start:brain": "cd apps/brain && npm start",
-
     "dev:party": "npm -w @sre-monorepo/party run dev"
   },
   "devDependencies": {
+    "patch-package": "^8.0.1",
     "prettier": "^3.9.6",
     "turbo": "^2.10.11",
     "typescript": "5.9.3"
