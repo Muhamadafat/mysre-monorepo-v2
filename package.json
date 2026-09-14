@@ -18,7 +18,9 @@
     "build:brain": "turbo run build --filter=brain",
     "start": "turbo run start",
     "start:main": "cd apps/main && npm start",
-    "start:brain": "cd apps/brain && npm start"
+    "start:brain": "cd apps/brain && npm start",
+
+    "dev:party": "npm -w @sre-monorepo/party run dev"
   },
   "devDependencies": {
     "prettier": "^3.9.6",
@@ -31,6 +33,7 @@
   "packageManager": "npm@10.9.2",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "party"
   ]
 }

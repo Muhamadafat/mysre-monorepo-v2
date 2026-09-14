@@ -76,8 +76,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // let savedFilePath = "";
     // const fileWritePromises: Promise<void>[] = [];
 
-    busboy.on("file", (fieldname, file, filename) => {
-      const safeFileName = typeof filename === "string" ? filename : "document.pdf";
+    busboy.on("file", (fieldname, file, info) => {
+      // busboy 1.x passes an info object { filename, encoding, mimeType } as the
+      // third argument, not the bare filename string. Fall back defensively in
+      // case a different version passes a string.
+      const infoAny = info as unknown as
+        | string
+        | { filename?: string }
+        | undefined;
+      const rawFilename =
+        typeof infoAny === "string"
+          ? infoAny
+          : typeof infoAny?.filename === "string"
+            ? infoAny.filename
+            : "";
+      const safeFileName = rawFilename || "document.pdf";
       const safeOriginalName = safeFileName.replace(/[^\w.\-]/g, "_");
 
       const fileExtension = path.extname(safeOriginalName);
@@ -217,7 +230,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           progress: 40,
           message: 'AI sedang menganalisis konten PDF...'
         });
-        
+
+        // Best-effort from here on. PDF analysis, concept-map node generation and
+        // edge generation all depend on the external Python service + its vector
+        // DB. If any of that is unavailable, keep the uploaded article/file and
+        // finish successfully — just without the generated concept-map nodes.
+        try {
         const mcpResponse = await fetch(`${process.env.PY_URL}/mcp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -546,6 +564,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         });
 
         console.log(`✅ Saved ${combinedTokenUsage.total.total_tokens} tokens to database`);
+        } else {
+          console.log("No sessionId provided, skipping edge generation.");
+        }
 
         sendProgress(uploadId, {
           type: 'complete',
@@ -558,8 +579,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             edges: createdEdges
           }
         });
-          
-          resolve(
+
+        resolve(
           NextResponse.json({
               uploadId,
               message: "File uploaded, article node and edges generated and processed successfully",
@@ -569,8 +590,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               edges: createdEdges,
             })
           );
+
+        } catch (aiErr) {
+          // External Python service / vector DB unavailable — degrade gracefully:
+          // the article + file are already persisted, so finish the upload
+          // instead of failing it. Concept-map nodes can be regenerated later.
+          console.error("AI processing unavailable; completing upload without concept-map nodes:", aiErr);
+          sendProgress(uploadId, {
+            type: 'complete',
+            stage: 'completed',
+            progress: 100,
+            message: 'Artikel tersimpan. Analisis AI sedang tidak tersedia, jadi peta konsep belum dibuat.',
+            result: { article, parentNode: null, edges: [] }
+          });
+          resolve(
+            NextResponse.json({
+              uploadId,
+              message: "File uploaded and article saved, but AI analysis is unavailable; concept-map nodes were not generated.",
+              warning: aiErr instanceof Error ? aiErr.message : "AI analysis failed",
+              degraded: true,
+              article,
+              parentNode: null,
+              childNodes: [],
+              edges: [],
+            })
+          );
         }
-        
+
       } catch (err) {
 
         sendProgress(uploadId, {

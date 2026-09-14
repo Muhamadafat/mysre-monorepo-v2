@@ -3,18 +3,14 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import * as Y from "yjs";
 import YPartyKitProvider from "y-partykit/provider";
-import { Block, BlockNoteEditor, PartialBlock, BlockNoteSchema, defaultInlineContentSpecs, defaultStyleSpecs, filterSuggestionItems, InlineContentSchema, StyleSchema, createStyleSpec } from "@blocknote/core";
-import { withCollaboration } from "@blocknote/core/yjs";
-import "@blocknote/core/fonts/inter.css";
-import { BlockNoteView } from "@blocknote/mantine";
-import "@blocknote/mantine/style.css";
-import {
-  SuggestionMenuController,
-  getDefaultReactSlashMenuItems,
-  useCreateBlockNote,
-  FormattingToolbar,
-  FormattingToolbarController,
-} from "@blocknote/react";
+import { Plate, PlateContent, usePlateEditor } from "platejs/react";
+import { YjsPlugin } from "@platejs/yjs/react";
+import { YjsEditor } from "@slate-yjs/core";
+import { WriterEditorKit } from "@/components/plate/kit";
+import { BlockNoteCompatEditor } from "@/lib/plateCompat/editor";
+import type { Block, PartialBlock } from "@/lib/plateCompat/types";
+import { blockNoteBlocksToPlateValue } from "@/lib/plateCompat/convert";
+import { PartyKitUnifiedProvider } from "@/lib/plateCompat/yjsProvider";
 import {
   ActionIcon,
   Badge,
@@ -111,9 +107,9 @@ interface SavedCursorPosition {
 }
 
 // Enhanced interfaces
-interface BlockNoteEditorRef {
+interface PlateEditorRef {
   getContent: () => Block[];
-  getEditor: () => BlockNoteEditor;
+  getEditor: () => BlockNoteCompatEditor;
   setContent: (content: Block[]) => void;
   insertCitation: (citationText: string) => void;
   undo: () => void;
@@ -128,6 +124,8 @@ interface CollaborationConfig {
   /** Realtime room id — one living document per writer session. */
   roomId: string;
   user: {
+    /** Stable identity used as the key for persistent per-collaborator stats (e.g. word count). */
+    id: string;
     name: string;
     color: string;
   };
@@ -141,7 +139,7 @@ interface Article {
   att_url: string;
 }
 
-interface BlockNoteEditorProps {
+interface PlateEditorProps {
   onContentChange?: (content: Block[]) => void;
   style?: React.CSSProperties;
   mcpContext?: {
@@ -562,10 +560,28 @@ function releaseCollaborationRoom(roomId: string) {
   }
 }
 
+// Same text-extraction/word-splitting convention as draft/page.tsx's
+// extractTextFromBlockNote — kept independent here since that function is
+// local to the page component, not exported.
+function countWordsInDocument(blocks: Block[]): number {
+  const text = blocks
+    .map((block) => {
+      if (!block?.content) return "";
+      if (typeof block.content === "string") return block.content;
+      if (Array.isArray(block.content)) {
+        return block.content.map((item: any) => (typeof item === "string" ? item : item?.text || "")).join(" ");
+      }
+      return "";
+    })
+    .join("\n")
+    .trim();
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
 // Main component
-const BlockNoteEditorComponent = forwardRef<BlockNoteEditorRef, BlockNoteEditorProps>(
-  function BlockNoteEditorComponent(
-    { onContentChange, style, onLogFormula, onLogEdit, mcpContext, writerSession, projectId, isFromBrainstorming, nodesData, collaboration }: BlockNoteEditorProps,
+const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
+  function PlateEditorComponent(
+    { onContentChange, style, onLogFormula, onLogEdit, mcpContext, writerSession, projectId, isFromBrainstorming, nodesData, collaboration }: PlateEditorProps,
     ref
   ) {
     const computedColorScheme = useComputedColorScheme("light");
@@ -902,56 +918,145 @@ const BlockNoteEditorComponent = forwardRef<BlockNoteEditorRef, BlockNoteEditorP
       );
     }, []);
 
-    // BlockNote Editor setup with history tracking
-    // Create schema with default styles only
-    const schema = BlockNoteSchema.create({
-      styleSpecs: {
-        ...defaultStyleSpecs,
-      },
-    });
-
-    const uploadFile = async (file: File) => {
-      const body = new FormData();
-      body.append("file", file);
-
-      try {
-        const response = await fetch("/api/upload", {
-          method: "POST",
-          body: body,
-        });
-        const json = await response.json();
-        return json.url;
-      } catch (error) {
-        console.error("Upload failed:", error);
-        return "";
-      }
-    };
-
-    const editor = useCreateBlockNote(
+    // Plate editor setup. The document shape/API the rest of this component
+    // (and draft/page.tsx) works with is still BlockNote's — see
+    // lib/plateCompat/* — `editor` below is a BlockNoteCompatEditor facade
+    // over the real Plate/Slate editor instance.
+    const plateEditor = usePlateEditor(
       collabRoom
-        ? withCollaboration({
-            schema,
-            collaboration: {
-              provider: collabRoom.provider,
-              fragment: collabRoom.doc.getXmlFragment("document-store"),
-              user: collaboration!.user,
-            },
-            uploadFile,
-          })
-        : {
-            schema,
-            initialContent: [
-              {
-                type: "paragraph",
-                content: "",
-              },
+        ? {
+            plugins: [
+              ...WriterEditorKit,
+              YjsPlugin.configure({
+                options: {
+                  cursors: { data: { name: collaboration!.user.name, color: collaboration!.user.color } },
+                  ydoc: collabRoom.doc,
+                  // Passing the shared Y.XmlText explicitly (instead of
+                  // letting @platejs/yjs derive it from `ydoc` on its own)
+                  // makes it seed a brand-new room by applying the initial
+                  // value directly, instead of through the code path that
+                  // hashes it via Web Crypto (subtle.digest) to derive a
+                  // deterministic clientID — which throws under a
+                  // non-secure origin (plain http on anything but literally
+                  // "localhost", e.g. this app's *.lvh.me dev domains).
+                  sharedType: collabRoom.doc.get("content", Y.XmlText),
+                  providers: [new PartyKitUnifiedProvider(collabRoom.provider)],
+                },
+              }),
             ],
-            uploadFile,
+            skipInitialization: true,
+          }
+        : {
+            plugins: WriterEditorKit,
+            value: blockNoteBlocksToPlateValue([]),
           },
       // Recreate the editor once the collaborative room becomes available so
-      // it binds to the real Yjs fragment instead of local-only content.
+      // it binds to the real Yjs doc instead of local-only content.
       [collabRoom]
     );
+
+    const editor = React.useMemo(() => new BlockNoteCompatEditor(plateEditor), [plateEditor]);
+
+    // Connect to the Yjs room once the editor for it exists (mirrors the old
+    // withCollaboration binding, just through @platejs/yjs instead of
+    // y-prosemirror).
+    //
+    // Same StrictMode concern as acquireCollaborationRoom above: dev-mode's
+    // synchronous mount -> cleanup -> remount would otherwise call
+    // yjsApi.destroy() on a connection whose async .init() hasn't even
+    // finished binding its observers yet, then immediately re-init — instead
+    // of a harmless no-op, that tears down half-attached listeners (logged
+    // as "[yjs] Tried to remove event handler that doesn't exist"). Deferring
+    // the destroy by one tick lets the immediate remount cancel it.
+    //
+    // That cancellation only works when the SAME component instance remounts
+    // (StrictMode reuses the fiber, so the refs below survive). A Fast
+    // Refresh reload of this file remounts a brand-new instance instead —
+    // the old instance's deferred destroy is never cancelled (nothing shares
+    // its ref), and `init()` only calls `YjsEditor.connect()` (registering
+    // the observer) once its provider sync resolves, which routinely takes
+    // longer than one tick. Destroying before that finishes still calls
+    // disconnect() on an editor that never connected, hitting the same noisy
+    // console.error. Tracking the in-flight init promise and waiting for it
+    // before destroying keeps disconnect always following a real connect,
+    // regardless of how the teardown was triggered.
+    const yjsDestroyTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const yjsInitPromise = React.useRef<Promise<unknown> | null>(null);
+    React.useEffect(() => {
+      if (!collabRoom) return;
+      const yjsApi = plateEditor.getApi(YjsPlugin).yjs;
+
+      if (yjsDestroyTimer.current) {
+        clearTimeout(yjsDestroyTimer.current);
+        yjsDestroyTimer.current = null;
+      } else {
+        yjsInitPromise.current = yjsApi.init({
+          id: collaboration!.roomId,
+          // A brand-new room gets seeded with one empty paragraph — safe to
+          // pass a real value here now that `sharedType` above (not this
+          // value) is what decides whether that seeding goes through the
+          // crypto-hashing path or the plain applyDelta path.
+          value: blockNoteBlocksToPlateValue([]),
+          autoConnect: true,
+        });
+      }
+
+      return () => {
+        yjsDestroyTimer.current = setTimeout(() => {
+          yjsDestroyTimer.current = null;
+          Promise.resolve(yjsInitPromise.current)
+            .catch(() => {})
+            .finally(() => {
+              yjsApi.destroy();
+            });
+        }, 0);
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collabRoom, plateEditor]);
+
+    // Persistent per-collaborator word-count stats, stored in the Yjs doc
+    // itself (`wordStats` Y.Map, keyed by collaboration.user.id) so they
+    // survive reloads/reconnects and are visible to every collaborator, not
+    // just the tab that typed them.
+    //
+    // `editor.onChange` (wired below to Plate's own onChange prop) fires for
+    // every content change — local edits AND remote ones replayed through
+    // Yjs sync alike. Without filtering, every collaborator's typing would
+    // get credited to whichever tab happens to be open. `YjsEditor.isLocal`
+    // is the exact same check @slate-yjs/core's own withYjs binding uses
+    // internally (see its `e.apply`/`e.onChange` overrides, which likewise
+    // read it from inside this same onChange pass) to decide whether an
+    // operation is local, so the origin tracking it depends on is still
+    // valid at this point.
+    const [wordStats, setWordStats] = React.useState<Record<string, { name: string; count: number }>>({});
+    React.useEffect(() => {
+      if (!collabRoom || !collaboration?.user?.id) return;
+      const userId = collaboration.user.id;
+      const userName = collaboration.user.name;
+      const stats = collabRoom.doc.getMap<{ name: string; count: number }>("wordStats");
+      let lastWordCount = countWordsInDocument(editor.document);
+
+      const syncState = () => setWordStats({ ...stats.toJSON() });
+      syncState();
+      stats.observe(syncState);
+
+      const handleChange = () => {
+        if (!YjsEditor.isYjsEditor(plateEditor) || !YjsEditor.isLocal(plateEditor)) return;
+        const wordCount = countWordsInDocument(editor.document);
+        const delta = wordCount - lastWordCount;
+        lastWordCount = wordCount;
+        if (delta > 0) {
+          const previous = stats.get(userId);
+          stats.set(userId, { name: userName, count: (previous?.count ?? 0) + delta });
+        }
+      };
+      const unsubscribe = editor.onChange(handleChange);
+
+      return () => {
+        unsubscribe();
+        stats.unobserve(syncState);
+      };
+    }, [collabRoom, plateEditor, editor, collaboration?.user?.id, collaboration?.user?.name]);
 
     // Text formatting shortcuts integration - COMPLETELY DISABLED FOR TESTING
     useTextFormattingShortcuts({
@@ -3017,7 +3122,7 @@ const BlockNoteEditorComponent = forwardRef<BlockNoteEditorRef, BlockNoteEditorP
         if (cursorPosition) {
           setSavedCursorPosition({
             blockId: cursorPosition.block.id,
-            offset: (editor as any)._tiptapEditor.state.selection.from,
+            offset: editor.getCursorOffsetInBlock(),
           });
         }
       }
@@ -3102,7 +3207,7 @@ const BlockNoteEditorComponent = forwardRef<BlockNoteEditorRef, BlockNoteEditorP
         if (cursorPosition) {
           setSavedCursorPosition({
             blockId: cursorPosition.block.id,
-            offset: (editor as any)._tiptapEditor.state.selection.from,
+            offset: editor.getCursorOffsetInBlock(),
           });
         }
       }
@@ -4666,21 +4771,6 @@ INSTRUKSI:
       }
     };
 
-    // Helper function to find the start position of a block
-    const getBlockStartPos = (blockId: string): number | null => {
-      const editorState = (editor as any)._tiptapEditor.state;
-      let pos: number | null = null;
-      editorState.doc.descendants((node: any, p: number) => {
-        if (node.attrs.id === blockId) {
-          pos = p;
-          return false;
-        }
-        return true;
-      });
-      return pos;
-    };
-
-
     // FIXED: Insert content to editor with proper sentence continuation
     const insertContentToEditor = async (behavior: string = "rewrite") => {
       if (!generatedContent || !generatedContent.trim()) {
@@ -4868,14 +4958,12 @@ INSTRUKSI:
 
                   const textToAppend = blocksToInsert[0].content as string;
 
-                  // Use the Tiptap editor to set the selection to the saved absolute position
-                  (editor as any)._tiptapEditor.commands.setTextSelection(absoluteOffset);
+                  // Place the selection at the saved in-block character offset.
+                  const relativeOffset = Math.max(0, absoluteOffset);
+                  editor.selectInBlock(targetBlock, relativeOffset);
 
                   // Check if a space is needed
                   const currentText = extractTextFromBlock(targetBlock);
-                  const blockStartPos = getBlockStartPos(targetBlock.id);
-                  // Ensure relative offset is not negative
-                  const relativeOffset = blockStartPos !== null ? Math.max(0, absoluteOffset - blockStartPos - 1) : 0;
                   const charBeforeCursor = currentText.charAt(relativeOffset - 1);
 
                   const needsSpace = charBeforeCursor && !/\s/.test(charBeforeCursor);
@@ -5056,7 +5144,7 @@ INSTRUKSI:
             if (cursorPosition) {
               setSavedCursorPosition({
                 blockId: cursorPosition.block.id,
-                offset: (editor as any)._tiptapEditor.state.selection.from,
+                offset: editor.getCursorOffsetInBlock(),
               });
             }
             setAIMode("new");
@@ -5076,7 +5164,7 @@ INSTRUKSI:
             if (cursorPosition) {
               setSavedCursorPosition({
                 blockId: cursorPosition.block.id,
-                offset: (editor as any)._tiptapEditor.state.selection.from,
+                offset: editor.getCursorOffsetInBlock(),
               });
             }
             setAIMode("auto");
@@ -5101,74 +5189,101 @@ INSTRUKSI:
       ];
     }, [openAIModal, editor, openLatexModal]); // Remove aiModel dependency temporarily
 
-    // Custom Slash Menu Items
+    // Custom "Insert" menu items — same actions BlockNote's slash menu used
+    // to offer (Heading 1-3, List Angka/Butir, Tabel, Divider), now driven
+    // directly through the compat editor. Rendered as a click-triggered
+    // Mantine <Menu> (see the JSX below) rather than a "/"-triggered popup —
+    // Plate's combobox/slash-command plugin isn't wired up, and every one
+    // of these actions is one click away either way.
     const getCustomSlashMenuItems = React.useMemo(() => {
-      const baseItems = getDefaultReactSlashMenuItems(editor);
+      const setCurrentBlockType = (type: string, props?: Record<string, unknown>) => {
+        const pos = editor.getTextCursorPosition();
+        if (pos?.block) editor.updateBlock(pos.block, { type, props });
+      };
 
-      const translatedItems = baseItems.map(item => {
-        if (item.title === "Table") {
-          return {
-            ...item,
-            title: "Tabel",
-            subtext: "Tabel dengan sel yang bisa diedit",
-          };
-        }
-
-        if (item.title === "Numbered List") {
-          return {
-            ...item,
-            title: "List Angka",
-            subtext: "Buat List dengan angka",
-          };
-        }
-
-        if (item.title === "Bulleted List" || item.title === "Bullet List") {
-          return {
-            ...item,
-            title: "List Butir",
-            subtext: "Buat list dengan poin",
-          };
-        }
-
-        if (item.title === "Heading 1") {
-          return {
-            ...item,
-            subtext: "Gunakan untuk judul utama halaman",
-          };
-        }
-
-        if (item.title === "Heading 2") {
-          return {
-            ...item,
-            subtext: "Gunakan untuk subjudul dalam konten",
-          };
-        }
-
-        if (item.title === "Heading 3") {
-          return {
-            ...item,
-            subtext: "Gunakan untuk sub-bagian dari Heading 2",
-          };
-        }
-
-
-        return item;
-      });
-
-      const orderedItems = [
-        ...getCustomAISlashMenuItems,
-        ...translatedItems.filter(item =>
-          ['Heading 1', 'Heading 2', 'Heading 3'].includes(item.title)
-        ),
-        ...translatedItems.filter(item =>
-          ['List Angka', 'List Butir'].includes(item.title)
-        ),
-        ...translatedItems.filter(item =>
-          ['Tabel', 'Divider'].includes(item.title)
-        )
+      const structuralItems = [
+        {
+          title: "Heading 1",
+          onItemClick: () => setCurrentBlockType("heading", { level: 1 }),
+          aliases: ["h1", "heading1", "judul"],
+          group: "Formatting",
+          subtext: "Gunakan untuk judul utama halaman",
+          icon: <IconFileText size={18} />,
+        },
+        {
+          title: "Heading 2",
+          onItemClick: () => setCurrentBlockType("heading", { level: 2 }),
+          aliases: ["h2", "heading2", "subjudul"],
+          group: "Formatting",
+          subtext: "Gunakan untuk subjudul dalam konten",
+          icon: <IconFileText size={18} />,
+        },
+        {
+          title: "Heading 3",
+          onItemClick: () => setCurrentBlockType("heading", { level: 3 }),
+          aliases: ["h3", "heading3"],
+          group: "Formatting",
+          subtext: "Gunakan untuk sub-bagian dari Heading 2",
+          icon: <IconFileText size={18} />,
+        },
+        {
+          title: "List Angka",
+          onItemClick: () => setCurrentBlockType("numberedListItem"),
+          aliases: ["numbered list", "list angka", "ol"],
+          group: "Formatting",
+          subtext: "Buat List dengan angka",
+          icon: <IconList size={18} />,
+        },
+        {
+          title: "List Butir",
+          onItemClick: () => setCurrentBlockType("bulletListItem"),
+          aliases: ["bullet list", "list butir", "ul"],
+          group: "Formatting",
+          subtext: "Buat list dengan poin",
+          icon: <IconList size={18} />,
+        },
+        {
+          title: "Tabel",
+          onItemClick: () => {
+            const pos = editor.getTextCursorPosition();
+            if (!pos?.block) return;
+            editor.insertBlocks(
+              [
+                {
+                  type: "table",
+                  content: {
+                    type: "tableContent",
+                    rows: [
+                      { cells: [[{ type: "text", text: "" }], [{ type: "text", text: "" }]] },
+                      { cells: [[{ type: "text", text: "" }], [{ type: "text", text: "" }]] },
+                    ],
+                  },
+                } as PartialBlock,
+              ],
+              pos.block,
+              "after"
+            );
+          },
+          aliases: ["table", "tabel"],
+          group: "Formatting",
+          subtext: "Tabel dengan sel yang bisa diedit",
+          icon: <IconFileText size={18} />,
+        },
+        {
+          title: "Divider",
+          onItemClick: () => {
+            const pos = editor.getTextCursorPosition();
+            if (!pos?.block) return;
+            editor.insertBlocks([{ type: "divider" } as PartialBlock], pos.block, "after");
+          },
+          aliases: ["divider", "hr", "garis"],
+          group: "Formatting",
+          subtext: "Garis pemisah horizontal",
+          icon: <IconFileText size={18} />,
+        },
       ];
 
-      return orderedItems;
+      return [...getCustomAISlashMenuItems, ...structuralItems];
     }, [editor, getCustomAISlashMenuItems]);
 
     // Handle content changes
@@ -6474,22 +6589,63 @@ INSTRUKSI:
                 padding-left: 40px !important;
               }
             `}</style>
-            <BlockNoteView
+            <Plate
               key={collaboration ? (collabRoom ? `collab-${collaboration.roomId}` : "collab-loading") : "local"}
-              editor={editor}
-              slashMenu={false}
-              theme={computedColorScheme}
+              editor={editor.raw}
+              onChange={() => editor.notifyChange()}
             >
-              <SuggestionMenuController
-                triggerCharacter={"/"}
-                getItems={async (query) =>
-                  filterSuggestionItems(
-                    getCustomSlashMenuItems,
-                    query
-                  )
-                }
+              <Group gap={4} p={8} style={{ borderBottom: "1px solid rgba(0,0,0,0.08)" }} className="editor-toolbar">
+                <Tooltip label="Bold"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ bold: true })}><b>B</b></ActionIcon></Tooltip>
+                <Tooltip label="Italic"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ italic: true })}><i>I</i></ActionIcon></Tooltip>
+                <Tooltip label="Underline"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ underline: true })}><u>U</u></ActionIcon></Tooltip>
+                <Tooltip label="Strikethrough"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ strike: true })}><s>S</s></ActionIcon></Tooltip>
+                <Tooltip label="Code"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ code: true })}>{'</>'}</ActionIcon></Tooltip>
+                <Divider orientation="vertical" />
+                <Menu shadow="md" position="bottom-start">
+                  <Menu.Target>
+                    <Button variant="light" size="xs" leftSection={<IconWand size={14} />}>Sisipkan</Button>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    {getCustomSlashMenuItems.map((item: any) => (
+                      <Menu.Item key={item.title} leftSection={item.icon} onClick={item.onItemClick}>
+                        {item.title}
+                      </Menu.Item>
+                    ))}
+                  </Menu.Dropdown>
+                </Menu>
+                {collaboration && (
+                  <>
+                    <Divider orientation="vertical" />
+                    <Menu shadow="md" position="bottom-start">
+                      <Menu.Target>
+                        <Button variant="subtle" size="xs" leftSection={<IconPencil size={14} />}>Kontribusi</Button>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        {Object.keys(wordStats).length === 0 ? (
+                          <Menu.Item disabled>Belum ada yang mengetik</Menu.Item>
+                        ) : (
+                          Object.entries(wordStats)
+                            .sort(([, a], [, b]) => b.count - a.count)
+                            .map(([userId, stat]) => (
+                              <Menu.Item key={userId} disabled>
+                                <Group justify="space-between" gap="xl" wrap="nowrap">
+                                  <Text size="sm">{stat.name}</Text>
+                                  <Badge variant="light" size="sm">{stat.count} kata</Badge>
+                                </Group>
+                              </Menu.Item>
+                            ))
+                        )}
+                      </Menu.Dropdown>
+                    </Menu>
+                  </>
+                )}
+              </Group>
+              <PlateContent
+                className="bn-editor"
+                style={{ minHeight: "100%", padding: "16px 40px", outline: "none" }}
+                placeholder="Tulis sesuatu atau klik 'Sisipkan'..."
               />
-            </BlockNoteView>
+            </Plate>
           </div>
 
           {/* Inline AI Suggestions Popup */}
@@ -7442,5 +7598,5 @@ INSTRUKSI:
     );
   });
 
-export default BlockNoteEditorComponent;
-export type { BlockNoteEditorRef };
+export default PlateEditorComponent;
+export type { PlateEditorRef };
