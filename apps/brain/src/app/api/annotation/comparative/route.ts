@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@sre-monorepo/lib';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { prisma, getServerSession } from '@sre-monorepo/lib/server';
 
 /**
  * POST /api/annotation/comparative
@@ -10,13 +9,11 @@ import { createServerSupabaseClient } from '@sre-monorepo/lib';
  * Body: { articleId, highlightedText, tabLabel, projectId }
  */
 export async function POST(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const session = await getServerSession();
+  if (!session) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
   }
+  const user = session.user;
 
   const body = await req.json();
   const { articleId, highlightedText, tabLabel, projectId, comment } = body as {
@@ -36,12 +33,14 @@ export async function POST(req: NextRequest) {
 
   try {
     // Cari article yang valid untuk session ini
+    // Catatan: "projectId" di kontrak API ini adalah BrainstormingSession.id (disebut
+    // "project" di URL/UI, tapi kolomnya di Article adalah sessionId).
     let resolvedArticleId = articleId;
 
     if (!resolvedArticleId && projectId) {
       // Fallback: ambil artikel pertama di session
       const article = await prisma.article.findFirst({
-        where: { projectId },
+        where: { sessionId: projectId },
         select: { id: true },
       });
       resolvedArticleId = article?.id;
@@ -65,7 +64,7 @@ export async function POST(req: NextRequest) {
       },
       include: {
         article: {
-          select: { id: true, title: true, filePath: true, projectId: true },
+          select: { id: true, title: true, filePath: true, sessionId: true },
         },
       },
     });

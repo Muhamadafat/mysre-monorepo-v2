@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { getServerSession } from '@sre-monorepo/lib/server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -9,21 +9,9 @@ export async function DELETE(
   { params }: { params: { node_id: string } }
 ) {
   try {
-    const supabase = await createServerSupabaseClient();
+    const session = await getServerSession();
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const sessionResult = await supabase.auth.getSession();
-    const accessToken = sessionResult.data.session?.access_token;
-
-    if (!accessToken) {
+    if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -45,7 +33,6 @@ export async function DELETE(
       {
         method: 'DELETE',
         headers: {
-          Authorization: `Bearer ${accessToken}`,
           Accept: 'application/json',
         },
         signal: request.signal,

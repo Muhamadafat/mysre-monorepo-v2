@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@sre-monorepo/lib';
+import { getServerSession } from '@sre-monorepo/lib/server';
 
 export interface AnalisisPoin {
   aspek_analisis: string;
@@ -30,7 +30,7 @@ export interface AnalisisKomparatifResponse {
  *
  * Supports two input modes for backward compatibility:
  * 1. NEW (canonical): { file_hashes, aspects, ... }
- *    - Direct proxy to FastAPI with Supabase JWT auth.
+ *    - Direct proxy to FastAPI, gated by the app's own session cookie.
  * 2. LEGACY: { nodeIds, edgeRelation, projectId, aspects }
  *    - Returns 400 with migration instructions.
  *    - Frontend should be updated to use the new contract.
@@ -48,19 +48,15 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const PY_URL = process.env.PY_URL || (!IS_PRODUCTION ? 'http://localhost:8000' : '');
 
 export async function POST(req: NextRequest) {
-  // -- 1. Authentication via Supabase Server Client --
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  // -- 1. Authentication via session cookie --
+  const session = await getServerSession();
 
-  if (!user || authError) {
+  if (!session) {
     return NextResponse.json(
       {
         error: 'Unauthorized',
         error_source: 'brain_session',
-        error_detail: authError?.message || 'Supabase session is missing or invalid.',
+        error_detail: 'Session is missing or invalid.',
       },
       { status: 401 }
     );
@@ -121,21 +117,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // -- 4. Resolve bearer token from verified Supabase session --
-  const sessionResult = await supabase.auth.getSession();
-  const accessToken = sessionResult.data.session?.access_token;
-
-  if (!accessToken) {
-    return NextResponse.json(
-      {
-        error: 'Unauthorized',
-        error_source: 'brain_session',
-        error_detail: 'Supabase session exists but access token is unavailable.',
-      },
-      { status: 401 }
-    );
-  }
-
   if (!PY_URL) {
     return NextResponse.json(
       {
@@ -175,7 +156,6 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(180000), // 3 minutes for multi-aspect analysis

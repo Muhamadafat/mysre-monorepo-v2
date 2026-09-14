@@ -12,6 +12,7 @@
     "@citation-js/core": "^0.8.2",
     "@citation-js/plugin-ris": "^0.8.2",
     "@mediapipe/face_mesh": "^0.4.1633559619",
+    "@microsoft/fetch-event-source": "^2.0.1",
     "@sre-monorepo/components": "^1.0.0",
     "@sre-monorepo/lib": "^1.0.0",
     "busboy": "^1.6.0",
