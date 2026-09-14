@@ -1,1 +1,0 @@
-const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); async function main() { const sessions = await prisma.brainstormingSession.findMany({take: 1, orderBy: {updatedAt: 'desc'}}); console.log(JSON.stringify(sessions[0].comparativeTabs, null, 2)); } main().catch(console.error).finally(() => prisma.$disconnect());
