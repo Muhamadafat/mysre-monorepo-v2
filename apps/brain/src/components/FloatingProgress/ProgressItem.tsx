@@ -136,7 +136,7 @@ export function ProgressItem({ job, onDismiss }: ProgressItemProps) {
         </Group>
       </Group>
 
-      <Collapse in={opened}>
+      <Collapse expanded={opened}>
         <Text size="xs" c="dimmed" mt="xs" style={{ whiteSpace: 'pre-wrap' }}>
           {job.message || 'Memproses dokumen...'}
           {job.error && (
