@@ -1,8 +1,37 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Stack, Title, Text, Group, Badge, SimpleGrid, Card, ThemeIcon, LoadingOverlay, Button, Box, Avatar, Progress, Center, RingProgress, Alert } from '@mantine/core';
-import { IconUsers, IconBulb, IconPencil, IconTrendingUp, IconChartBar, IconRefresh, IconArrowUp, IconUser, IconClock, IconTarget } from '@tabler/icons-react';
+import {
+  Stack,
+  Title,
+  Text,
+  Group,
+  Badge,
+  SimpleGrid,
+  Card,
+  ThemeIcon,
+  LoadingOverlay,
+  Button,
+  Box,
+  Avatar,
+  Progress,
+  Center,
+  RingProgress,
+  Alert,
+} from '@mantine/core';
+import {
+  IconUsers,
+  IconBulb,
+  IconPencil,
+  IconTrendingUp,
+  IconChartBar,
+  IconRefresh,
+  IconArrowUp,
+  IconUser,
+  IconClock,
+  IconTarget,
+} from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { UserAnalyticsCard } from '@/components/analytics/user-analytics-card';
 
@@ -65,7 +94,9 @@ interface UserAnalytics {
 
 export default function MyAnalyticsPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [userAnalytics, setUserAnalytics] = useState<UserAnalytics | null>(null);
+  const [userAnalytics, setUserAnalytics] = useState<UserAnalytics | null>(
+    null
+  );
   const [allAnalytics, setAllAnalytics] = useState<UserAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +113,9 @@ export default function MyAnalyticsPage() {
   useEffect(() => {
     if (currentUser) {
       console.log('✅ Current user loaded:', currentUser);
-      setDebugInfo(`Current user loaded: ${currentUser.name} (${currentUser.id})`);
+      setDebugInfo(
+        `Current user loaded: ${currentUser.name} (${currentUser.id})`
+      );
       trackPageView();
       loadMyAnalytics();
     }
@@ -101,14 +134,16 @@ export default function MyAnalyticsPage() {
       console.log('📡 Response status:', res.status);
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: User not authenticated`);
+        console.error(`HTTP ${res.status}: User not authenticated`);
+        return;
       }
 
       const data = await res.json();
       console.log('📡 Response data:', data);
-      
+
       if (!data || !data.user) {
-        throw new Error('User not authenticated - no user data in response');
+        console.error('User not authenticated - no user data in response');
+        return;
       }
 
       setCurrentUser(data.user);
@@ -117,7 +152,7 @@ export default function MyAnalyticsPage() {
       console.error('❌ Error loading current user:', error);
       setError(`Error loading user: ${error.message}`);
       setDebugInfo(`Error: ${error.message}`);
-      
+
       // Don't redirect immediately for debugging
       setTimeout(() => {
         notifications.show({
@@ -158,14 +193,16 @@ export default function MyAnalyticsPage() {
       console.log('❌ Cannot load analytics: no current user');
       return;
     }
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
-      console.log('📡 Fetching analytics from /api/analytics/user/${currentUser.id}...');
+      console.log(
+        '📡 Fetching analytics from /api/analytics/user/${currentUser.id}...'
+      );
       setDebugInfo('Loading analytics data...');
-      
+
       // Menggunakan API user spesifik yang sudah ada
       const response = await fetch(`/api/analytics/user/${currentUser.id}`, {
         method: 'GET',
@@ -177,27 +214,30 @@ export default function MyAnalyticsPage() {
       console.log('📡 Analytics response status:', response.status);
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch analytics: ${response.status} ${response.statusText}`);
+        throw new Error(
+          `Failed to fetch analytics: ${response.status} ${response.statusText}`
+        );
       }
 
       const analyticsData: LearningAnalytics = await response.json();
       console.log('📡 Analytics data received:', analyticsData);
-      
+
       // Construct UserAnalytics dari response dan current user
       const myAnalytics: UserAnalytics = {
         user: currentUser,
-        analytics: analyticsData
+        analytics: analyticsData,
       };
-      
+
       console.log('🔍 Constructed analytics:', myAnalytics);
-      
+
       setUserAnalytics(myAnalytics);
       setDebugInfo(`Analytics loaded successfully for ${currentUser.name}`);
 
       // Track analytics loaded event
       try {
         await trackEvent('my_analytics_loaded', {
-          productivityScore: myAnalytics.analytics.overallStats.productivityScore,
+          productivityScore:
+            myAnalytics.analytics.overallStats.productivityScore,
           engagementLevel: myAnalytics.analytics.overallStats.engagementLevel,
           totalProjects: myAnalytics.analytics.brainStats.totalProjects,
           totalDrafts: myAnalytics.analytics.writerStats.totalDrafts,
@@ -205,7 +245,6 @@ export default function MyAnalyticsPage() {
       } catch (trackError) {
         console.error('⚠️ Error tracking event:', trackError);
       }
-
     } catch (error: any) {
       console.error('❌ Error loading my analytics:', error);
       setError(`Gagal memuat data analytics: ${error.message}`);
@@ -248,10 +287,14 @@ export default function MyAnalyticsPage() {
 
   const getEngagementColor = (level: string) => {
     switch (level) {
-      case 'high': return 'green';
-      case 'medium': return 'yellow';
-      case 'low': return 'red';
-      default: return 'gray';
+      case 'high':
+        return 'green';
+      case 'medium':
+        return 'yellow';
+      case 'low':
+        return 'red';
+      default:
+        return 'gray';
     }
   };
 
@@ -265,10 +308,18 @@ export default function MyAnalyticsPage() {
   // Debug panel (hapus di production)
   const DebugPanel = () => (
     <Alert color="blue" title="Debug Info" mb="md">
-      <Text size="sm" mb="xs">Status: {debugInfo}</Text>
-      <Text size="xs" c="gray.6">Current User ID: {currentUser?.id || 'Not loaded'}</Text>
-      <Text size="xs" c="gray.6">Current User Name: {currentUser?.name || 'Not loaded'}</Text>
-      <Text size="xs" c="gray.6">Analytics Found: {userAnalytics ? 'Yes' : 'No'}</Text>
+      <Text size="sm" mb="xs">
+        Status: {debugInfo}
+      </Text>
+      <Text size="xs" c="gray.6">
+        Current User ID: {currentUser?.id || 'Not loaded'}
+      </Text>
+      <Text size="xs" c="gray.6">
+        Current User Name: {currentUser?.name || 'Not loaded'}
+      </Text>
+      <Text size="xs" c="gray.6">
+        Analytics Found: {userAnalytics ? 'Yes' : 'No'}
+      </Text>
     </Alert>
   );
 
@@ -278,10 +329,13 @@ export default function MyAnalyticsPage() {
         <DebugPanel />
         <Alert color="red" title="Error">
           {error}
-          <Button mt="md" onClick={() => {
-            setError(null);
-            loadCurrentUser();
-          }}>
+          <Button
+            mt="md"
+            onClick={() => {
+              setError(null);
+              loadCurrentUser();
+            }}
+          >
             Try Again
           </Button>
         </Alert>
@@ -297,7 +351,9 @@ export default function MyAnalyticsPage() {
         <Center h={400}>
           <Stack align="center" gap="md">
             <Text>Loading your analytics...</Text>
-            <Text size="sm" c="gray.6">{debugInfo}</Text>
+            <Text size="sm" c="gray.6">
+              {debugInfo}
+            </Text>
           </Stack>
         </Center>
       </Stack>
@@ -309,7 +365,8 @@ export default function MyAnalyticsPage() {
       <Stack gap="xl">
         <DebugPanel />
         <Alert color="yellow" title="No Analytics Data">
-          No analytics data found for your account. This might be normal if you're a new user.
+          No analytics data found for your account. This might be normal if
+          you&apos;re a new user.
           <Button mt="md" onClick={handleRefreshData}>
             Refresh Data
           </Button>
@@ -319,22 +376,27 @@ export default function MyAnalyticsPage() {
   }
 
   const { user, analytics } = userAnalytics;
-  const productivityLevel = getProductivityLevel(analytics.overallStats.productivityScore);
+  const productivityLevel = getProductivityLevel(
+    analytics.overallStats.productivityScore
+  );
 
   return (
     <Stack gap="xl">
       {/* Debug panel - remove in production */}
       {/* <DebugPanel /> */}
-      
+
       <Group justify="space-between">
         <div>
           <Title order={2}>My Learning Analytics</Title>
-          <Text c="gray.6">Analisis mendalam perilaku pembelajaran Anda untuk meningkatkan produktivitas</Text>
+          <Text c="gray.6">
+            Analisis mendalam perilaku pembelajaran Anda untuk meningkatkan
+            produktivitas
+          </Text>
         </div>
         <Group>
-          <Button 
-            leftSection={<IconRefresh size={16} />} 
-            variant="light" 
+          <Button
+            leftSection={<IconRefresh size={16} />}
+            variant="light"
             onClick={handleRefreshData}
             loading={loading}
           >
@@ -344,7 +406,16 @@ export default function MyAnalyticsPage() {
       </Group>
 
       {/* Personal Summary Card */}
-      <Card withBorder shadow="md" radius="lg" p="xl" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+      <Card
+        withBorder
+        shadow="md"
+        radius="lg"
+        p="xl"
+        style={{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+        }}
+      >
         <Group justify="space-between" align="flex-start">
           <Group gap="lg">
             <Avatar src={user.avatar_url} size="xl" color="white">
@@ -361,13 +432,19 @@ export default function MyAnalyticsPage() {
                 <Badge color="rgba(255,255,255,0.2)" variant="filled">
                   Group {user.group}
                 </Badge>
-                <Badge color={getEngagementColor(analytics.overallStats.engagementLevel)} variant="filled">
-                  {analytics.overallStats.engagementLevel.toUpperCase()} Engagement
+                <Badge
+                  color={getEngagementColor(
+                    analytics.overallStats.engagementLevel
+                  )}
+                  variant="filled"
+                >
+                  {analytics.overallStats.engagementLevel.toUpperCase()}{' '}
+                  Engagement
                 </Badge>
               </Group>
             </div>
           </Group>
-          
+
           <Box ta="center">
             <Text size="sm" opacity={0.9} mb="xs">
               Productivity Score
@@ -375,7 +452,12 @@ export default function MyAnalyticsPage() {
             <RingProgress
               size={120}
               thickness={12}
-              sections={[{ value: analytics.overallStats.productivityScore, color: 'white' }]}
+              sections={[
+                {
+                  value: analytics.overallStats.productivityScore,
+                  color: 'white',
+                },
+              ]}
               label={
                 <Center>
                   <Stack gap={0} align="center">

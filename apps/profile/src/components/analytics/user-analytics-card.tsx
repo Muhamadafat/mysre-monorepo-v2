@@ -1,7 +1,25 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { Card, Group, Text, Badge, Stack, SimpleGrid, Box, Tabs, Avatar, RingProgress, Center } from '@mantine/core';
-import { IconBulb, IconPencil, IconChartBar, IconClock } from '@tabler/icons-react';
+import {
+  Card,
+  Group,
+  Text,
+  Badge,
+  Stack,
+  SimpleGrid,
+  Box,
+  Tabs,
+  Avatar,
+  RingProgress,
+  Center,
+} from '@mantine/core';
+import {
+  IconBulb,
+  IconPencil,
+  IconChartBar,
+  IconClock,
+} from '@tabler/icons-react';
 
 // Types based on API responses
 interface User {
@@ -62,7 +80,11 @@ export interface UserAnalyticsCardProps {
 }
 
 // Component untuk menampilkan analytics per user
-export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnalyticsCardProps) {
+export function UserAnalyticsCard({
+  user,
+  analytics,
+  compact = false,
+}: UserAnalyticsCardProps) {
   const { brainStats, writerStats, overallStats } = analytics;
 
   if (compact) {
@@ -82,7 +104,11 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
               </Text>
             </div>
           </Group>
-          <Badge color={user.group === 'A' ? 'blue' : 'green'} variant="light" size="sm">
+          <Badge
+            color={user.group === 'A' ? 'blue' : 'green'}
+            variant="light"
+            size="sm"
+          >
             Group {user.group}
           </Badge>
         </Group>
@@ -132,7 +158,10 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
               {user.email}
             </Text>
             <Group gap="xs" mt="xs">
-              <Badge color={user.group === 'A' ? 'blue' : 'green'} variant="light">
+              <Badge
+                color={user.group === 'A' ? 'blue' : 'green'}
+                variant="light"
+              >
                 Group {user.group}
               </Badge>
               <Badge color="gray" variant="outline" size="sm">
@@ -151,7 +180,9 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
           <RingProgress
             size={80}
             thickness={8}
-            sections={[{ value: overallStats.productivityScore, color: 'blue' }]}
+            sections={[
+              { value: overallStats.productivityScore, color: 'blue' },
+            ]}
             label={
               <Center>
                 <Text size="xs" fw={700}>
@@ -192,7 +223,7 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                 <IconBulb size={24} color="var(--mantine-color-violet-6)" />
               </Group>
             </Card>
-            
+
             <Card withBorder p="md">
               <Group justify="space-between" align="flex-start">
                 <div>
@@ -208,7 +239,7 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                 </Text>
               </Group>
             </Card>
-            
+
             <Card withBorder p="md">
               <Group justify="space-between" align="flex-start">
                 <div>
@@ -224,7 +255,7 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                 </Text>
               </Group>
             </Card>
-            
+
             <Card withBorder p="md">
               <Group justify="space-between" align="flex-start">
                 <div>
@@ -240,20 +271,36 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
             </Card>
           </SimpleGrid>
 
-          <Card withBorder p="md" mt="md" style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+          <Card
+            withBorder
+            p="md"
+            mt="md"
+            style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}
+          >
             <Text size="sm" fw={500} mb="xs">
               Interaction Statistics
             </Text>
             <Group justify="space-between">
               <Text size="sm" c="gray.6">
-                Node Clicks: <Text span fw={600}>{brainStats.nodeClicks}</Text>
+                Node Clicks:{' '}
+                <Text span fw={600}>
+                  {brainStats.nodeClicks}
+                </Text>
               </Text>
               <Text size="sm" c="gray.6">
-                Edge Clicks: <Text span fw={600}>{brainStats.edgeClicks}</Text>
+                Edge Clicks:{' '}
+                <Text span fw={600}>
+                  {brainStats.edgeClicks}
+                </Text>
               </Text>
               <Text size="sm" c="gray.6">
-                Last Activity: <Text span fw={600}>
-                  {brainStats.lastActivity ? new Date(brainStats.lastActivity).toLocaleDateString('id-ID') : 'Never'}
+                Last Activity:{' '}
+                <Text span fw={600}>
+                  {brainStats.lastActivity
+                    ? new Date(brainStats.lastActivity).toLocaleDateString(
+                        'id-ID'
+                      )
+                    : 'Never'}
                 </Text>
               </Text>
             </Group>
@@ -275,7 +322,7 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                 <IconPencil size={24} color="var(--mantine-color-green-6)" />
               </Group>
             </Card>
-            
+
             <Card withBorder p="md">
               <Group justify="space-between" align="flex-start">
                 <div>
@@ -291,7 +338,7 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                 </Text>
               </Group>
             </Card>
-            
+
             <Card withBorder p="md">
               <Group justify="space-between" align="flex-start">
                 <div>
@@ -307,7 +354,7 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                 </Text>
               </Group>
             </Card>
-            
+
             <Card withBorder p="md">
               <Group justify="space-between" align="flex-start">
                 <div>
@@ -318,31 +365,55 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                     {writerStats.aiAssistanceUsage}
                   </Text>
                 </div>
-                <Badge 
-                  color={writerStats.aiAssistanceUsage > 10 ? 'green' : writerStats.aiAssistanceUsage > 5 ? 'yellow' : 'red'} 
-                  variant="light" 
+                <Badge
+                  color={
+                    writerStats.aiAssistanceUsage > 10
+                      ? 'green'
+                      : writerStats.aiAssistanceUsage > 5
+                        ? 'yellow'
+                        : 'red'
+                  }
+                  variant="light"
                   size="sm"
                 >
-                  {writerStats.aiAssistanceUsage > 10 ? 'Active' : writerStats.aiAssistanceUsage > 5 ? 'Moderate' : 'Low'}
+                  {writerStats.aiAssistanceUsage > 10
+                    ? 'Active'
+                    : writerStats.aiAssistanceUsage > 5
+                      ? 'Moderate'
+                      : 'Low'}
                 </Badge>
               </Group>
             </Card>
           </SimpleGrid>
 
-          <Card withBorder p="md" mt="md" style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+          <Card
+            withBorder
+            p="md"
+            mt="md"
+            style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}
+          >
             <Text size="sm" fw={500} mb="xs">
               Writing Quality Metrics
             </Text>
             <Group justify="space-between">
               <Text size="sm" c="gray.6">
-                Citations: <Text span fw={600}>{writerStats.citationCount}</Text>
+                Citations:{' '}
+                <Text span fw={600}>
+                  {writerStats.citationCount}
+                </Text>
               </Text>
               <Text size="sm" c="gray.6">
-                Avg Words/Draft: <Text span fw={600}>{writerStats.avgWordsPerDraft}</Text>
+                Avg Words/Draft:{' '}
+                <Text span fw={600}>
+                  {writerStats.avgWordsPerDraft}
+                </Text>
               </Text>
               <Text size="sm" c="gray.6">
-                Last Activity: <Text span fw={600}>
-                  {new Date(writerStats.lastWritingActivity).toLocaleDateString('id-ID')}
+                Last Activity:{' '}
+                <Text span fw={600}>
+                  {new Date(writerStats.lastWritingActivity).toLocaleDateString(
+                    'id-ID'
+                  )}
                 </Text>
               </Text>
             </Group>
@@ -361,18 +432,28 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                     {overallStats.recentActivity}
                   </Text>
                 </div>
-                <Badge 
-                  color={overallStats.recentActivity > 10 ? 'green' : overallStats.recentActivity > 5 ? 'yellow' : 'red'} 
+                <Badge
+                  color={
+                    overallStats.recentActivity > 10
+                      ? 'green'
+                      : overallStats.recentActivity > 5
+                        ? 'yellow'
+                        : 'red'
+                  }
                   variant="light"
                 >
-                  {overallStats.recentActivity > 10 ? 'Very Active' : overallStats.recentActivity > 5 ? 'Active' : 'Inactive'}
+                  {overallStats.recentActivity > 10
+                    ? 'Very Active'
+                    : overallStats.recentActivity > 5
+                      ? 'Active'
+                      : 'Inactive'}
                 </Badge>
               </Group>
               <Text size="xs" c="gray.6" mt="xs">
                 Actions in last 24h
               </Text>
             </Card>
-            
+
             <Card withBorder p="md">
               <Group justify="space-between" align="flex-start">
                 <div>
@@ -389,7 +470,7 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                 Total logins tracked
               </Text>
             </Card>
-            
+
             <Card withBorder p="md">
               <Group justify="space-between" align="flex-start">
                 <div>
@@ -408,7 +489,7 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
                 Estimated total time
               </Text>
             </Card>
-            
+
             <Card withBorder p="md">
               <Group justify="space-between" align="flex-start">
                 <div>
@@ -429,18 +510,26 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
             </Card>
           </SimpleGrid>
 
-          <Card withBorder p="md" mt="md" style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+          <Card
+            withBorder
+            p="md"
+            mt="md"
+            style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}
+          >
             <Group justify="space-between" align="center">
               <div>
                 <Text size="sm" fw={500} mb="xs">
                   Overall Engagement Level
                 </Text>
-                <Badge 
+                <Badge
                   color={
-                    overallStats.engagementLevel === 'high' ? 'green' : 
-                    overallStats.engagementLevel === 'medium' ? 'yellow' : 'red'
-                  } 
-                  variant="filled" 
+                    overallStats.engagementLevel === 'high'
+                      ? 'green'
+                      : overallStats.engagementLevel === 'medium'
+                        ? 'yellow'
+                        : 'red'
+                  }
+                  variant="filled"
                   size="lg"
                 >
                   {overallStats.engagementLevel.toUpperCase()} ENGAGEMENT
@@ -449,11 +538,17 @@ export function UserAnalyticsCard({ user, analytics, compact = false }: UserAnal
               <RingProgress
                 size={100}
                 thickness={10}
-                sections={[{ 
-                  value: overallStats.productivityScore, 
-                  color: overallStats.engagementLevel === 'high' ? 'green' : 
-                         overallStats.engagementLevel === 'medium' ? 'yellow' : 'red'
-                }]}
+                sections={[
+                  {
+                    value: overallStats.productivityScore,
+                    color:
+                      overallStats.engagementLevel === 'high'
+                        ? 'green'
+                        : overallStats.engagementLevel === 'medium'
+                          ? 'yellow'
+                          : 'red',
+                  },
+                ]}
                 label={
                   <Center>
                     <Stack gap={0} align="center">
