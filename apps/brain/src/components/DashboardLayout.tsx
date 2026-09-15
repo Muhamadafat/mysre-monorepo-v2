@@ -19,6 +19,7 @@ import {
 } from '@mantine/core';
 import { DashboardHeader } from './DashboardHeader';
 import { DashboardNavbar } from './DashboardNavbar';
+import { ActivityBar } from './ActivityBar';
 import { usePathname, useRouter } from 'next/navigation';
 import { eventBus } from '@sre-monorepo/lib';
 
@@ -47,6 +48,12 @@ interface DashboardLayoutProps {
   /** When true, the navbar is always shown as a narrow permanent icon rail
    * instead of the collapsible 280px navbar (used by the project detail page). */
   railMode?: boolean;
+  /** When true, renders the VS Code-style ActivityBar to the left of {children}
+   * (used by the project detail page for in-page panel switching). */
+  showActivityBar?: boolean;
+  activeFeature?: string;
+  onFeatureSelect?: (featureId: string) => void;
+  projectId?: string;
   // chatHistory: ChatHistoryItem[];
   // onChatSelect?: (chatId: number) => void;
   // onNewChat?: () => void;
@@ -59,6 +66,10 @@ export function DashboardLayout({
   mounted,
   onSessionCreated,
   railMode = false,
+  showActivityBar = false,
+  activeFeature,
+  onFeatureSelect,
+  projectId,
   // chatHistory,
   // onChatSelect,
   // onNewChat,
@@ -196,7 +207,21 @@ export function DashboardLayout({
       </AppShellNavbar>
 
       <AppShellMain>
-        {children}
+        {showActivityBar ? (
+          <Box style={{ display: 'flex', height: 'calc(100vh - 70px)', overflow: 'hidden' }}>
+            <ActivityBar
+              onFeatureSelect={onFeatureSelect}
+              activeFeature={activeFeature}
+              onNewSession={handleNewSession}
+              projectId={projectId}
+            />
+            <Box style={{ flex: 1, minWidth: 0, overflowY: 'hidden', overflowX: 'hidden' }}>
+              {children}
+            </Box>
+          </Box>
+        ) : (
+          children
+        )}
       </AppShellMain>
     </AppShell>
 
