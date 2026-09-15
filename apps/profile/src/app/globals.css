@@ -24,3 +24,285 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ═══════════════════════════════════════════════════
+   DASHBOARD ANIMATIONS 🎉
+   ═══════════════════════════════════════════════════ */
+
+/* Float up-down gently */
+@keyframes floatUpDown {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  25% { transform: translateY(-10px) rotate(1deg); }
+  75% { transform: translateY(-5px) rotate(-1deg); }
+}
+
+/* Bounce - springy bounce */
+@keyframes bounceSprings {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  10% { transform: translateY(-18px) scaleY(1.05); }
+  30% { transform: translateY(-22px) scaleY(1); }
+  50% { transform: translateY(-8px) scaleY(0.97); }
+  70% { transform: translateY(-14px) scaleY(1); }
+  90% { transform: translateY(-4px) scaleY(0.99); }
+}
+
+/* Wiggle / wobble left-right */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-8deg); }
+  40% { transform: rotate(8deg); }
+  60% { transform: rotate(-5deg); }
+  80% { transform: rotate(5deg); }
+}
+
+/* Spin continuous */
+@keyframes spinContinuous {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Pulse glow */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4); transform: scale(1); }
+  50% { box-shadow: 0 0 0 12px rgba(102, 126, 234, 0); transform: scale(1.05); }
+}
+
+/* Heartbeat */
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.2); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.15); }
+  70% { transform: scale(1); }
+}
+
+/* Tada! (celebratory) */
+@keyframes tada {
+  0% { transform: scale(1) rotate(0deg); }
+  10%, 20% { transform: scale(0.9) rotate(-3deg); }
+  30%, 50%, 70%, 90% { transform: scale(1.1) rotate(3deg); }
+  40%, 60%, 80% { transform: scale(1.1) rotate(-3deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+/* Jello squish */
+@keyframes jello {
+  0%, 11.1%, 100% { transform: none; }
+  22.2% { transform: skewX(-12.5deg) skewY(-12.5deg); }
+  33.3% { transform: skewX(6.25deg) skewY(6.25deg); }
+  44.4% { transform: skewX(-3.125deg) skewY(-3.125deg); }
+  55.5% { transform: skewX(1.5625deg) skewY(1.5625deg); }
+  66.6% { transform: skewX(-0.78125deg) skewY(-0.78125deg); }
+  77.7% { transform: skewX(0.390625deg) skewY(0.390625deg); }
+  88.8% { transform: skewX(-0.1953125deg) skewY(-0.1953125deg); }
+}
+
+/* Shooting star across banner */
+@keyframes shootingStar {
+  0% { transform: translateX(-200px) translateY(30px); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateX(800px) translateY(-80px); opacity: 0; }
+}
+
+/* Particle orbit */
+@keyframes orbitParticle {
+  0% { transform: rotate(0deg) translateX(30px) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(30px) rotate(-360deg); }
+}
+
+/* Confetti fall */
+@keyframes confettiFall {
+  0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(120px) rotate(720deg); opacity: 0; }
+}
+
+/* Slide in from left */
+@keyframes slideInLeft {
+  0% { transform: translateX(-50px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+/* Slide in from bottom */
+@keyframes slideInUp {
+  0% { transform: translateY(40px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+/* Zoom in pop */
+@keyframes zoomInPop {
+  0% { transform: scale(0.3); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* Ripple expand */
+@keyframes rippleExpand {
+  0% { transform: scale(0.5); opacity: 0.8; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* Wave motion for numbers */
+@keyframes waveNum {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* Background shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Floating dots */
+@keyframes floatDot1 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.7; }
+  33% { transform: translate(15px, -20px) scale(1.2); opacity: 1; }
+  66% { transform: translate(-10px, -10px) scale(0.8); opacity: 0.5; }
+}
+@keyframes floatDot2 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+  50% { transform: translate(-20px, 15px) scale(1.3); opacity: 0.9; }
+}
+@keyframes floatDot3 {
+  0%, 100% { transform: translate(0, 0) scale(0.9); opacity: 0.6; }
+  40% { transform: translate(10px, 25px) scale(1.1); opacity: 1; }
+  80% { transform: translate(-15px, 5px) scale(0.7); opacity: 0.4; }
+}
+
+/* Stars twinkling */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Bouncing arrow */
+@keyframes bounceArrow {
+  0%, 100% { transform: translateY(0) translateX(0); }
+  50% { transform: translateY(-4px) translateX(4px); }
+}
+
+/* Gradient shift */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Ring spin */
+@keyframes ringSpin {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.05); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+/* Notification bell shake */
+@keyframes bellShake {
+  0%, 100% { transform: rotate(0deg); transform-origin: top center; }
+  10% { transform: rotate(8deg); }
+  20% { transform: rotate(-6deg); }
+  30% { transform: rotate(4deg); }
+  40% { transform: rotate(-2deg); }
+  50% { transform: rotate(0deg); }
+}
+
+/* ═══ Animation Class Utilities ═══ */
+
+.animate-float { animation: floatUpDown 4s ease-in-out infinite; }
+.animate-float-slow { animation: floatUpDown 6s ease-in-out infinite; }
+.animate-bounce-spring { animation: bounceSprings 2.5s ease-in-out infinite; }
+.animate-wiggle { animation: wiggle 1.5s ease-in-out infinite; }
+.animate-spin-slow { animation: spinContinuous 8s linear infinite; }
+.animate-pulse-glow { animation: pulseGlow 2s ease-in-out infinite; }
+.animate-heartbeat { animation: heartbeat 1.5s ease-in-out infinite; }
+.animate-tada { animation: tada 1.5s ease-in-out infinite; }
+.animate-jello { animation: jello 1.5s ease-in-out infinite; }
+.animate-slide-in-left { animation: slideInLeft 0.6s ease-out forwards; }
+.animate-slide-in-up { animation: slideInUp 0.6s ease-out forwards; }
+.animate-zoom-pop { animation: zoomInPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+.animate-wave-num { animation: waveNum 2s ease-in-out infinite; }
+.animate-twinkle { animation: twinkle 2s ease-in-out infinite; }
+.animate-bounce-arrow { animation: bounceArrow 1s ease-in-out infinite; }
+.animate-gradient { 
+  background-size: 200% 200%;
+  animation: gradientShift 4s ease infinite;
+}
+.animate-bell { animation: bellShake 3s ease-in-out infinite; }
+
+/* Hover lift effect for cards */
+.card-hover-lift {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+}
+.card-hover-lift:hover {
+  transform: translateY(-6px) scale(1.01);
+  box-shadow: 0 20px 40px rgba(102, 126, 234, 0.2) !important;
+}
+
+/* Stat number glow on hover */
+.stat-number {
+  transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+.stat-number:hover {
+  text-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+}
+
+/* Online pulse dot */
+.online-dot {
+  animation: pulseGlow 2s ease-in-out infinite;
+  border-radius: 50%;
+}
+
+/* Emoji dance */
+.emoji-dance {
+  display: inline-block;
+  animation: wiggle 2s ease-in-out infinite;
+  cursor: default;
+}
+
+/* Progress bar animate */
+@keyframes progressFill {
+  from { width: 0%; }
+  to { width: var(--target-width, 100%); }
+}
+
+/* Floating sparkle confetti pieces */
+.sparkle-1 { animation: floatDot1 4s ease-in-out infinite; }
+.sparkle-2 { animation: floatDot2 5s ease-in-out infinite 0.5s; }
+.sparkle-3 { animation: floatDot3 6s ease-in-out infinite 1s; }
+.sparkle-4 { animation: floatDot1 3.5s ease-in-out infinite 1.5s; }
+.sparkle-5 { animation: floatDot2 4.5s ease-in-out infinite 0.7s; }
+
+/* Stars */
+.star-1 { animation: twinkle 1.5s ease-in-out infinite; }
+.star-2 { animation: twinkle 2s ease-in-out infinite 0.5s; }
+.star-3 { animation: twinkle 2.5s ease-in-out infinite 1s; }
+.star-4 { animation: twinkle 1.8s ease-in-out infinite 0.3s; }
+
+/* Shooting star */
+.shooting-star { animation: shootingStar 4s linear infinite; }
+.shooting-star-2 { animation: shootingStar 6s linear infinite 2s; }
+
+/* Ripple rings */
+.ripple-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.4);
+  animation: rippleExpand 3s ease-out infinite;
+}
+.ripple-ring-2 {
+  animation: rippleExpand 3s ease-out infinite 1s;
+}
+.ripple-ring-3 {
+  animation: rippleExpand 3s ease-out infinite 2s;
+}
+
+/* Card entry animations with stagger */
+.card-entry-1 { animation: slideInUp 0.5s ease-out 0.1s both; }
+.card-entry-2 { animation: slideInUp 0.5s ease-out 0.2s both; }
+.card-entry-3 { animation: slideInUp 0.5s ease-out 0.3s both; }
+.card-entry-4 { animation: slideInUp 0.5s ease-out 0.4s both; }
+.card-entry-5 { animation: slideInUp 0.5s ease-out 0.5s both; }
+.card-entry-6 { animation: slideInUp 0.5s ease-out 0.6s both; }
+
+/* Ring progress animation */
+.ring-animate { animation: ringSpin 10s linear infinite; }
