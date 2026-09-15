@@ -28,6 +28,7 @@ import {
   IconUser,
   IconLogout,
   IconHistory,
+  IconFlame,
 } from '@tabler/icons-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useWebGazer } from './context/WebGazerContext';
@@ -487,6 +488,51 @@ export function ActivityBar({
             )}
           </ActionIcon>
         </Tooltip>
+
+        {projectId && (
+          <Tooltip
+            label="Lihat Heatmap Gaze"
+            position="right"
+            withArrow
+            transitionProps={{ transition: 'slide-right', duration: 150 }}
+            styles={{
+              tooltip: {
+                fontSize: 12,
+                fontWeight: 500,
+                backgroundColor: dark ? '#2c2d3a' : '#1e1f26',
+                color: '#fff',
+                borderRadius: 8,
+              },
+              arrow: { backgroundColor: dark ? '#2c2d3a' : '#1e1f26' },
+            }}
+          >
+            <ActionIcon
+              variant="transparent"
+              size={44}
+              onClick={() => router.push(`/heatmap/${projectId}`)}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                color: iconColor,
+                transition: 'all 0.18s ease',
+              }}
+              styles={{
+                root: {
+                  '&:hover': {
+                    backgroundColor: dark
+                      ? 'rgba(255,255,255,0.06)'
+                      : 'rgba(0,0,0,0.06)',
+                    color: dark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.7)',
+                    transform: 'scale(1.08)',
+                  },
+                },
+              }}
+            >
+              <IconFlame size={22} />
+            </ActionIcon>
+          </Tooltip>
+        )}
 
         <Tooltip
           label="Panduan Penggunaan"
