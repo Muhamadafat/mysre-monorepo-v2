@@ -1,22 +1,70 @@
 .cta {
-  background: linear-gradient(135deg, var(--mantine-color-blue-6) 0%, var(--mantine-color-indigo-6) 100%);
+  background-color: var(--mantine-color-blue-7);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   position: relative;
   overflow: hidden;
 }
 
-.cta::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-image: radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
-  z-index: 0;
+@media (min-width: 48em) {
+  .separator {
+    border-left: 1px solid var(--mantine-color-gray-3);
+    border-right: 1px solid var(--mantine-color-gray-3);
+  }
 }
 
-.cta > * {
-  position: relative;
-  z-index: 1;
+/* CTA Image animation - figure-eight / lemniscate float */
+@keyframes ctaFloat {
+  0% {
+    transform: translateY(0px) translateX(0px) rotate(0deg) scale(1.1);
+  }
+  20% {
+    transform: translateY(-20px) translateX(15px) rotate(2deg) scale(1.12);
+  }
+  40% {
+    transform: translateY(-30px) translateX(0px) rotate(1deg) scale(1.13);
+  }
+  60% {
+    transform: translateY(-15px) translateX(-15px) rotate(-2deg) scale(1.11);
+  }
+  80% {
+    transform: translateY(-5px) translateX(8px) rotate(-0.5deg) scale(1.1);
+  }
+  100% {
+    transform: translateY(0px) translateX(0px) rotate(0deg) scale(1.1);
+  }
 }
+
+.ctaImage {
+  animation: ctaFloat 8s ease-in-out infinite;
+  transform-origin: center right;
+}
+
+/* Badge pulse animation */
+@keyframes badgePulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.3);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 255, 255, 0);
+    transform: scale(1.03);
+  }
+}
+
+.ctaBadge {
+  animation: badgePulse 2.5s ease-in-out infinite;
+}
+
+/* Logo hover lift */
+.logoImage {
+  transition: transform 0.3s ease, filter 0.3s ease;
+  filter: grayscale(20%);
+}
+
+.logoImage:hover {
+  transform: translateY(-4px) scale(1.05);
+  filter: grayscale(0%) drop-shadow(0 8px 16px rgba(0,0,0,0.15));
+}
+
