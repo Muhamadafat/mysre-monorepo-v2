@@ -71,26 +71,33 @@ function NavLink({ icon, label, href, active, onClick, badge, badgeColor = "blue
         width: "100%",
         padding: "12px 16px",
         borderRadius: "8px",
+        marginBottom: "6px",
         textDecoration: "none",
-        backgroundColor: active ? "var(--mantine-color-blue-0)" : "transparent",
-        color: active ? "var(--mantine-color-blue-7)" : "var(--mantine-color-gray-7)",
-        "&:hover": {
-          backgroundColor: active ? "var(--mantine-color-blue-0)" : "var(--mantine-color-gray-0)",
-        },
+        backgroundColor: active ? "rgba(102, 126, 234, 0.1)" : "transparent",
+        color: active ? "#4c6ef5" : "#495057",
+        fontWeight: active ? 600 : 500,
+        borderLeft: active ? "4px solid #4c6ef5" : "4px solid transparent",
+        transition: "all 0.2s ease",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) e.currentTarget.style.backgroundColor = "rgba(0, 0, 0, 0.03)"
+      }}
+      onMouseLeave={(e) => {
+        if (!active) e.currentTarget.style.backgroundColor = "transparent"
       }}
     >
-      <Group gap="sm" style={{ flex: 1 }}>
-        {icon}
-        <Text size="sm" fw={active ? 600 : 400}>
+      <Group gap="md" style={{ flex: 1 }}>
+        <Box style={{ color: active ? "#4c6ef5" : "#868e96" }}>{icon}</Box>
+        <Text size="sm" style={{ flex: 1, letterSpacing: "0.3px" }}>
           {label}
         </Text>
         {badge && (
-          <Badge size="xs" color={badgeColor} variant="filled" ml="auto">
+          <Badge size="xs" color={badgeColor} variant={active ? "filled" : "light"} ml="auto">
             {badge}
           </Badge>
         )}
       </Group>
-      <IconChevronRight size={16} opacity={0.6} />
+      <IconChevronRight size={14} opacity={active ? 0.8 : 0.4} style={{ marginLeft: 8 }} />
     </UnstyledButton>
   )
 }
@@ -102,6 +109,9 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
 
   // Check if user is admin
   const isAdmin = () => user?.role === "ADMIN"
+
+  const WRITER_APP_URL = process.env.NEXT_PUBLIC_WRITER_APP_URL || "http://writer.lvh.me:3003"
+  const BRAIN_APP_URL = process.env.NEXT_PUBLIC_BRAIN_APP_URL || "http://brain.lvh.me:3001"
 
   // Navigation links - different for admin vs user
   const getNavLinks = () => {
@@ -133,12 +143,12 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
         {
           icon: <IconPencil size={20} />,
           label: "Project Writer",
-          href: "/dashboard/project-writer",
+          href: WRITER_APP_URL,
         },
         {
           icon: <IconBulb size={20} />,
           label: "Project Brainstorm",
-          href: "/dashboard/project-brainstorm",
+          href: BRAIN_APP_URL,
         },
         {
           icon: <IconReportAnalytics size={20} />,
@@ -169,6 +179,18 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
           badgeColor: "blue",
         },
         {
+          icon: <IconBulb size={20} />,
+          label: "Brainstorming",
+          href: BRAIN_APP_URL,
+          badge: "AI",
+          badgeColor: "violet",
+        },
+        {
+          icon: <IconPencil size={20} />,
+          label: "Writer",
+          href: WRITER_APP_URL,
+        },
+        {
           icon: <IconReportAnalytics size={20} />,
           label: "Analitik Saya",
           href: "/dashboard/analytics",
@@ -186,37 +208,24 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
       })
       if (res.ok) {
         console.log("Berhasil logout")
-        // router.push("/signin")
         const loginUrl = `${process.env.NEXT_PUBLIC_MAIN_APP_URL || "http://main.lvh.me:3000"}/signin`
         window.location.href = loginUrl
       } else {
         console.error("Tidak berhasil logout")
       }
-      // const response = await fetch("/api/auth/signout", {
-      //   method: "POST",
-      //   headers: {
-      //     accept: "application/json",
-      //     "Content-Type": "application/json",
-      //   },
-      // })
-
-      // if (response.ok) {
-      //   // Clear user data lokal
-      //   // setUserData(null)
-
-      //   // Redirect ke main app signin
-      //   const loginUrl = `${process.env.NEXT_PUBLIC_MAIN_APP_URL || "http://main.lvh.me:3000"}/signin`
-      //   window.location.href = loginUrl
-      // } else {
-      //   console.error("Logout API failed")
-      // }
     } catch (error) {
       console.error("Logout error:", error)
     }
   }
 
   const handleNavClick = (href: string) => {
-    router.push(href)
+    // Other apps share the session cookie via the .lvh.me domain, so cross-app
+    // navigation is a plain link — no token handshake needed.
+    if (href.startsWith("http")) {
+      window.open(href, "_blank")
+    } else {
+      router.push(href)
+    }
     close()
   }
 
@@ -246,19 +255,6 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
             </Group>
           </Group>
           <Group>
-            {/* Token Balance Indicator (untuk user) */}
-            {/* {!isAdmin() && user && (
-              <Tooltip label="Token Balance">
-                <ActionIcon variant="light" size="lg" color="green">
-                  <Group gap="xs">
-                    <IconCoin size={16} />
-                    <span style={{ fontSize: "12px", fontWeight: 600 }}>
-                      {user.token_balance?.toLocaleString() || "0"}
-                    </span>
-                  </Group>
-                </ActionIcon>
-              </Tooltip>
-            )} */}
             {/* Revenue Indicator (untuk admin) */}
             {isAdmin() && (
               <Tooltip label="Monthly Revenue">
@@ -270,11 +266,6 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
                 </ActionIcon>
               </Tooltip>
             )}
-            {/* <Tooltip label="Notifikasi">
-              <ActionIcon variant="light" size="lg">
-                <IconBell size={20} />
-              </ActionIcon>
-            </Tooltip> */}
             <Menu shadow="md" width={200}>
               <Menu.Target>
                 <UnstyledButton>
@@ -310,8 +301,16 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
           </Group>
         </Group>
       </AppShell.Header>
-      <AppShell.Navbar p="md">
-        <Stack gap="xs">
+      <AppShell.Navbar p="md" style={{ display: "flex", flexDirection: "column" }}>
+        <style>{`
+          @keyframes floatChar {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+          }
+          .sidebar-char { animation: floatChar 3s ease-in-out infinite; }
+        `}</style>
+
+        <Stack gap="xs" style={{ flex: 1 }}>
           <Text size="xs" fw={700} c="gray.6" tt="uppercase" mb="sm">
             {isAdmin() ? "Menu Admin" : "Menu Siswa"}
           </Text>
@@ -329,17 +328,71 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
           ))}
           <Divider my="md" />
           <Text size="xs" fw={700} c="gray.6" tt="uppercase" mb="sm">
-            Info Sistem
+            Sistem Informasi
           </Text>
           <Box p="sm" bg="gray.0" style={{ borderRadius: "8px" }}>
             <Text size="xs" c="gray.6" mb="xs">
-              Role: {user?.role === "ADMIN" ? "Administrator" : "Siswa"}
+              Peran: {user?.role === "ADMIN" ? "Administrator" : "Siswa"}
             </Text>
             <Group gap="xs">
               <Box w={8} h={8} bg="green" style={{ borderRadius: "50%" }} />
               <Text size="xs" fw={500}>
                 Online
               </Text>
+            </Group>
+          </Box>
+        </Stack>
+
+        {/* ── Character + Quote ── */}
+        <Stack gap={0} align="center" pt="md" pb="xs">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/animasi%20tampilan%20dasbord%20(laki-laki).png"
+            alt="Karakter Peneliti"
+            className="sidebar-char"
+            style={{
+              width: 190,
+              height: 190,
+              objectFit: "contain",
+              objectPosition: "bottom",
+              filter: "drop-shadow(0 8px 20px rgba(99,102,241,0.15))",
+            }}
+          />
+
+          <Box
+            style={{
+              background: "linear-gradient(135deg, #fff 0%, #f8f0ff 100%)",
+              border: "1px solid rgba(139,92,246,0.2)",
+              borderRadius: 14,
+              padding: "14px 16px",
+              width: "100%",
+              boxShadow: "0 4px 16px rgba(139,92,246,0.08)",
+            }}
+          >
+            <Text size="xl" style={{ color: "#845ef7", fontWeight: 700, lineHeight: 1 }} mb={4}>
+              ❝
+            </Text>
+            <Text size="sm" fw={600} style={{ color: "#3730a3", lineHeight: 1.5 }}>
+              Riset hari ini,
+              <br />
+              berdampak untuk
+              <br />
+              masa depan.
+            </Text>
+            <Group justify="flex-end" mt={10}>
+              <Box
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: "50%",
+                  background: "linear-gradient(135deg, #e040fb 0%, #7c3aed 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <span style={{ color: "white", fontSize: 12 }}>♥</span>
+              </Box>
             </Group>
           </Box>
         </Stack>
