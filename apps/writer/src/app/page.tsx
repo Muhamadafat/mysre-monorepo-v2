@@ -91,7 +91,7 @@ export default function ProjectDashboard() {
 
   const handleSessionSelect = useCallback((sessionId: string) => {
     setActiveSessionId(sessionId);
-    router.push(`/projects/${sessionId}`)
+    router.push(`/project/${sessionId}/draft`)
   }, [router]);
 
   const handleNewSession = useCallback(() => {
@@ -563,7 +563,7 @@ export default function ProjectDashboard() {
                 <Stack gap="sm" h="100%">
                   {/* Project content - clickable area */}
                   <div 
-                    onClick={() => router.push(`/projects-b/${project.id}`)}
+                    onClick={() => router.push(`/project/${project.id}/draft`)}
                     style={{ 
                       cursor: 'pointer',
                       flex: 1,
