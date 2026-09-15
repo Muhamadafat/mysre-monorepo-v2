@@ -52,7 +52,7 @@ export default function DashboardLayoutPage({ children }: { children: React.Reac
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push("/auth")
+      window.location.href = `${process.env.NEXT_PUBLIC_MAIN_APP_URL || "http://main.lvh.me:3000"}/signin`
     }
   }, [user, loading, router])
 
