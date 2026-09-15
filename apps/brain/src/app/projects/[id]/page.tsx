@@ -169,6 +169,11 @@ export default function Home() {
 
   //for analysis controls panel + table tab
   const [analysisControlsOpened, setAnalysisControlsOpened] = useState(true);
+  const handleFeatureSelect = useCallback((featureId: string) => {
+    if (featureId === 'articles') {
+      setAnalysisControlsOpened((o) => !o);
+    }
+  }, []);
   const [tableTab, setTableTab] = useState<'tabel' | 'komparatif'>('tabel');
   const [chatDrawerOpened, setChatDrawerOpened] = useState(false);
 
@@ -1418,6 +1423,8 @@ export default function Home() {
         onToggleSidebar={() => {}}
         mounted={false}
         railMode
+        showActivityBar
+        projectId={sessionId}
         // chatHistory={chatHistory}
         // onChatSelect={handleChatSelect}
         // onNewChat={handleNewChat}
@@ -1451,6 +1458,10 @@ export default function Home() {
       onToggleSidebar={handleToggleSidebar}
       mounted={mounted}
       railMode
+      showActivityBar
+      activeFeature={analysisControlsOpened ? 'articles' : undefined}
+      onFeatureSelect={handleFeatureSelect}
+      projectId={sessionId}
     //   chatHistory={chatHistory}
     //   onChatSelect={handleChatSelect}
     //   onNewChat={handleNewChat}
