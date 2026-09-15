@@ -29,12 +29,12 @@ import {
 
 const dashboard = [
   {
-    icon: <IconHome/>,
+    icon: <IconHome />,
     name: 'Home',
-    href: '/home'
+    href: '/home',
   },
   {
-    icon: <IconChartDots2Filled/>,
+    icon: <IconChartDots2Filled />,
     name: 'Knowledge Graph',
     href: '/dashboard',
   },
@@ -50,58 +50,62 @@ interface ChatHistoryItem {
   title: string;
   timestamp: string;
   active: boolean;
-};
+}
 
-interface BrainstormingSessionItem {
-  id: string,
-  title: string,
-  description?: string,
-  coverColor: string,
-  lastActivity: string,
-  active: boolean,
+interface ProjectItem {
+  id: string;
+  title: string;
+  description?: string;
+  coverColor: string;
+  lastActivity: string;
+  active: boolean;
 }
 
 interface DashboardNavbarProps {
   // chatHistory: ChatHistoryItem[];
-  brainstormingSessions: BrainstormingSessionItem[];
+  projects: ProjectItem[];
   mounted: boolean;
-  onSessionSelect?: (sessionId: string) => void;
+  onSessionSelect?: (projectId: string) => void;
   // onChatSelect?: (chatId: number) => void;
   // onNewChat?: () => void;
   onNewSession?: () => void;
   isCollapsed?: boolean;
 }
 
-export function DashboardNavbar({ 
+export function DashboardNavbar({
   // chatHistory,
-  brainstormingSessions, 
-  mounted, 
-  // onChatSelect, 
+  projects,
+  mounted,
+  // onChatSelect,
   onSessionSelect,
   // onNewChat,
   onNewSession,
-  isCollapsed = false, 
+  isCollapsed = false,
 }: DashboardNavbarProps) {
   const theme = useMantineTheme();
   const { colorScheme } = useMantineColorScheme();
   const dark = mounted ? colorScheme === 'dark' : false;
 
   return (
-    <Stack gap={isCollapsed ? 'xs' : 'md'} style={{
-      height: '100%',
-      overflow: 'auto',
-      padding: isCollapsed ? rem(8) : rem(16),
-    }}>
-
+    <Stack
+      gap={isCollapsed ? 'xs' : 'md'}
+      style={{
+        height: '100%',
+        overflow: 'auto',
+        padding: isCollapsed ? rem(8) : rem(16),
+      }}
+    >
       {!isCollapsed && (
-        <Divider 
+        <Divider
           label={
             <Group gap="xs">
               <IconMenu size={16} />
-              <Text size="sm" fw={600}>Menu</Text>
+              <Text size="sm" fw={600}>
+                Menu
+              </Text>
             </Group>
-          } 
-          labelPosition="left" 
+          }
+          labelPosition="left"
         />
       )}
 
@@ -114,10 +118,12 @@ export function DashboardNavbar({
             leftSection={isCollapsed ? dash.icon : null}
             variant="gradient"
             gradient={{
-              from: 'blue', to: 'cyan', deg: 45
+              from: 'blue',
+              to: 'cyan',
+              deg: 45,
             }}
             size={isCollapsed ? 'xs' : 'md'}
-            radius='md'
+            radius="md"
             fullWidth
             style={{
               justifyItems: isCollapsed ? 'center' : 'flex-start',
@@ -132,18 +138,20 @@ export function DashboardNavbar({
       </Stack>
 
       {!isCollapsed && (
-        <Divider 
+        <Divider
           label={
             <Group gap="xs">
               <IconBrain size={16} />
-              <Text size="sm" fw={600}>Tambah Brainstorming</Text>
+              <Text size="sm" fw={600}>
+                Tambah Brainstorming
+              </Text>
             </Group>
-          } 
-          labelPosition="left" 
+          }
+          labelPosition="left"
         />
       )}
 
-      <Button 
+      <Button
         leftSection={isCollapsed ? <IconPlus size={18} /> : null}
         variant="gradient"
         gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
@@ -158,40 +166,45 @@ export function DashboardNavbar({
         }}
         title={isCollapsed ? 'Tambah Sesi Baru' : undefined}
       >
-        {isCollapsed ? <IconPlus size={18}/> : 'Tambah Sesi Baru'}
+        {isCollapsed ? <IconPlus size={18} /> : 'Tambah Sesi Baru'}
       </Button>
-      
+
       {!isCollapsed && (
-        <Divider 
+        <Divider
           label={
             <Group gap="xs">
               <IconHistory size={16} />
-              <Text size="sm" fw={600}>Sesi Brainstorming</Text>
+              <Text size="sm" fw={600}>
+                Sesi Brainstorming
+              </Text>
             </Group>
-          } 
-          labelPosition="left" 
+          }
+          labelPosition="left"
         />
       )}
-      
-      <Stack gap="xs" style={{
-        flex: 1,
-        overflow: 'hidden auto',
-        minHeight: 0,
-      }}>
-        {brainstormingSessions.map((session) => (
+
+      <Stack
+        gap="xs"
+        style={{
+          flex: 1,
+          overflow: 'hidden auto',
+          minHeight: 0,
+        }}
+      >
+        {projects.map((session) => (
           <Paper
             key={session.id}
-            p={isCollapsed ? "xs" : "sm"}
+            p={isCollapsed ? 'xs' : 'sm'}
             radius="md"
             withBorder
             style={{
               cursor: 'pointer',
-              backgroundColor: session.active 
-                ? (dark ? theme.colors.blue[9] : theme.colors.blue[0])
+              backgroundColor: session.active
+                ? dark
+                  ? theme.colors.blue[9]
+                  : theme.colors.blue[0]
                 : undefined,
-              borderColor: session.active 
-                ? theme.colors.blue[6] 
-                : undefined,
+              borderColor: session.active ? theme.colors.blue[6] : undefined,
               borderWidth: session.active ? 2 : 1,
               transition: 'all 0.2s ease',
               minHeight: rem(isCollapsed ? 40 : 60),
@@ -203,14 +216,14 @@ export function DashboardNavbar({
           >
             {isCollapsed ? (
               <Group justify="center" style={{ width: '100%' }}>
-                <ActionIcon 
-                  variant="subtle" 
-                  color={session.active ? "blue" : "gray"} 
+                <ActionIcon
+                  variant="subtle"
+                  color={session.active ? 'blue' : 'gray'}
                   size="sm"
                 >
                   <IconBrain size={16} />
                 </ActionIcon>
-              </Group>              
+              </Group>
             ) : (
               <Group justify="space-between" gap="xs">
                 <Box
@@ -223,9 +236,9 @@ export function DashboardNavbar({
                   }}
                 />
                 <Box style={{ flex: 1, minWidth: 0 }}>
-                  <Text 
-                    size="sm" 
-                    fw={500} 
+                  <Text
+                    size="sm"
+                    fw={500}
                     truncate
                     c={session.active ? 'blue' : undefined}
                   >
