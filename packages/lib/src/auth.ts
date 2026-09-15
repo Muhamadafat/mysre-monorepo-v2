@@ -78,6 +78,12 @@ export async function getServerSession(): Promise<AppSession | null> {
   return verifySessionToken(token);
 }
 
+/** Raw session JWT, for forwarding as a Bearer token to backend services (e.g. the Python API). */
+export async function getSessionToken(): Promise<string | null> {
+  const cookieStore = await cookies();
+  return cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null;
+}
+
 export async function setSessionCookie(user: SessionUser): Promise<void> {
   const token = await signSessionToken(user);
   const cookieStore = await cookies();

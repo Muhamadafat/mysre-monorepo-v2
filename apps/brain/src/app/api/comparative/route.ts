@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from '@sre-monorepo/lib/server';
+import { getServerSession, getSessionToken } from '@sre-monorepo/lib/server';
 
 export interface AnalisisPoin {
   aspek_analisis: string;
@@ -150,12 +150,14 @@ export async function POST(req: NextRequest) {
   }
 
   // -- 6. Proxy request to FastAPI backend --
+  const sessionToken = await getSessionToken();
   let pyResponse: Response;
   try {
     pyResponse = await fetch(`${PY_URL}/api/comparative/deep`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(180000), // 3 minutes for multi-aspect analysis
