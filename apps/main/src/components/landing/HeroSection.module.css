@@ -1,20 +1,14 @@
 .hero {
-  background: linear-gradient(135deg, var(--mantine-color-blue-0) 0%, var(--mantine-color-indigo-0) 100%);
+  background-image: url('/bg-akses-awal.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   position: relative;
   overflow: hidden;
 }
 
 .hero::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-image: radial-gradient(circle at 25% 25%, var(--mantine-color-blue-1) 0%, transparent 50%),
-    radial-gradient(circle at 75% 75%, var(--mantine-color-indigo-1) 0%, transparent 50%);
-  opacity: 0.5;
-  z-index: 0;
+  display: none;
 }
 
 .hero > * {
@@ -23,10 +17,7 @@
 }
 
 .title {
-  background: linear-gradient(135deg, var(--mantine-color-dark-9) 0%, var(--mantine-color-blue-9) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--mantine-color-dark-9);
 }
 
 .heroImage {
@@ -34,21 +25,62 @@
   border: 1px solid var(--mantine-color-gray-2);
 }
 
+@keyframes floatDrift {
+  0% {
+    transform: translateY(0px) translateX(0px) rotate(0deg);
+  }
+  20% {
+    transform: translateY(-18px) translateX(8px) rotate(1deg);
+  }
+  40% {
+    transform: translateY(-25px) translateX(0px) rotate(0.5deg);
+  }
+  60% {
+    transform: translateY(-12px) translateX(-8px) rotate(-1deg);
+  }
+  80% {
+    transform: translateY(-5px) translateX(4px) rotate(0.3deg);
+  }
+  100% {
+    transform: translateY(0px) translateX(0px) rotate(0deg);
+  }
+}
+
+@keyframes heroGlow {
+  0%, 100% {
+    filter: drop-shadow(0 20px 40px rgba(59, 130, 246, 0.15)) drop-shadow(0 0 20px rgba(59, 130, 246, 0.05));
+  }
+  50% {
+    filter: drop-shadow(0 30px 60px rgba(59, 130, 246, 0.25)) drop-shadow(0 0 40px rgba(59, 130, 246, 0.12));
+  }
+}
+
+.heroAnimation {
+  /* mix-blend-mode: multiply; */
+  animation: floatDrift 7s ease-in-out infinite, heroGlow 4s ease-in-out infinite;
+  transform-origin: center center;
+}
+
 [data-mantine-color-scheme="dark"] .hero {
-  background: linear-gradient(135deg, var(--mantine-color-dark-8) 0%, var(--mantine-color-dark-7) 100%);
+  /* Keep background image from light mode, potentially add a dark overlay if needed later */
 }
 
 [data-mantine-color-scheme="dark"] .title {
-  background: linear-gradient(135deg, var(--mantine-color-gray-0) 0%, var(--mantine-color-blue-4) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--mantine-color-gray-0);
 }
 
 .descriptionText {
-  color: var(--mantine-color-dimmed); /* Default for light mode */
+  color: var(--mantine-color-dark-3); /* Default for light mode */
+}
+
+.featureText {
+  color: var(--mantine-color-dark-9); /* Default for light mode */
 }
 
 [data-mantine-color-scheme="dark"] .descriptionText {
-  color: var(--mantine-color-gray-3); /* Lighter color for dark mode */
+  color: var(--mantine-color-gray-4); /* Lighter color for dark mode */
+}
+
+[data-mantine-color-scheme="dark"] .featureText {
+  color: var(--mantine-color-gray-2); /* Lighter color for dark mode */
 }
