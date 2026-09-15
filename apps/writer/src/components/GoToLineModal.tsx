@@ -28,20 +28,24 @@ function GoToLineModal({
   const [lineNumber, setLineNumber] = useState<number | string>('');
 
   const handleGoToLine = useCallback(() => {
-    const line = typeof lineNumber === 'string' ? parseInt(lineNumber) : lineNumber;
+    const line =
+      typeof lineNumber === 'string' ? parseInt(lineNumber) : lineNumber;
     if (line && line > 0 && line <= maxLines) {
       onGoToLine?.(line);
       onClose();
     }
   }, [lineNumber, maxLines, onGoToLine, onClose]);
 
-  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === 'Enter') {
-      handleGoToLine();
-    } else if (event.key === 'Escape') {
-      onClose();
-    }
-  }, [handleGoToLine, onClose]);
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key === 'Enter') {
+        handleGoToLine();
+      } else if (event.key === 'Escape') {
+        onClose();
+      }
+    },
+    [handleGoToLine, onClose]
+  );
 
   const handleClose = useCallback(() => {
     setLineNumber('');
@@ -80,7 +84,11 @@ function GoToLineModal({
           </Button>
           <Button
             onClick={handleGoToLine}
-            disabled={!lineNumber || (typeof lineNumber === 'number' && (lineNumber < 1 || lineNumber > maxLines))}
+            disabled={
+              !lineNumber ||
+              (typeof lineNumber === 'number' &&
+                (lineNumber < 1 || lineNumber > maxLines))
+            }
           >
             Pergi
           </Button>

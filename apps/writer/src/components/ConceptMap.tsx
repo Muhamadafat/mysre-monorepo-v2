@@ -1,21 +1,55 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 //Concept Map
 
-'use client'
+'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Network } from 'vis-network';
 import { DataSet } from 'vis-data/peer';
 import 'vis-network/styles/vis-network.css';
 import {
-  Box, useMantineTheme, useMantineColorScheme, Center, Stack, Text,
-  ActionIcon, Group, Tooltip, Modal, TextInput, Textarea, Button, Kbd, Paper, Divider, Badge, ColorPicker, ColorInput,
-  ThemeIcon, Menu,
+  Box,
+  useMantineTheme,
+  useMantineColorScheme,
+  Center,
+  Stack,
+  Text,
+  ActionIcon,
+  Group,
+  Tooltip,
+  Modal,
+  TextInput,
+  Textarea,
+  Button,
+  Kbd,
+  Paper,
+  Divider,
+  Badge,
+  ColorPicker,
+  ColorInput,
+  ThemeIcon,
+  Menu,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
-  IconPlus, IconArrowRight, IconZoomIn, IconZoomOut, IconBrain, IconFileExport,
-  IconTrash, IconArrowUp, IconArrowDown, IconArrowLeft, IconArrowBigUp, IconArrowBigDown, IconHandStop,
-  IconMaximize, IconNetwork, IconEye, IconHistory, IconDeviceFloppy
+  IconPlus,
+  IconArrowRight,
+  IconZoomIn,
+  IconZoomOut,
+  IconBrain,
+  IconFileExport,
+  IconTrash,
+  IconArrowUp,
+  IconArrowDown,
+  IconArrowLeft,
+  IconArrowBigUp,
+  IconArrowBigDown,
+  IconHandStop,
+  IconMaximize,
+  IconNetwork,
+  IconEye,
+  IconHistory,
+  IconDeviceFloppy,
 } from '@tabler/icons-react';
 import { v4 as uuidv4 } from 'uuid';
 import { notifications } from '@mantine/notifications';
@@ -36,34 +70,54 @@ interface MapNode {
 
 interface ConceptMapProps {
   onGenerateToEditor: (nodes: MapNode[], edges: any[]) => void;
-  initialData?: { nodes: MapNode[], edges: any[] };
+  initialData?: { nodes: MapNode[]; edges: any[] };
   onDataChange?: (nodes: MapNode[], edges: any[]) => void;
 }
 
-const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData, onDataChange }) => {
+const ConceptMap: React.FC<ConceptMapProps> = ({
+  onGenerateToEditor,
+  initialData,
+  onDataChange,
+}) => {
   const visJsRef = useRef<HTMLDivElement>(null);
   const networkInstance = useRef<Network | null>(null);
   const [nodes, setNodes] = useState(new DataSet<MapNode>([]));
-  const [edges, setEdges] = useState(new DataSet<{ id: string; from: string; to: string }>([]));
+  const [edges, setEdges] = useState(
+    new DataSet<{ id: string; from: string; to: string }>([])
+  );
 
-  const [typeSelectionOpened, { open: openTypeSelection, close: closeTypeSelection }] = useDisclosure(false);
-  const [nodeCreationOpened, { open: openNodeCreation, close: closeNodeCreation }] = useDisclosure(false);
-  const [nodeViewOpened, { open: openNodeView, close: closeNodeView }] = useDisclosure(false);
+  const [
+    typeSelectionOpened,
+    { open: openTypeSelection, close: closeTypeSelection },
+  ] = useDisclosure(false);
+  const [
+    nodeCreationOpened,
+    { open: openNodeCreation, close: closeNodeCreation },
+  ] = useDisclosure(false);
+  const [nodeViewOpened, { open: openNodeView, close: closeNodeView }] =
+    useDisclosure(false);
   const [nodeType, setNodeType] = useState<'H1' | 'H2_H4' | 'Paragraph'>('H1');
   const [nodeTitle, setNodeTitle] = useState('');
   const [nodeContent, setNodeContent] = useState('');
   const [nodeColor, setNodeColor] = useState<string>('#4ecdc4'); // Default color
-  const [selectedNodeData, setSelectedNodeData] = useState<MapNode | null>(null);
-  const [editNodeOpened, { open: openEditNode, close: closeEditNode }] = useDisclosure(false);
+  const [selectedNodeData, setSelectedNodeData] = useState<MapNode | null>(
+    null
+  );
+  const [editNodeOpened, { open: openEditNode, close: closeEditNode }] =
+    useDisclosure(false);
   const [editNodeTitle, setEditNodeTitle] = useState('');
   const [editNodeContent, setEditNodeContent] = useState('');
 
-  const [activeMode, setActiveMode] = useState<'none' | 'addEdge' | 'delete'>('none');
-  
-  // State untuk riwayat peta konsep
-  const [historyModalOpened, { open: openHistoryModal, close: closeHistoryModal }] = useDisclosure(false);
-  const [mapHistory, setMapHistory] = useState<any[]>([]);
+  const [activeMode, setActiveMode] = useState<'none' | 'addEdge' | 'delete'>(
+    'none'
+  );
 
+  // State untuk riwayat peta konsep
+  const [
+    historyModalOpened,
+    { open: openHistoryModal, close: closeHistoryModal },
+  ] = useDisclosure(false);
+  const [mapHistory, setMapHistory] = useState<any[]>([]);
 
   const theme = useMantineTheme();
   const { colorScheme } = useMantineColorScheme();
@@ -84,9 +138,14 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
     };
 
     // 3. Ambil riwayat lama, tambahkan snapshot baru, simpan kembali
-    const history = JSON.parse(localStorage.getItem('conceptMapHistory') || '[]');
+    const history = JSON.parse(
+      localStorage.getItem('conceptMapHistory') || '[]'
+    );
     history.unshift(snapshot); // Tambahkan yang baru di paling atas
-    localStorage.setItem('conceptMapHistory', JSON.stringify(history.slice(0, 10))); // Simpan 10 riwayat terakhir
+    localStorage.setItem(
+      'conceptMapHistory',
+      JSON.stringify(history.slice(0, 10))
+    ); // Simpan 10 riwayat terakhir
 
     notifications.show({
       title: '✅ Peta Konsep Disimpan',
@@ -97,13 +156,15 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
 
   // Handler untuk buka riwayat
   const handleOpenHistory = () => {
-    const history = JSON.parse(localStorage.getItem('conceptMapHistory') || '[]');
+    const history = JSON.parse(
+      localStorage.getItem('conceptMapHistory') || '[]'
+    );
     setMapHistory(history);
     openHistoryModal();
   };
 
   // Handler untuk load peta konsep dari riwayat
-  const handleLoadMap = (snapshotData: { nodes: any[], edges: any[] }) => {
+  const handleLoadMap = (snapshotData: { nodes: any[]; edges: any[] }) => {
     nodes.clear();
     edges.clear();
     nodes.add(snapshotData.nodes);
@@ -119,26 +180,30 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
 
   // Load initial data when component mounts or initialData changes
   useEffect(() => {
-    console.log("=== CONCEPT MAP DATA LOADING ===");
-    console.log("initialData:", initialData);
-    console.log("Has nodes:", initialData?.nodes?.length || 0);
-    console.log("Has edges:", initialData?.edges?.length || 0);
+    console.log('=== CONCEPT MAP DATA LOADING ===');
+    console.log('initialData:', initialData);
+    console.log('Has nodes:', initialData?.nodes?.length || 0);
+    console.log('Has edges:', initialData?.edges?.length || 0);
 
-    if (initialData && (initialData.nodes.length > 0 || initialData.edges.length > 0)) {
-      console.log("Loading initial concept map data:", initialData);
+    if (
+      initialData &&
+      (initialData.nodes.length > 0 || initialData.edges.length > 0)
+    ) {
+      console.log('Loading initial concept map data:', initialData);
 
       // Don't clear if we already have the same data
       const currentNodes = nodes.get();
       const currentEdges = edges.get();
 
-      console.log("Current nodes:", currentNodes.length);
-      console.log("Current edges:", currentEdges.length);
+      console.log('Current nodes:', currentNodes.length);
+      console.log('Current edges:', currentEdges.length);
 
       // Only reload if data is different
-      if (currentNodes.length !== initialData.nodes.length ||
-          currentEdges.length !== initialData.edges.length) {
-
-        console.log("Data is different, reloading...");
+      if (
+        currentNodes.length !== initialData.nodes.length ||
+        currentEdges.length !== initialData.edges.length
+      ) {
+        console.log('Data is different, reloading...');
 
         // Clear existing data first
         nodes.clear();
@@ -147,31 +212,40 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
         // Add initial data
         if (initialData.nodes.length > 0) {
           nodes.add(initialData.nodes);
-          console.log("Added", initialData.nodes.length, "nodes");
+          console.log('Added', initialData.nodes.length, 'nodes');
         }
         if (initialData.edges.length > 0) {
           edges.add(initialData.edges);
-          console.log("Added", initialData.edges.length, "edges");
+          console.log('Added', initialData.edges.length, 'edges');
         }
 
-        console.log("Initial data loaded successfully");
+        console.log('Initial data loaded successfully');
       } else {
-        console.log("Data is same, skipping reload");
+        console.log('Data is same, skipping reload');
       }
     } else {
-      console.log("No initial data to load");
+      console.log('No initial data to load');
     }
   }, [initialData]);
 
   const getNodeStyle = (type: 'H1' | 'H2_H4' | 'Paragraph') => {
     switch (type) {
       case 'H1':
-        return { background: theme.colors.green[1], border: theme.colors.green[6] };
+        return {
+          background: theme.colors.green[1],
+          border: theme.colors.green[6],
+        };
       case 'H2_H4':
-        return { background: theme.colors.yellow[1], border: theme.colors.yellow[6] };
+        return {
+          background: theme.colors.yellow[1],
+          border: theme.colors.yellow[6],
+        };
       case 'Paragraph':
       default:
-        return { background: theme.colors.gray[2], border: theme.colors.gray[5] };
+        return {
+          background: theme.colors.gray[2],
+          border: theme.colors.gray[5],
+        };
     }
   };
 
@@ -195,7 +269,7 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
       font = { multi: true, size: 14, bold: { size: 16 } };
       if (nodeContent) {
         label += `\n${truncateByWords(nodeContent, 3)}`;
-      } 
+      }
     } else if (nodeType === 'Paragraph') {
       font = { size: 14 };
     }
@@ -203,7 +277,7 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
     const newNode: MapNode = {
       id: uuidv4(),
       label: label,
-      title: `${nodeTitle}${nodeContent ? `\n\n${nodeContent}`: ''}`,
+      title: `${nodeTitle}${nodeContent ? `\n\n${nodeContent}` : ''}`,
       content: nodeContent,
       type: nodeType,
       shape: 'box',
@@ -248,7 +322,8 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   const handleZoomOut = () => {
     if (networkInstance.current) {
       const currentScale = networkInstance.current.getScale();
-      networkInstance.current.moveTo({ scale: currentScale / 1.2 });
+      const newScale = Math.max(0.05, currentScale / 1.2);
+      networkInstance.current.moveTo({ scale: newScale });
     }
   };
 
@@ -270,12 +345,12 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
         const selectedEdges = networkInstance.current.getSelectedEdges();
 
         if (selectedNodes.length > 0) {
-          selectedNodes.forEach(nodeId => {
+          selectedNodes.forEach((nodeId) => {
             nodes.remove(nodeId);
             const connectedEdges = edges.get({
-              filter: (item) => item.from === nodeId || item.to === nodeId
+              filter: (item) => item.from === nodeId || item.to === nodeId,
             });
-            edges.remove(connectedEdges.map(edge => edge.id));
+            edges.remove(connectedEdges.map((edge) => edge.id));
           });
         }
 
@@ -301,25 +376,38 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
   };
 
   const moveNetwork = (direction: 'up' | 'down' | 'left' | 'right') => {
-      if(!networkInstance.current) return;
-      const moveDistance = 100;
-      const currentPosition = networkInstance.current.getViewPosition();
-      let newPosition = { ...currentPosition };
+    if (!networkInstance.current) return;
+    const moveDistance = 100;
+    const currentPosition = networkInstance.current.getViewPosition();
+    let newPosition = { ...currentPosition };
 
-      switch(direction) {
-          case 'up': newPosition.y -= moveDistance; break;
-          case 'down': newPosition.y += moveDistance; break;
-          case 'left': newPosition.x -= moveDistance; break;
-          case 'right': newPosition.x += moveDistance; break;
-      }
-      networkInstance.current.moveTo({ position: newPosition });
+    switch (direction) {
+      case 'up':
+        newPosition.y -= moveDistance;
+        break;
+      case 'down':
+        newPosition.y += moveDistance;
+        break;
+      case 'left':
+        newPosition.x -= moveDistance;
+        break;
+      case 'right':
+        newPosition.x += moveDistance;
+        break;
+    }
+    networkInstance.current.moveTo({ position: newPosition });
   };
 
   useEffect(() => {
     if (!visJsRef.current) return;
-    
-    console.log('Creating network with nodes:', nodes.get().length, 'edges:', edges.get().length);
-    
+
+    console.log(
+      'Creating network with nodes:',
+      nodes.get().length,
+      'edges:',
+      edges.get().length
+    );
+
     const options = {
       layout: {
         hierarchical: {
@@ -330,29 +418,41 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
           nodeSpacing: 200,
         },
       },
-      physics: false, 
+      physics: false,
       edges: {
         arrows: { to: { enabled: true, scaleFactor: 0.7 } },
-        color: { color: colorScheme === 'dark' ? '#868e96' : '#adb5bd', highlight: theme.colors.blue[5] },
+        color: {
+          color: colorScheme === 'dark' ? '#868e96' : '#adb5bd',
+          highlight: theme.colors.blue[5],
+        },
         smooth: {
           type: 'cubicBezier',
           forceDirection: 'vertical',
-          roundness: 0.15
+          roundness: 0.15,
         },
       },
       nodes: {
-        shadow: { enabled: true, color: 'rgba(0,0,0,0.2)', size: 5, x: 2, y: 2 },
+        shadow: {
+          enabled: true,
+          color: 'rgba(0,0,0,0.2)',
+          size: 5,
+          x: 2,
+          y: 2,
+        },
       },
       interaction: {
         hover: true,
         tooltipDelay: 200,
         dragNodes: true,
         dragView: true,
-        zoomView: true
+        zoomView: true,
       },
       manipulation: {
         enabled: true,
-        addEdge: function (data: { from: string; to: string }, callback: (edgeData: any) => void) {
+        addEdge: function (
+          data: { from: string; to: string },
+          callback: (edgeData: any) => void
+        ) {
           if (data.from !== data.to) {
             const newEdge = { id: uuidv4(), from: data.from, to: data.to };
             callback(newEdge);
@@ -360,7 +460,7 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
           } else {
             callback(null);
           }
-        }
+        },
       },
     };
 
@@ -372,11 +472,15 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
         networkInstance.current = null;
       }
 
-      const network = new Network(visJsRef.current, { nodes, edges }, options as any);
+      const network = new Network(
+        visJsRef.current,
+        { nodes, edges },
+        options as any
+      );
       networkInstance.current = network;
       console.log('Network created successfully');
 
-      network.on("click", (event) => {
+      network.on('click', (event) => {
         if (event.nodes.length > 0) {
           if (activeMode === 'none') {
             handleNodeClick(event.nodes[0]);
@@ -384,7 +488,7 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
         }
       });
 
-      network.on("selectNode", (event) => {
+      network.on('selectNode', (event) => {
         if (activeMode === 'none' && event.nodes.length > 0) {
           const nodeId = event.nodes[0];
           const nodeData = nodes.get(nodeId);
@@ -398,28 +502,27 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
         }
       });
 
-      network.on("oncontext", (event) => {
+      network.on('oncontext', (event) => {
         event.event.preventDefault();
       });
 
-      network.on("doubleClick", (event) => {
+      network.on('doubleClick', (event) => {
         if (event.nodes.length === 0) {
           openTypeSelection();
         }
       });
 
-      network.on("stabilizationIterationsDone", () => {
+      network.on('stabilizationIterationsDone', () => {
         console.log('Stabilization done');
         network.setOptions({ physics: false });
       });
 
-      network.once("afterDrawing", () => {
+      network.once('afterDrawing', () => {
         console.log('After drawing - fitting network');
         network.fit();
       });
-
     } catch (error) {
-      console.error("Error creating network:", error);
+      console.error('Error creating network:', error);
     }
 
     // Cleanup function
@@ -441,9 +544,9 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
 
     // Set default color based on type
     const defaultColors = {
-      'H1': '#40c057',
-      'H2_H4': '#fcc419',
-      'Paragraph': '#adb5bd'
+      H1: '#40c057',
+      H2_H4: '#fcc419',
+      Paragraph: '#adb5bd',
     };
     setNodeColor(defaultColors[type]);
 
@@ -459,23 +562,32 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
 
     if (selectedNodeData.type === 'H1') {
       font = { size: 18, bold: true, face: 'Arial' };
-      label = editNodeTitle.length > 30 ? editNodeTitle.substring(0, 30) + '...' : editNodeTitle;
+      label =
+        editNodeTitle.length > 30
+          ? editNodeTitle.substring(0, 30) + '...'
+          : editNodeTitle;
     } else if (selectedNodeData.type === 'H2_H4') {
       if (editNodeContent) {
         label = `${editNodeTitle.length > 25 ? editNodeTitle.substring(0, 25) + '...' : editNodeTitle}\n${editNodeContent.length > 40 ? editNodeContent.substring(0, 40) + '...' : editNodeContent}`;
       } else {
-        label = editNodeTitle.length > 30 ? editNodeTitle.substring(0, 30) + '...' : editNodeTitle;
+        label =
+          editNodeTitle.length > 30
+            ? editNodeTitle.substring(0, 30) + '...'
+            : editNodeTitle;
       }
       font = { multi: true, size: 14, bold: { size: 16 } };
     } else if (selectedNodeData.type === 'Paragraph') {
-      label = editNodeTitle.length > 50 ? editNodeTitle.substring(0, 50) + '...' : editNodeTitle;
+      label =
+        editNodeTitle.length > 50
+          ? editNodeTitle.substring(0, 50) + '...'
+          : editNodeTitle;
       font = { size: 14 };
     }
 
     const updatedNode: MapNode = {
       ...selectedNodeData,
       label: label,
-      title: `${editNodeTitle}${editNodeContent ? `\n\n${editNodeContent}`: ''}`,
+      title: `${editNodeTitle}${editNodeContent ? `\n\n${editNodeContent}` : ''}`,
       content: editNodeContent,
       font: font,
     };
@@ -499,14 +611,15 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
 
   const openEditNodeModal = () => {
     if (selectedNodeData) {
-      const titlePart = selectedNodeData.title ? selectedNodeData.title.split('\n\n')[0] : selectedNodeData.label;
+      const titlePart = selectedNodeData.title
+        ? selectedNodeData.title.split('\n\n')[0]
+        : selectedNodeData.label;
       setEditNodeTitle(titlePart);
       setEditNodeContent(selectedNodeData.content || '');
       closeNodeView();
       openEditNode();
     }
   };
-
 
   return (
     <Stack style={{ height: '100%', width: '100%' }} gap={0}>
@@ -518,86 +631,171 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
             width: '100%',
             border: '1px solid #ddd',
             borderRadius: '8px',
-            background: colorScheme === 'dark' ? '#1a1b1e' : '#ffffff'
+            background: colorScheme === 'dark' ? '#1a1b1e' : '#ffffff',
           }}
         />
       </Box>
 
       <Paper p="xs" withBorder>
         <Group justify="space-between">
-
           <Group>
-              <Button onClick={openTypeSelection} leftSection={<IconPlus size={16}/>} size="xs" variant="gradient" gradient={{ from: 'green', to: 'yellow', deg: 45 }}>
-                Tambah Node
-              </Button>
+            <Button
+              onClick={openTypeSelection}
+              leftSection={<IconPlus size={16} />}
+              size="xs"
+              variant="gradient"
+              gradient={{ from: 'green', to: 'yellow', deg: 45 }}
+            >
+              Tambah Node
+            </Button>
           </Group>
 
           <Group>
             <ActionIcon.Group>
-              <Tooltip label="Geser Atas"><ActionIcon variant="default" size="lg" onClick={() => moveNetwork('up')}><IconArrowUp size={20} /></ActionIcon></Tooltip>
-              <Tooltip label="Geser Bawah"><ActionIcon variant="default" size="lg" onClick={() => moveNetwork('down')}><IconArrowDown size={20} /></ActionIcon></Tooltip>
-              <Tooltip label="Geser Kiri"><ActionIcon variant="default" size="lg" onClick={() => moveNetwork('left')}><IconArrowLeft size={20} /></ActionIcon></Tooltip>
-              <Tooltip label="Geser Kanan"><ActionIcon variant="default" size="lg" onClick={() => moveNetwork('right')}><IconArrowRight size={20} /></ActionIcon></Tooltip>
+              <Tooltip label="Geser Atas">
+                <ActionIcon
+                  variant="default"
+                  size="lg"
+                  onClick={() => moveNetwork('up')}
+                >
+                  <IconArrowUp size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Geser Bawah">
+                <ActionIcon
+                  variant="default"
+                  size="lg"
+                  onClick={() => moveNetwork('down')}
+                >
+                  <IconArrowDown size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Geser Kiri">
+                <ActionIcon
+                  variant="default"
+                  size="lg"
+                  onClick={() => moveNetwork('left')}
+                >
+                  <IconArrowLeft size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Geser Kanan">
+                <ActionIcon
+                  variant="default"
+                  size="lg"
+                  onClick={() => moveNetwork('right')}
+                >
+                  <IconArrowRight size={20} />
+                </ActionIcon>
+              </Tooltip>
             </ActionIcon.Group>
 
             <ActionIcon.Group>
-              <Tooltip label="Zoom In"><ActionIcon variant="default" size="lg" onClick={handleZoomIn}><IconZoomIn size={20} /></ActionIcon></Tooltip>
-              <Tooltip label="Zoom Out"><ActionIcon variant="default" size="lg" onClick={handleZoomOut}><IconZoomOut size={20} /></ActionIcon></Tooltip>
-              <Tooltip label="Pindah ke Tengah"><ActionIcon variant="default" size="lg" onClick={() => networkInstance.current?.fit()}><IconMaximize size={20} /></ActionIcon></Tooltip>
+              <Tooltip label="Zoom In">
+                <ActionIcon variant="default" size="lg" onClick={handleZoomIn}>
+                  <IconZoomIn size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Zoom Out">
+                <ActionIcon variant="default" size="lg" onClick={handleZoomOut}>
+                  <IconZoomOut size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Pindah ke Tengah">
+                <ActionIcon
+                  variant="default"
+                  size="lg"
+                  onClick={() => networkInstance.current?.fit()}
+                >
+                  <IconMaximize size={20} />
+                </ActionIcon>
+              </Tooltip>
             </ActionIcon.Group>
           </Group>
 
           <Group ml="auto">
             <ActionIcon.Group>
-                <Menu shadow="md" width={200}>
-                  <Menu.Target>
-                    <Tooltip label="Simpan / Muat Peta Konsep">
-                      <ActionIcon variant="default" color="orange" size="lg">
-                        <IconHistory size={20} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Label>Opsi Penyimpanan</Menu.Label>
-                    <Menu.Item
-                      leftSection={<IconDeviceFloppy size={14}/>}
-                      onClick={handleSaveMap}
-                    >
-                      Simpan Versi Ini
-                    </Menu.Item>
-                    <Menu.Item
-                      leftSection={<IconEye size={14}/>}
-                      onClick={handleOpenHistory}
-                    >
-                      Buka Riwayat
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
+              <Menu shadow="md" width={200}>
+                <Menu.Target>
+                  <Tooltip label="Simpan / Muat Peta Konsep">
+                    <ActionIcon variant="default" color="orange" size="lg">
+                      <IconHistory size={20} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Opsi Penyimpanan</Menu.Label>
+                  <Menu.Item
+                    leftSection={<IconDeviceFloppy size={14} />}
+                    onClick={handleSaveMap}
+                  >
+                    Simpan Versi Ini
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<IconEye size={14} />}
+                    onClick={handleOpenHistory}
+                  >
+                    Buka Riwayat
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
 
-                <Tooltip label={activeMode === 'addEdge' ? "Mode Hubungan Node (Aktif)" : "Aktifkan Mode Hubungan Node"}>
-                    <ActionIcon variant={activeMode === 'addEdge' ? "filled" : "default"} color="blue" size="lg" onClick={() => setMode('addEdge')}><IconNetwork size={20}/></ActionIcon>
-                </Tooltip>
-                <Tooltip label="Hapus Node/Hubungan Terpilih">
-                    <ActionIcon variant={activeMode === 'delete' ? "filled" : "default"} color="red" size="lg" onClick={() => setMode('delete')}><IconTrash size={20}/></ActionIcon>
-                </Tooltip>
+              <Tooltip
+                label={
+                  activeMode === 'addEdge'
+                    ? 'Mode Hubungan Node (Aktif)'
+                    : 'Aktifkan Mode Hubungan Node'
+                }
+              >
+                <ActionIcon
+                  variant={activeMode === 'addEdge' ? 'filled' : 'default'}
+                  color="blue"
+                  size="lg"
+                  onClick={() => setMode('addEdge')}
+                >
+                  <IconNetwork size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Hapus Node/Hubungan Terpilih">
+                <ActionIcon
+                  variant={activeMode === 'delete' ? 'filled' : 'default'}
+                  color="red"
+                  size="lg"
+                  onClick={() => setMode('delete')}
+                >
+                  <IconTrash size={20} />
+                </ActionIcon>
+              </Tooltip>
             </ActionIcon.Group>
 
             <Tooltip label="Generate ke Editor">
-                <ActionIcon variant="filled" color="green" size="lg" onClick={() => onGenerateToEditor(nodes.get(), edges.get())}><IconFileExport size={20}/></ActionIcon>
+              <ActionIcon
+                variant="filled"
+                color="green"
+                size="lg"
+                onClick={() => onGenerateToEditor(nodes.get(), edges.get())}
+              >
+                <IconFileExport size={20} />
+              </ActionIcon>
             </Tooltip>
           </Group>
-
         </Group>
       </Paper>
 
-      <Modal opened={typeSelectionOpened} onClose={closeTypeSelection} title="Pilih Tipe Node" centered size="sm">
+      <Modal
+        opened={typeSelectionOpened}
+        onClose={closeTypeSelection}
+        title="Pilih Tipe Node"
+        centered
+        size="sm"
+      >
         <Stack>
           <Button
             onClick={() => handleTypeSelection('H1')}
             color="green"
             variant="light"
             size="lg"
-            leftSection={<IconPlus size={20}/>}
+            leftSection={<IconPlus size={20} />}
           >
             Judul (Hijau)
           </Button>
@@ -606,7 +804,7 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
             color="yellow"
             variant="light"
             size="lg"
-            leftSection={<IconPlus size={20}/>}
+            leftSection={<IconPlus size={20} />}
           >
             Sub-Judul & Isi (Kuning)
           </Button>
@@ -615,7 +813,7 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
             color="gray"
             variant="light"
             size="lg"
-            leftSection={<IconPlus size={20}/>}
+            leftSection={<IconPlus size={20} />}
           >
             Paragraf (Abu-Abu)
           </Button>
@@ -629,27 +827,29 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
         centered
       >
         <Stack>
-            <TextInput
-                label={nodeType === 'Paragraph' ? 'Ide Pokok / Kalimat' : 'Judul'}
-                placeholder="Masukkan teks (jangan terlalu panjang)..."
-                value={nodeTitle}
-                onChange={(e) => setNodeTitle(e.currentTarget.value)}
-                required
+          <TextInput
+            label={nodeType === 'Paragraph' ? 'Ide Pokok / Kalimat' : 'Judul'}
+            placeholder="Masukkan teks (jangan terlalu panjang)..."
+            value={nodeTitle}
+            onChange={(e) => setNodeTitle(e.currentTarget.value)}
+            required
+          />
+          {nodeType === 'H2_H4' && (
+            <Textarea
+              label="Kalimat Pendukung (Opsional)"
+              placeholder="Masukkan detail kalimat (jangan terlalu panjang)..."
+              value={nodeContent}
+              onChange={(e) => setNodeContent(e.currentTarget.value)}
+              autosize
+              minRows={3}
             />
-            {nodeType === 'H2_H4' && (
-                <Textarea
-                    label="Kalimat Pendukung (Opsional)"
-                    placeholder="Masukkan detail kalimat (jangan terlalu panjang)..."
-                    value={nodeContent}
-                    onChange={(e) => setNodeContent(e.currentTarget.value)}
-                    autosize
-                    minRows={3}
-                />
-            )}
-            <Group justify="flex-end" mt="md">
-                <Button variant="default" onClick={closeNodeCreation}>Batal</Button>
-                <Button onClick={handleAddNode}>Tambah Node</Button>
-            </Group>
+          )}
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={closeNodeCreation}>
+              Batal
+            </Button>
+            <Button onClick={handleAddNode}>Tambah Node</Button>
+          </Group>
         </Stack>
       </Modal>
 
@@ -664,30 +864,46 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
           <Stack>
             <Badge
               color={
-                selectedNodeData.type === 'H1' ? 'green' :
-                selectedNodeData.type === 'H2_H4' ? 'yellow' : 'gray'
+                selectedNodeData.type === 'H1'
+                  ? 'green'
+                  : selectedNodeData.type === 'H2_H4'
+                    ? 'yellow'
+                    : 'gray'
               }
               size="lg"
             >
-              {selectedNodeData.type === 'H1' ? 'Judul' :
-               selectedNodeData.type === 'H2_H4' ? 'Sub-Judul' : 'Paragraf'}
+              {selectedNodeData.type === 'H1'
+                ? 'Judul'
+                : selectedNodeData.type === 'H2_H4'
+                  ? 'Sub-Judul'
+                  : 'Paragraf'}
             </Badge>
 
             <Box>
-              <Text fw={500} size="sm" c="dimmed">Judul:</Text>
-              <Text>{selectedNodeData.title ? selectedNodeData.title.split('\n\n')[0] : selectedNodeData.label || 'Tidak ada judul'}</Text>
+              <Text fw={500} size="sm" c="dimmed">
+                Judul:
+              </Text>
+              <Text>
+                {selectedNodeData.title
+                  ? selectedNodeData.title.split('\n\n')[0]
+                  : selectedNodeData.label || 'Tidak ada judul'}
+              </Text>
             </Box>
 
             {selectedNodeData.content && (
               <Box>
-                <Text fw={500} size="sm" c="dimmed">Konten:</Text>
+                <Text fw={500} size="sm" c="dimmed">
+                  Konten:
+                </Text>
                 <Text>{selectedNodeData.content}</Text>
               </Box>
             )}
 
             <Group justify="flex-end" mt="md">
-                <Button variant="light" onClick={openEditNodeModal}>Edit</Button>
-                <Button onClick={closeNodeView}>Tutup</Button>
+              <Button variant="light" onClick={openEditNodeModal}>
+                Edit
+              </Button>
+              <Button onClick={closeNodeView}>Tutup</Button>
             </Group>
           </Stack>
         )}
@@ -700,27 +916,33 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
         centered
       >
         <Stack>
-            <TextInput
-                label={selectedNodeData?.type === 'Paragraph' ? 'Ide Pokok / Kalimat' : 'Judul'}
-                placeholder="Masukkan teks (jangan terlalu panjang)..."
-                value={editNodeTitle}
-                onChange={(e) => setEditNodeTitle(e.currentTarget.value)}
-                required
+          <TextInput
+            label={
+              selectedNodeData?.type === 'Paragraph'
+                ? 'Ide Pokok / Kalimat'
+                : 'Judul'
+            }
+            placeholder="Masukkan teks (jangan terlalu panjang)..."
+            value={editNodeTitle}
+            onChange={(e) => setEditNodeTitle(e.currentTarget.value)}
+            required
+          />
+          {selectedNodeData?.type === 'H2_H4' && (
+            <Textarea
+              label="Kalimat Pendukung (Opsional)"
+              placeholder="Masukkan detail kalimat (jangan terlalu panjang)..."
+              value={editNodeContent}
+              onChange={(e) => setEditNodeContent(e.currentTarget.value)}
+              autosize
+              minRows={3}
             />
-            {selectedNodeData?.type === 'H2_H4' && (
-                <Textarea
-                    label="Kalimat Pendukung (Opsional)"
-                    placeholder="Masukkan detail kalimat (jangan terlalu panjang)..."
-                    value={editNodeContent}
-                    onChange={(e) => setEditNodeContent(e.currentTarget.value)}
-                    autosize
-                    minRows={3}
-                />
-            )}
-            <Group justify="flex-end" mt="md">
-                <Button variant="default" onClick={closeEditNode}>Batal</Button>
-                <Button onClick={handleEditNode}>Simpan</Button>
-            </Group>
+          )}
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={closeEditNode}>
+              Batal
+            </Button>
+            <Button onClick={handleEditNode}>Simpan</Button>
+          </Group>
         </Stack>
       </Modal>
 
@@ -740,7 +962,10 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
                 withBorder
                 p="sm"
                 radius="md"
-                style={{ cursor: 'pointer', transition: 'background-color 0.2s ease'}}
+                style={{
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s ease',
+                }}
                 onClick={() => handleLoadMap(snapshot.data)}
               >
                 <Group justify="space-between">
@@ -752,7 +977,8 @@ const ConceptMap: React.FC<ConceptMapProps> = ({ onGenerateToEditor, initialData
                   </Text>
                 </Group>
                 <Text size="xs" c="dimmed">
-                  {snapshot.data.nodes.length} Nodes, {snapshot.data.edges.length} Hubungan
+                  {snapshot.data.nodes.length} Nodes,{' '}
+                  {snapshot.data.edges.length} Hubungan
                 </Text>
               </Paper>
             ))

@@ -18,7 +18,9 @@ interface KeyboardShortcutsIndicatorProps {
   onShowShortcuts?: () => void;
 }
 
-export function KeyboardShortcutsIndicator({ onShowShortcuts }: KeyboardShortcutsIndicatorProps) {
+export function KeyboardShortcutsIndicator({
+  onShowShortcuts,
+}: KeyboardShortcutsIndicatorProps) {
   const [hovering, setHovering] = useState(false);
 
   const quickShortcuts = [
@@ -67,18 +69,18 @@ export function KeyboardShortcutsIndicator({ onShowShortcuts }: KeyboardShortcut
                 </Group>
               ))}
               <Text size="xs" c="dimmed" ta="center">
-                Tekan <Badge size="xs" variant="outline">Ctrl + /</Badge> untuk semua pintasan
+                Tekan{' '}
+                <Badge size="xs" variant="outline">
+                  Ctrl + /
+                </Badge>{' '}
+                untuk semua pintasan
               </Text>
             </Stack>
           </Paper>
         )}
       </Transition>
 
-      <Tooltip
-        label="Pintasan Keyboard (Ctrl + /)"
-        position="left"
-        withArrow
-      >
+      <Tooltip label="Pintasan Keyboard (Ctrl + /)" position="left" withArrow>
         <ActionIcon
           size="lg"
           radius="xl"

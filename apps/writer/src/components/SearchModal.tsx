@@ -59,17 +59,20 @@ function SearchModal({
     }
   }, [searchQuery, replaceQuery, onReplace]);
 
-  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === 'Enter') {
-      if (event.shiftKey) {
-        onPrevious?.();
-      } else {
-        onNext?.();
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key === 'Enter') {
+        if (event.shiftKey) {
+          onPrevious?.();
+        } else {
+          onNext?.();
+        }
+      } else if (event.key === 'Escape') {
+        onClose();
       }
-    } else if (event.key === 'Escape') {
-      onClose();
-    }
-  }, [onNext, onPrevious, onClose]);
+    },
+    [onNext, onPrevious, onClose]
+  );
 
   useEffect(() => {
     if (opened && searchQuery) {
@@ -83,7 +86,11 @@ function SearchModal({
       onClose={onClose}
       title={
         <Group gap="xs">
-          {searchMode === 'replace' ? <IconReplace size={20} /> : <IconSearch size={20} />}
+          {searchMode === 'replace' ? (
+            <IconReplace size={20} />
+          ) : (
+            <IconSearch size={20} />
+          )}
           <Text fw={600}>
             {searchMode === 'replace' ? 'Cari dan Ganti' : 'Cari dalam Dokumen'}
           </Text>
@@ -141,7 +148,7 @@ function SearchModal({
         {totalMatches > 0 && (
           <Paper p="xs" withBorder>
             <Text size="sm" c="dimmed">
-              Ditemukan {totalMatches} hasil untuk "{searchQuery}"
+              Ditemukan {totalMatches} hasil untuk &quot;{searchQuery}&quot;
             </Text>
           </Paper>
         )}
@@ -150,8 +157,9 @@ function SearchModal({
 
         <Box>
           <Text size="xs" c="dimmed">
-            <Text span fw={500}>Pintasan:</Text>
-            {' '}
+            <Text span fw={500}>
+              Pintasan:
+            </Text>{' '}
             Enter = Berikutnya • Shift+Enter = Sebelumnya • Esc = Tutup
           </Text>
         </Box>
