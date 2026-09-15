@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from '@sre-monorepo/lib/server';
+import { getServerSession, getSessionToken } from '@sre-monorepo/lib/server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { node_id: string } }
+  { params }: { params: Promise<{ node_id: string }> }
 ) {
   try {
     const session = await getServerSession();
@@ -15,7 +15,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const nodeId = params.node_id;
+    const { node_id: nodeId } = await params;
     if (!nodeId) {
       return NextResponse.json({ error: 'node_id is required' }, { status: 400 });
     }
@@ -28,12 +28,14 @@ export async function DELETE(
       );
     }
 
+    const sessionToken = await getSessionToken();
     const upstreamResponse = await fetch(
       new URL(`/api/graph/literature/${encodeURIComponent(nodeId)}`, pyUrl),
       {
         method: 'DELETE',
         headers: {
           Accept: 'application/json',
+          ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
         },
         signal: request.signal,
       }
