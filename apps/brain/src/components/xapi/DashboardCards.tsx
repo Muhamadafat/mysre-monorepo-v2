@@ -1,7 +1,20 @@
 // src/components/xapi/DashboardCards.tsx
 import React from 'react';
-import { Card, Group, Text, Title, ThemeIcon, SimpleGrid, Skeleton } from '@mantine/core';
-import { IconUsers, IconActivity, IconTrendingUp, IconClock } from '@tabler/icons-react';
+import {
+  Card,
+  Group,
+  Text,
+  Title,
+  ThemeIcon,
+  SimpleGrid,
+  Skeleton,
+} from '@mantine/core';
+import {
+  IconUsers,
+  IconActivity,
+  IconTrendingUp,
+  IconClock,
+} from '@tabler/icons-react';
 
 interface SummaryData {
   totalStudents: number;
@@ -18,37 +31,37 @@ interface DashboardCardsProps {
   loading?: boolean;
 }
 
-export const DashboardCards: React.FC<DashboardCardsProps> = ({ 
-  summary, 
-  loading = false 
+export const DashboardCards: React.FC<DashboardCardsProps> = ({
+  summary,
+  loading = false,
 }) => {
   const cards = [
     {
       title: 'Total Mahasiswa',
       value: summary.totalStudents,
       icon: IconUsers,
-      color: 'blue'
+      color: 'blue',
     },
     {
       title: 'Total Aktivitas',
       value: summary.totalActivities,
       icon: IconActivity,
-      color: 'green'
+      color: 'green',
     },
     {
       title: 'Aktivitas Paling Umum',
       value: summary.mostCommonActivity.name,
       subtitle: `${summary.mostCommonActivity.count}x`,
       icon: IconTrendingUp,
-      color: 'grape'
+      color: 'grape',
     },
     {
       title: 'Aktivitas per Sesi',
       value: summary.avgInteractionTime,
       subtitle: 'rata-rata',
       icon: IconClock,
-      color: 'orange'
-    }
+      color: 'orange',
+    },
   ];
 
   if (loading) {
@@ -69,11 +82,11 @@ export const DashboardCards: React.FC<DashboardCardsProps> = ({
       {cards.map((card, index) => {
         const Icon = card.icon;
         return (
-          <Card 
+          <Card
             key={index}
-            shadow="sm" 
-            padding="lg" 
-            radius="md" 
+            shadow="sm"
+            padding="lg"
+            radius="md"
             withBorder
             style={{ cursor: 'default' }}
           >
@@ -81,20 +94,20 @@ export const DashboardCards: React.FC<DashboardCardsProps> = ({
               <Text size="sm" c="dimmed" fw={500}>
                 {card.title}
               </Text>
-              <ThemeIcon 
-                color={card.color} 
-                variant="light" 
-                size="lg" 
+              <ThemeIcon
+                color={card.color}
+                variant="light"
+                size="lg"
                 radius="md"
               >
                 <Icon size={20} />
               </ThemeIcon>
             </Group>
-            
+
             <Group align="baseline" gap="xs">
               <Title order={2} c={card.color}>
-                {typeof card.value === 'number' 
-                  ? card.value.toLocaleString() 
+                {typeof card.value === 'number'
+                  ? card.value.toLocaleString()
                   : card.value}
               </Title>
               {card.subtitle && (

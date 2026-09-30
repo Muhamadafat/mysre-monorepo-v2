@@ -75,7 +75,26 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <ColorSchemeScript defaultColorScheme="light" />
       </head>
       <body>
-        <MantineProvider defaultColorScheme="light" theme={{primaryColor: 'blue'}}>
+        <MantineProvider
+          defaultColorScheme="light"
+          theme={{
+            primaryColor: 'blue',
+            colors: {
+              dark: [
+                '#C9C9CC',
+                '#ADADB1',
+                '#929296',
+                '#76767B',
+                '#5B5B61',
+                '#3E3E46',
+                '#27272e',
+                '#1c1c24',
+                '#12131c',
+                '#0d0e16',
+              ],
+            },
+          }}
+        >
           <ModalsProvider>
             <Notifications />
             {children}

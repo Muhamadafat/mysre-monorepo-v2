@@ -130,11 +130,12 @@ export default function NetworkGraph({
           solver: 'forceAtlas2Based',
           forceAtlas2Based: {
               gravitationalConstant: -50,
-              springLength: 0.01,
+              centralGravity: 0.05,
+              springLength: 100,
               springConstant: 0.08,
               damping: 0.4,
               avoidOverlap: 1,
-          },    
+          },
           stabilization: {
               enabled: true,
               iterations: 1000,

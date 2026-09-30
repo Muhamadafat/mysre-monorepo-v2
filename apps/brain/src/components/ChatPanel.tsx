@@ -46,12 +46,12 @@ import {
   IconHelp,
 } from "@tabler/icons-react"
 import React, { useEffect, useState, useRef, useCallback } from "react"
-import type { ExtendedNode, ExtendedEdge } from "../types"
+import type { ExtendedNode, ExtendedEdge, ChatMessage, Reference } from "../types"
 import { notifications } from "@mantine/notifications"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { useDebouncedValue } from "@mantine/hooks"
-import WebViewer from "./WebViewer"
+import WebViewer from "./WebViewerDynamic"
 import NodeDetail, { handleAnalytics } from "./NodeDetail"
 import { HelpGuideModal } from "./HelpGuideModal"
 import ChatMessageItem from "./ChatMessageItem"
@@ -65,23 +65,6 @@ interface ChatPanelProps {
   selectedEdge: ExtendedEdge | null
   resetContext?: boolean
   onContextReset?: () => void
-}
-
-type Reference = {
-  url: string
-  text: string
-  preview: string
-  ref_mark: string
-  type?: string
-  index?: number
-}
-
-type ChatMessage = {
-  sender: "user" | "ai"
-  text: string
-  contextNodeIds?: string[]
-  contextEdgeIds?: string[]
-  references?: Reference[]
 }
 
 export default function ChatPanel({
@@ -1017,7 +1000,7 @@ Apakah Anda ingin membuka panduan penggunaan?`,
             <IconBrain size={16} color="white" />
           </Avatar>
           <Text size="sm" fw={600} c={isDark ? theme.colors.gray[3] : theme.colors.gray[7]}>
-            AI Assistant
+            SRE Assistant
           </Text>
         </Group>
         <Group gap="xs" align="center">
@@ -1390,8 +1373,13 @@ Apakah Anda ingin membuka panduan penggunaan?`,
       {/* Enhanced Chat History */}
       <ScrollArea
         ref={scrollAreaRef}
+        type="auto"
+        offsetScrollbars={true}
+        overscrollBehavior="contain"
+        scrollbarSize={6}
+        scrollHideDelay={1000}
         style={{
-          height: "500px",
+          flex: 1,
           minHeight: 0,
         }}
         styles={{
@@ -1446,11 +1434,20 @@ Apakah Anda ingin membuka panduan penggunaan?`,
               }}
             >
               <Stack align="center" gap="md">
-                <ThemeIcon size={60} radius="xl" variant="gradient" gradient={{ from: "blue", to: "cyan", deg: 45 }}>
+                <ThemeIcon
+                  size={60}
+                  radius="xl"
+                  variant="light"
+                  color="violet"
+                  style={{
+                    background: isDark ? theme.colors.violet[9] : theme.colors.violet[0],
+                    border: `1px solid ${isDark ? theme.colors.violet[7] : theme.colors.violet[2]}`,
+                  }}
+                >
                   <IconSparkles size={30} />
                 </ThemeIcon>
                 <Text c="dimmed" size="lg" fw={500}>
-                  Mulai Percakapan dengan AI Assistant
+                  Mulai Percakapan dengan SRE Assistant
                 </Text>
                 <Text c="dimmed" size="sm">
                   Ajukan pertanyaan atau pilih dokumen untuk memulai

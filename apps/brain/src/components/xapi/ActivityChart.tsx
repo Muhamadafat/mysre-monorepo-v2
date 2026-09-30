@@ -12,9 +12,9 @@ interface ActivityChartProps {
   loading?: boolean;
 }
 
-export const ActivityChart: React.FC<ActivityChartProps> = ({ 
-  data, 
-  loading = false 
+export const ActivityChart: React.FC<ActivityChartProps> = ({
+  data,
+  loading = false,
 }) => {
   if (loading) {
     return (
@@ -38,7 +38,7 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
     );
   }
 
-  const maxCount = Math.max(...data.map(d => d.count));
+  const maxCount = Math.max(...data.map((d) => d.count));
   const chartHeight = 300;
   const barWidth = 60;
   const gap = 20;
@@ -49,10 +49,10 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
       <Title order={3} mb="lg">
         Distribusi Aktivitas (Quantity of Learning)
       </Title>
-      
+
       <Box style={{ overflowX: 'auto', overflowY: 'hidden' }}>
-        <svg 
-          width={chartWidth} 
+        <svg
+          width={chartWidth}
           height={chartHeight + 100}
           style={{ minWidth: '100%' }}
         >
@@ -88,7 +88,7 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
             const barHeight = (item.count / maxCount) * chartHeight;
             const x = 70 + index * (barWidth + gap);
             const y = chartHeight - barHeight;
-            
+
             return (
               <g key={index}>
                 {/* Bar */}
@@ -101,7 +101,7 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
                   rx={4}
                   style={{ cursor: 'pointer' }}
                 />
-                
+
                 {/* Count label on top of bar */}
                 <text
                   x={x + barWidth / 2}
@@ -123,7 +123,9 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({
                   fill="#666"
                   transform={`rotate(-45 ${x + barWidth / 2} ${chartHeight + 20})`}
                 >
-                  {item.name.length > 20 ? item.name.substring(0, 20) + '...' : item.name}
+                  {item.name.length > 20
+                    ? item.name.substring(0, 20) + '...'
+                    : item.name}
                 </text>
               </g>
             );

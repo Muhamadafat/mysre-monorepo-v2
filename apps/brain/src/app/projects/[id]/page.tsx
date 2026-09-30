@@ -129,6 +129,7 @@ export default function Home() {
   const [detailModalNode, setDetailModalNode] = useState<ExtendedNode | null>(null);
   const [detailModalEdge, setDetailModalEdge] = useState<ExtendedEdge | null>(null);
   const [edgeDetailReturn, setEdgeDetailReturn] = useState<ExtendedEdge | null>(null);
+  const [annotationRefreshKey, setAnnotationRefreshKey] = useState(0);
   const [activeRelations, setActiveRelations] = useState<string[]>([
     'background',
     'method',
@@ -714,6 +715,54 @@ export default function Home() {
   const handleContextReset = () => {
     setResetChatContext(false);
   }
+
+  const handleSaveNoteFromAnalysis = useCallback(
+    async (text: string, customLabel?: string, articleId?: string) => {
+      if (!articleId) {
+        notifications.show({
+          title: 'Gagal',
+          message: 'Artikel sumber tidak ditemukan untuk catatan ini.',
+          color: 'red',
+          position: 'top-right',
+        });
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/annotation/comparative', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            articleId,
+            highlightedText: text,
+            tabLabel: customLabel,
+            projectId: sessionId,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.message || 'Gagal menyimpan catatan');
+        }
+
+        setAnnotationRefreshKey((k) => k + 1);
+        notifications.show({
+          title: '✅ Catatan Tersimpan',
+          message: 'Kutipan berhasil disimpan ke catatan.',
+          color: 'green',
+          position: 'top-right',
+        });
+      } catch (error: any) {
+        notifications.show({
+          title: 'Gagal',
+          message: error.message || 'Gagal menyimpan catatan',
+          color: 'red',
+          position: 'top-right',
+        });
+      }
+    },
+    [sessionId]
+  );
 
   const fetchNeo4jData = async () => {
     try {
@@ -1709,7 +1758,7 @@ export default function Home() {
             </Box>
           ) : (
             <Box>
-              <AnnotationPanel sessionId={sessionId} session={session} />
+              <AnnotationPanel sessionId={sessionId} session={session} refreshKey={annotationRefreshKey} />
             </Box>
           )}
         </Box>
@@ -1773,7 +1822,7 @@ export default function Home() {
         radius="lg"
         shadow="xl"
       >
-        <EdgeDetail edge={detailModalEdge} onClose={() => setDetailModalEdge(null)} onOpenNodeDetail={(nodeId) => {
+        <EdgeDetail edge={detailModalEdge} onClose={() => setDetailModalEdge(null)} onSaveNote={handleSaveNoteFromAnalysis} onOpenNodeDetail={(nodeId) => {
           const node = nodes.find((n) => n.id === nodeId);
           setDetailModalNode(node ?? null);
           setEdgeDetailReturn(detailModalEdge);

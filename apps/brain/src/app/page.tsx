@@ -1,4 +1,5 @@
-'use client'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -22,6 +23,7 @@ import {
   Paper,
   Skeleton,
   Center,
+  Divider,
   rem,
   useMantineColorScheme,
   useMantineTheme,
@@ -63,39 +65,41 @@ interface BrainstormingProject {
   chatCount: number;
   lastActivity: string;
   createdAt: string;
-};
+}
 
-interface BrainstormingSession {
-  id: string,
-  title: string,
-  description?: string,
-  coverColor: string,
-  lastActivity: string,
-  active: boolean,
+interface Project {
+  id: string;
+  title: string;
+  description?: string;
+  coverColor: string;
+  lastActivity: string;
+  active: boolean;
 }
 
 export default function ProjectDashboard() {
   const [projects, setProjects] = useState<BrainstormingProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<BrainstormingProject | null>(null);
+  const [editingProject, setEditingProject] =
+    useState<BrainstormingProject | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const [sidebarOpened, setSidebarOpened] = useState(false);
 
-  const {colorScheme} = useMantineColorScheme();
+  const { colorScheme } = useMantineColorScheme();
   const theme = useMantineTheme();
-  const isDark = colorScheme === 'dark';
-
   const [mounted, setMounted] = useState(false);
-  const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean;}>({});
+  const isDark = mounted ? colorScheme === 'dark' : false;
+  const [loadingStates, setLoadingStates] = useState<{
+    [key: string]: boolean;
+  }>({});
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   const router = useRouter();
-  
-  const brainstormingSessions: BrainstormingSession[] = projects.map(project => ({
+
+  const mappedProjects: Project[] = projects.map((project) => ({
     id: project.id,
     title: project.title,
     description: project.description,
@@ -104,58 +108,64 @@ export default function ProjectDashboard() {
     active: activeSessionId === project.id,
   }));
 
-  const handleSessionSelect = useCallback((sessionId: string) => {
-    setActiveSessionId(sessionId);
-    router.push(`/projects/${sessionId}`)
-  }, [router]);
+  const handleSessionSelect = useCallback(
+    (projectId: string) => {
+      setActiveSessionId(projectId);
+      router.push(`/projects/${projectId}`);
+    },
+    [router]
+  );
 
   const handleNewSession = useCallback(() => {
     setCreateModalOpen(true);
   }, []);
 
-  const handleChatSelect = useCallback((chatId : number) => {
-      console.log('Selected Chat');
+  const handleChatSelect = useCallback((chatId: number) => {
+    console.log('Selected Chat');
   }, []);
 
   const handleToogleSidebar = useCallback(() => {
-      setSidebarOpened((o) => !o);
+    setSidebarOpened((o) => !o);
   }, []);
 
   const handleNewChat = useCallback(() => {
-      console.log('New Chat clicked');
+    console.log('New Chat clicked');
   }, []);
 
   useEffect(() => {
-      setMounted(true);
+    setMounted(true);
   }, []);
 
   useEffect(() => {
-  const getSessionId = async () => {
-    console.log('🔍 Getting sessionId from existing API...');
-    try {
-      const response = await fetch('/api/session');
-      const data = await response.json();
-      
-      if (response.ok && data.sessionId) {
-        console.log('✅ Got sessionId from API:', data.sessionId);
-        console.log('📋 Session data:', {
-          userId: data.user?.id,
-          email: data.user?.email,
-          expiresAt: data.expires_at
-        });
-        setSessionId(data.sessionId);
-      } else {
-        console.error('❌ Failed to get sessionId:', data.error || 'No sessionId in response');
+    const getSessionId = async () => {
+      console.log('🔍 Getting sessionId from existing API...');
+      try {
+        const response = await fetch('/api/session');
+        const data = await response.json();
+
+        if (response.ok && data.sessionId) {
+          console.log('✅ Got sessionId from API:', data.sessionId);
+          console.log('📋 Session data:', {
+            userId: data.user?.id,
+            email: data.user?.email,
+            expiresAt: data.expires_at,
+          });
+          setSessionId(data.sessionId);
+        } else {
+          console.error(
+            '❌ Failed to get sessionId:',
+            data.error || 'No sessionId in response'
+          );
+          setSessionId(null);
+        }
+      } catch (error) {
+        console.error('❌ Error calling session API:', error);
         setSessionId(null);
       }
-    } catch (error) {
-      console.error('❌ Error calling session API:', error);
-      setSessionId(null);
-    }
-  };
+    };
 
-  getSessionId();
-}, []);
+    getSessionId();
+  }, []);
 
   // Form states
   const [newProject, setNewProject] = useState({
@@ -165,9 +175,9 @@ export default function ProjectDashboard() {
   });
 
   const setButtonLoading = (key: string, loading: boolean) => {
-    setLoadingStates(prev => ({
+    setLoadingStates((prev) => ({
       ...prev,
-      [key]: loading
+      [key]: loading,
     }));
   };
 
@@ -176,7 +186,7 @@ export default function ProjectDashboard() {
       const res = await fetch('/api/brainstorming-sessions', {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         cache: 'no-store',
       });
@@ -190,13 +200,14 @@ export default function ProjectDashboard() {
         coverColor: p.coverColor || '#4c6ef5',
         articleCount: p._count?.articles || 0,
         chatCount: p._count?.chatMessages || 0,
-        lastActivity: new Date(p.lastActivity || p.updatedAt || p.createdAt).toLocaleDateString('id-ID', {
+        lastActivity: new Date(
+          p.lastActivity || p.updatedAt || p.createdAt
+        ).toLocaleDateString('id-ID', {
           day: 'numeric',
           month: 'short',
         }),
         createdAt: new Date(p.createdAt).toISOString().split('T')[0],
-        })
-      );
+      }));
 
       setProjects(formatted);
     } catch (error) {
@@ -208,37 +219,36 @@ export default function ProjectDashboard() {
 
   // Mock data for demonstration
   useEffect(() => {
-
     fetchProjects();
-
   }, []);
 
   useEffect(() => {
     return () => {
       setLoadingStates({});
-    }
+    };
   }, []);
 
   useEffect(() => {
-    function handleUpdate(){
+    function handleUpdate() {
       fetchProjects();
     }
-      eventBus.on('sessionCreated', handleUpdate);
-      eventBus.on('sessionDeleted', handleUpdate);
-      eventBus.on('sessionUpdated', handleUpdate);
-      eventBus.on('articleDeleted', handleUpdate);
-  
-      return () => {
-        eventBus.off('sessionCreated', handleUpdate);
-        eventBus.off('sessionDeleted', handleUpdate);
-        eventBus.off('sessionUpdated', handleUpdate);
-        eventBus.off('articleDeleted', handleUpdate);
-      }
-    }, []);
+    eventBus.on('sessionCreated', handleUpdate);
+    eventBus.on('sessionDeleted', handleUpdate);
+    eventBus.on('sessionUpdated', handleUpdate);
+    eventBus.on('articleDeleted', handleUpdate);
 
-  const filteredProjects = projects.filter(project =>
-    project.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    project.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    return () => {
+      eventBus.off('sessionCreated', handleUpdate);
+      eventBus.off('sessionDeleted', handleUpdate);
+      eventBus.off('sessionUpdated', handleUpdate);
+      eventBus.off('articleDeleted', handleUpdate);
+    };
+  }, []);
+
+  const filteredProjects = projects.filter(
+    (project) =>
+      project.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      project.description?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleSessionCreatedFromSidebar = useCallback(() => {
@@ -251,27 +261,27 @@ export default function ProjectDashboard() {
       const res = await fetch('/api/brainstorming-sessions', {
         method: 'POST',
         headers: {
-          'Content-Type':'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(newProject),
       });
 
       const data = await res.json();
 
-      if (res.ok){
+      if (res.ok) {
         await fetchProjects(); // kamu bisa pisahkan ke fungsi di luar
         eventBus.emit('sessionCreated');
         setCreateModalOpen(false);
         setNewProject({ title: '', description: '', coverColor: '#4c6ef5' });
-        
+
         setMounted(false);
         setTimeout(() => setMounted(true), 100);
         notifications.show({
-          title: "Success",
-          message: "Berhasil membuat sesi",
+          title: 'Success',
+          message: 'Berhasil membuat sesi',
           color: 'green',
           position: 'top-right',
-        })
+        });
       } else {
         notifications.show({
           title: 'Gagal',
@@ -285,59 +295,68 @@ export default function ProjectDashboard() {
     } catch (error) {
       console.error('Error', error);
       notifications.show({
-          title: 'Gagal',
-          message: 'Gagal membuat sesi',
-          color: 'red',
-          position: 'top-right',
-        });
+        title: 'Gagal',
+        message: 'Gagal membuat sesi',
+        color: 'red',
+        position: 'top-right',
+      });
     }
   };
 
   const deleteProject = async (id: string, title: string) => {
-        modals.openConfirmModal({
-            title: (
-                <Text size="lg" fw={600} c="red">
-                    🗑️ Konfirmasi Hapus sesi
-                </Text>
-            ),
-            children: (
-                <Box>
-                    <Text size="sm" mb="md">
-                        Apakah Anda yakin ingin menghapus sesi berikut?
-                    </Text>
-                    <Box p="md" style={{
-                        backgroundColor: isDark ? theme.colors.dark[5] : theme.colors.gray[0],
-                        borderRadius: theme.radius.md,
-                        border: `1px solid ${isDark ? theme.colors.red[8] : theme.colors.red[2]}`,
-                    }}>
-                        <Text fw={600} size="sm" mb="xs">{title}</Text>
-                        <Text size="xs" c="dimmed">ID: {id}</Text>
-                    </Box>
-                    <Text size="sm" c="red" fw={500} mt="md">
-                        ⚠️ Tindakan ini tidak dapat dibatalkan!
-                    </Text>
-                </Box>
-            ),
-            labels: {
-                confirm: 'Ya, Hapus Sesi',
-                cancel: 'Batal'
-            },
-            confirmProps: {
-                color: 'red',
-                size: 'md',
-                leftSection: <IconSquareRoundedX size={16} />
-            },
-            cancelProps: {
-                variant: 'outline',
-                size: 'md'
-            },
-            size: 'md',
-            centered: true,
-            onConfirm: async () => {
-                await handleDeleteProject(id);
-            },
-        });
-    };
+    modals.openConfirmModal({
+      title: (
+        <Text size="lg" fw={600} c="red">
+          🗑️ Konfirmasi Hapus sesi
+        </Text>
+      ),
+      children: (
+        <Box>
+          <Text size="sm" mb="md">
+            Apakah Anda yakin ingin menghapus sesi berikut?
+          </Text>
+          <Box
+            p="md"
+            style={{
+              backgroundColor: isDark
+                ? theme.colors.dark[5]
+                : theme.colors.gray[0],
+              borderRadius: theme.radius.md,
+              border: `1px solid ${isDark ? theme.colors.red[8] : theme.colors.red[2]}`,
+            }}
+          >
+            <Text fw={600} size="sm" mb="xs">
+              {title}
+            </Text>
+            <Text size="xs" c="dimmed">
+              ID: {id}
+            </Text>
+          </Box>
+          <Text size="sm" c="red" fw={500} mt="md">
+            ⚠️ Tindakan ini tidak dapat dibatalkan!
+          </Text>
+        </Box>
+      ),
+      labels: {
+        confirm: 'Ya, Hapus Sesi',
+        cancel: 'Batal',
+      },
+      confirmProps: {
+        color: 'red',
+        size: 'md',
+        leftSection: <IconSquareRoundedX size={16} />,
+      },
+      cancelProps: {
+        variant: 'outline',
+        size: 'md',
+      },
+      size: 'md',
+      centered: true,
+      onConfirm: async () => {
+        await handleDeleteProject(id);
+      },
+    });
+  };
 
   const handleDeleteProject = async (projectId: string) => {
     // const confirmed = confirm('Apakah kamu yakin ingin menghapus proyek ini?');
@@ -348,7 +367,7 @@ export default function ProjectDashboard() {
         method: 'DELETE',
       });
 
-      if (res.ok){
+      if (res.ok) {
         await fetchProjects();
         eventBus.emit('sessionDeleted', projectId);
         notifications.show({
@@ -357,7 +376,7 @@ export default function ProjectDashboard() {
           color: 'green',
           position: 'top-right',
         });
-      } else{
+      } else {
         const err = await res.json();
         notifications.show({
           title: 'Gagal',
@@ -402,20 +421,20 @@ export default function ProjectDashboard() {
       eventBus.emit('sessionUpdated', editingProject.id);
       setEditingProject(null);
       notifications.show({
-          title: 'Success',
-          message: 'Berhasil update sesi',
-          color: 'green',
-          position: 'top-right',
-        });
+        title: 'Success',
+        message: 'Berhasil update sesi',
+        color: 'green',
+        position: 'top-right',
+      });
     } catch (error) {
       console.error('Edit error:', error);
       // alert('Terjadi kesalahan saat menyimpan perubahan.');
       notifications.show({
-          title: 'Gagal',
-          message: 'Gagal update sesi',
-          color: 'red',
-          position: 'top-right',
-        });
+        title: 'Gagal',
+        message: 'Gagal update sesi',
+        color: 'red',
+        position: 'top-right',
+      });
     }
   };
 
@@ -427,295 +446,434 @@ export default function ProjectDashboard() {
       lastActivity: 'Baru dibuat',
       createdAt: new Date().toISOString().split('T')[0],
     };
-    setProjects(prev => [duplicated, ...prev]);
+    setProjects((prev) => [duplicated, ...prev]);
   };
 
   const handleDeleteArticle = async (articleId: string) => {
     await fetch(`/api/articles/${articleId}`, {
-      method: 'DELETE'
+      method: 'DELETE',
     });
     eventBus.emit('articleDeleted');
-  }
+  };
 
-const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; isLoading?: boolean }) => {
+  const ProjectCard = ({
+    project,
+    isLoading,
+  }: {
+    project: BrainstormingProject;
+    isLoading?: boolean;
+  }) => {
+    const isCardLoading = loadingStates[`project-${project.id}`];
+    const isDraftLoading = loadingStates[`draft-${project.id}`];
 
-  const isCardLoading = loadingStates[`project-${project.id}`];
-
-  return (
-
-  <Card
-    shadow="sm"
-    padding="lg"
-    radius="lg"
-    withBorder
-    style={{
-      cursor: 'pointer',
-      transition: 'all 0.2s ease',
-      height: '100%',
-    }}
-    onMouseEnter={(e) => {
-      e.currentTarget.style.transform = 'translateY(-2px)';
-      e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.12)';
-    }}
-    onMouseLeave={(e) => {
-      e.currentTarget.style.transform = 'translateY(0)';
-      e.currentTarget.style.boxShadow = '';
-    }}
-  >
-    {/* Loading Overlay untuk Card */}
-      {isCardLoading && (
-        <Overlay color="#fff" opacity={0.8} style={{ borderRadius: 'var(--mantine-radius-lg)' }}>
-          <Center h="100%">
-            <Stack align="center" gap="xs">
-              <Loader size="md" />
-              {/* <Text size="sm" c="dimmed">Membuka project...</Text> */}
-            </Stack>
-          </Center>
-        </Overlay>
-      )}
-    <Stack gap="md" h="100%">
-      {/* Color bar - selalu terlihat */}
-      <Box
+    return (
+      <Card
+        radius="lg"
+        padding={0}
         style={{
-          width: '100%',
-          height: 6,
-          borderRadius: 4,
-          backgroundColor: project.coverColor,
-          marginBottom: 4,
-          flexShrink: 0,
+          cursor: 'pointer',
+          transition:
+            'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
+          height: '100%',
+          backgroundColor: isDark ? '#12131c' : '#fff',
+          border: `1px solid ${isDark ? 'rgba(255,255,255,0.07)' : '#e9ecef'}`,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          position: 'relative',
         }}
-      />
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = 'translateY(-3px)';
+          e.currentTarget.style.boxShadow = isDark
+            ? '0 12px 36px rgba(0,0,0,0.5)'
+            : '0 8px 24px rgba(0,0,0,0.08)';
+          e.currentTarget.style.borderColor = isDark
+            ? 'rgba(255,255,255,0.14)'
+            : '#c5ccd6';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = 'translateY(0)';
+          e.currentTarget.style.boxShadow = 'none';
+          e.currentTarget.style.borderColor = isDark
+            ? 'rgba(255,255,255,0.07)'
+            : '#e9ecef';
+        }}
+        onClick={() => {
+          setButtonLoading(`project-${project.id}`, true);
+          router.push(`/projects/${project.id}`);
+        }}
+      >
+        {/* Loading Overlay */}
+        {isCardLoading && (
+          <Overlay
+            color={isDark ? '#0d0e16' : '#fff'}
+            backgroundOpacity={0.85}
+            style={{ borderRadius: 'var(--mantine-radius-lg)', zIndex: 5 }}
+          >
+            <Center h="100%">
+              <Loader size="sm" color={project.coverColor || 'blue'} />
+            </Center>
+          </Overlay>
+        )}
 
-      {/* Header with title and menu - sejajar */}
-      <Group justify="space-between" align="flex-start" mb="xs" style={{ flexShrink: 0 }}>
-        <Text size="lg" fw={600} lineClamp={2} style={{ flex: 1, paddingRight: 8 }}>
-          {project.title}
-        </Text>
-        <Menu shadow="lg" width={180} position="bottom-end">
-          <Menu.Target>
-            <ActionIcon 
-              variant="subtle" 
-              color="gray" 
-              onClick={(e) => e.stopPropagation()}
-              style={{ flexShrink: 0 }}
-            >
-              <IconDots size={16} />
-            </ActionIcon>
-          </Menu.Target>
-          <Menu.Dropdown>
-            <Menu.Item
-              leftSection={<IconEdit size={14} />}
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditingProject(project);
-              }}
-            >
-              Edit
-            </Menu.Item>
-            <Menu.Item
-              leftSection={<IconCopy size={14} />}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDuplicateProject(project)
-              }}
-            >
-              Duplicate
-            </Menu.Item>
-            <Menu.Item leftSection={<IconShare size={14} />}>
-              Share
-            </Menu.Item>
-            <Menu.Divider />
-            <Menu.Item
-              leftSection={<IconTrash size={14} />}
-              color="red"
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteProject(project.id, project.title!);
-              }}
-            >
-              Delete
-            </Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
-      </Group>
+        {/* Card body */}
+        <Box
+          p="lg"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            gap: 0,
+          }}
+        >
+          {/* Top: Status + Menu */}
+          <Group justify="space-between" align="center" mb={12}>
+            <Group gap={6} align="center">
+              <Box
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  backgroundColor: project.coverColor,
+                  boxShadow: `0 0 6px ${project.coverColor}`,
+                }}
+              />
+              <Text
+                size="xs"
+                fw={700}
+                style={{
+                  color: project.coverColor,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                ACTIVE
+              </Text>
+            </Group>
 
-      {/* Description - area terpisah */}
-      <Box style={{ flex: 1, minHeight: 0 }}>
-        {project.description && (
-          <Tooltip
-            label={project.description}
-            multiline
-            w={300}
-            withArrow
-            position="bottom"
-            disabled={project.description.length <= 10}
-            style={{ 
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word'
+            <Menu shadow="lg" width={180} position="bottom-end" withinPortal>
+              <Menu.Target>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ opacity: 0.6 }}
+                >
+                  <IconDots size={16} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  leftSection={<IconEdit size={14} />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingProject(project);
+                  }}
+                >
+                  Edit
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconCopy size={14} />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDuplicateProject(project);
+                  }}
+                >
+                  Duplicate
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item
+                  leftSection={<IconTrash size={14} />}
+                  color="red"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteProject(project.id, project.title!);
+                  }}
+                >
+                  Delete
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
+
+          {/* Title */}
+          <Text
+            fw={700}
+            lineClamp={2}
+            mb={6}
+            style={{
+              fontSize: 18,
+              color: isDark ? '#fff' : '#1a1b1e',
+              lineHeight: 1.3,
             }}
           >
-            <Text 
-              size="sm" 
-              c="dimmed" 
-              lineClamp={1}
-              style={{ 
-                cursor: project.description.length > 100 ? 'help' : 'default',
-                transition: 'all 0.2s ease'
-              }}
-              onMouseEnter={(e) => {
-                if (project.description!.length > 100) {
-                  e.currentTarget.style.color = 'var(--mantine-color-blue-6)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = '';
-              }}
-            >
-              {project.description.length > 100 
-                ? `${project.description.substring(0, 100)}...` 
-                : project.description}
+            {project.title}
+          </Text>
+
+          {/* Description */}
+          <Text
+            size="sm"
+            lineClamp={2}
+            style={{
+              color: project.description
+                ? isDark
+                  ? '#868e96'
+                  : '#6c757d'
+                : '#f76707',
+              lineHeight: 1.5,
+              flex: 1,
+              minHeight: 40,
+            }}
+          >
+            {project.description || 'Tidak ada deskripsi'}
+          </Text>
+
+          {/* Stats */}
+          <Group gap="md" mt={14} mb={14}>
+            <Group gap={5} align="center">
+              <IconArticle size={13} color={isDark ? '#555' : '#adb5bd'} />
+              <Text size="xs" c="dimmed">
+                {project.articleCount} Files
+              </Text>
+            </Group>
+            <Group gap={5} align="center">
+              <IconMessageCircle
+                size={13}
+                color={isDark ? '#555' : '#adb5bd'}
+              />
+              <Text size="xs" c="dimmed">
+                {project.chatCount} Chats
+              </Text>
+            </Group>
+          </Group>
+
+          {/* Divider */}
+          <Divider
+            style={{
+              borderColor: isDark ? 'rgba(255,255,255,0.06)' : '#f1f3f5',
+            }}
+            mb={12}
+          />
+
+          {/* Bottom: timestamp + actions */}
+          <Group justify="space-between" align="center">
+            <Text size="xs" c="dimmed">
+              Updated {project.lastActivity}
             </Text>
-          </Tooltip>
-        )}
-      </Box>
-
-      {/* Stats */}
-      <Group gap="lg" mb="md" style={{ flexShrink: 0 }}>
-        <Group gap="xs">
-          <ThemeIcon size="sm" variant="light" color="blue">
-            <IconArticle size={12} />
-          </ThemeIcon>
-          <Text size="sm" c="dimmed">
-            {project.articleCount} artikel
-          </Text>
-        </Group>
-        <Group gap="xs">
-          <ThemeIcon size="sm" variant="light" color="green">
-            <IconMessageCircle size={12} />
-          </ThemeIcon>
-          <Text size="sm" c="dimmed">
-            {project.chatCount} chat
-          </Text>
-        </Group>
-      </Group>
-
-      {/* Footer */}
-      <Group justify="space-between" align="center" style={{ flexShrink: 0 }}>
-        <Text size="xs" c="dimmed">
-          {project.lastActivity}
-        </Text>
-        <Badge variant="light" size="sm">
-          {project.createdAt}
-        </Badge>
-      </Group>
-    </Stack>
-  </Card>
-  )}
-;
+            <Group gap={6}>
+              <Button
+                variant="subtle"
+                size="xs"
+                radius="xl"
+                color="gray"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setButtonLoading(`draft-${project.id}`, true);
+                  if (!sessionId) {
+                    setButtonLoading(`draft-${project.id}`, false);
+                    return;
+                  }
+                  const writerUrl = `${process.env.NEXT_PUBLIC_WRITER_APP_URL}/project/${project.id}/draft?sessionId=${sessionId}`;
+                  window.open(writerUrl, '_blank');
+                  setButtonLoading(`draft-${project.id}`, false);
+                }}
+                loading={isDraftLoading}
+                disabled={isCardLoading || isDraftLoading}
+              >
+                Draft
+              </Button>
+              <Button
+                variant="filled"
+                size="xs"
+                radius="xl"
+                color="blue"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setButtonLoading(`project-${project.id}`, true);
+                  router.push(`/projects/${project.id}`);
+                }}
+                loading={isCardLoading}
+                disabled={isCardLoading || isDraftLoading}
+              >
+                Buka
+              </Button>
+            </Group>
+          </Group>
+        </Box>
+      </Card>
+    );
+  };
 
   const CreateProjectCard = () => (
     <Card
-      shadow="sm"
-      padding="lg"
       radius="lg"
-      withBorder
+      padding={0}
       style={{
         cursor: 'pointer',
-        transition: 'all 0.2s ease',
-        borderStyle: 'dashed',
-        borderWidth: 2,
-        borderColor: '#ddd',
+        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
         height: '100%',
-        minHeight: 280,
+        background: isDark
+          ? 'linear-gradient(145deg, #1a1b2e 0%, #12131c 100%)'
+          : 'linear-gradient(145deg, #f0f4ff 0%, #e8eeff 100%)',
+        border: `1px dashed ${isDark ? 'rgba(99,102,241,0.35)' : 'rgba(99,102,241,0.4)'}`,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
       }}
       onClick={() => setCreateModalOpen(true)}
       onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.borderColor = '#4c6ef5';
+        e.currentTarget.style.transform = 'translateY(-3px)';
+        e.currentTarget.style.boxShadow = isDark
+          ? '0 12px 36px rgba(99,102,241,0.2)'
+          : '0 8px 24px rgba(99,102,241,0.15)';
+        e.currentTarget.style.borderColor = isDark
+          ? 'rgba(99,102,241,0.7)'
+          : 'rgba(99,102,241,0.7)';
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.borderColor = '#ddd';
+        e.currentTarget.style.boxShadow = 'none';
+        e.currentTarget.style.borderColor = isDark
+          ? 'rgba(99,102,241,0.35)'
+          : 'rgba(99,102,241,0.4)';
       }}
     >
-      <Center h="100%">
-        <Stack align="center" gap="md">
-          <ThemeIcon size={48} variant="light" color="blue" radius="xl">
-            <IconPlus size={24} />
-          </ThemeIcon>
-          <Text size="lg" fw={500} ta="center">
-            Buat Sesi Brainstorming Baru
-          </Text>
-          <Text size="sm" c="dimmed" ta="center">
-            Mulai proyek penelitian baru dengan AI assistant
-          </Text>
-        </Stack>
-      </Center>
+      <Stack align="center" gap="md" px="xl">
+        <Box
+          style={{
+            width: 60,
+            height: 60,
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 0 20px rgba(99,102,241,0.45)',
+          }}
+        >
+          <IconPlus size={28} color="#fff" stroke={2.5} />
+        </Box>
+        <Text
+          fw={700}
+          ta="center"
+          style={{ fontSize: 16, color: isDark ? '#e2e4f0' : '#3730a3' }}
+        >
+          Buat Sesi Brainstorming
+        </Text>
+        <Text
+          size="sm"
+          c="dimmed"
+          ta="center"
+          style={{ maxWidth: 200, lineHeight: 1.5 }}
+        >
+          Mulai sesi riset baru untuk mengeksplorasi ide dan konsep kognitif.
+        </Text>
+      </Stack>
     </Card>
   );
 
   return (
-    <Container size="xl" py="xl" style={{ minHeight: '100vh' }}>
-      <DashboardLayout
-        sidebarOpened={sidebarOpened}
-        onToggleSidebar={handleToogleSidebar}
-        mounted={mounted}
-        onSessionCreated={handleSessionCreatedFromSidebar}
-        // chatHistory={[]}
-        // onChatSelect={handleChatSelect}
-        // onNewChat={handleNewChat}
-      >
+    <DashboardLayout
+      sidebarOpened={sidebarOpened}
+      onToggleSidebar={handleToogleSidebar}
+      mounted={mounted}
+      onSessionCreated={handleSessionCreatedFromSidebar}
+    >
+      <Container size="xl" py="xl" px="xl" style={{ minHeight: '100%' }}>
         {/* Header */}
-        <Group justify="space-between" mb="xl">
-          <Stack gap="xs">
-            <Group gap="sm">
-              <ThemeIcon size="lg" variant="gradient" gradient={{ from: 'blue', to: 'cyan' }}>
+        <Group
+          justify="space-between"
+          align="center"
+          mb="xl"
+          wrap="wrap"
+          gap="md"
+        >
+          <Stack gap={4}>
+            <Group gap="sm" align="center">
+              <ThemeIcon
+                size={40}
+                variant="gradient"
+                gradient={{ from: 'indigo', to: 'cyan', deg: 45 }}
+                radius="md"
+                style={{
+                  boxShadow: isDark
+                    ? '0 0 20px rgba(76, 110, 245, 0.4)'
+                    : 'none',
+                }}
+              >
                 <IconBrain size={24} />
               </ThemeIcon>
-              <Text size="xl" fw={700}>
+              <Text
+                variant="gradient"
+                gradient={{
+                  from: isDark ? 'white' : 'dark',
+                  to: isDark ? 'gray.5' : 'gray.7',
+                  deg: 90,
+                }}
+                style={{ fontSize: 28, fontWeight: 800, letterSpacing: -0.5 }}
+              >
                 Sesi Brainstorming
               </Text>
             </Group>
-            <Text c="dimmed">
-              Kelola proyek penelitian dan diskusi dengan AI assistant
+            <Text c="dimmed" size="sm" mt={2}>
+              Kelola proyek penelitian dan sintesis literatur
             </Text>
           </Stack>
 
-          <Group gap="md">
+          <Group gap="sm" wrap="nowrap">
             <TextInput
               placeholder="Cari proyek..."
-              leftSection={<IconSearch size={16} />}
+              leftSection={
+                <IconSearch size={16} color={theme.colors.gray[5]} />
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.currentTarget.value)}
-              style={{ width: 300 }}
+              style={{ width: 260 }}
+              radius="xl"
+              styles={{
+                input: {
+                  backgroundColor: isDark
+                    ? 'rgba(255, 255, 255, 0.05)'
+                    : '#fff',
+                  border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : theme.colors.gray[3]}`,
+                  '&:focus': {
+                    borderColor: theme.colors.indigo[4],
+                  },
+                },
+              }}
             />
-            {/* <Button
-              leftSection={<IconPlus size={16} />}
-              onClick={() => setCreateModalOpen(true)}
-            >
-              Buat Proyek Baru
-            </Button> */}
             <Button
               leftSection={<IconSearch size={16} />}
-              variant='light'
+              variant="gradient"
+              gradient={{ from: 'indigo', to: 'blue' }}
+              radius="xl"
               onClick={() => {
-                const searchInput = document.querySelector('input[placeholder="Cari proyek..."]') as HTMLInputElement;
-                if (searchInput){
-                  searchInput.focus();
-                }
+                const searchInput = document.querySelector(
+                  'input[placeholder="Cari proyek..."]'
+                ) as HTMLInputElement;
+                if (searchInput) searchInput.focus();
+              }}
+              style={{
+                boxShadow: isDark
+                  ? '0 4px 15px rgba(76, 110, 245, 0.3)'
+                  : 'none',
+                whiteSpace: 'nowrap',
               }}
             >
-              Cari Proyek
+              Cari
             </Button>
           </Group>
         </Group>
 
         {/* Projects Grid */}
         {loading ? (
-          <Grid>
+          <Grid gap="xl">
             {[...Array(6)].map((_, i) => (
               <Grid.Col key={i} span={{ base: 12, sm: 6, lg: 4 }}>
-                <Card withBorder h={280}>
+                <Card withBorder h={300} radius="lg">
                   <Stack gap="md">
                     <Skeleton height={6} />
                     <Skeleton height={20} width="80%" />
@@ -728,79 +886,25 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
             ))}
           </Grid>
         ) : (
-          <Grid>
+          <Grid gap="xl">
             {/* Create new project card */}
             <Grid.Col span={{ base: 12, sm: 6, lg: 4 }}>
-              <CreateProjectCard />
+              <div style={{ height: 300 }}>
+                <CreateProjectCard />
+              </div>
             </Grid.Col>
 
-          {/* Existing projects */}
-          {filteredProjects.map((project) => (
-            <Grid.Col key={project.id} span={{ base: 12, sm: 6, lg: 4 }}>
-              <Card withBorder h={320} p="md">
-                <Stack gap="sm" h="100%">
-                  {/* Project content - clickable area */}
-                  <div 
-                    onClick={() => {
-                      setButtonLoading(`project-${project.id}`, true)
-                      router.push(`/projects/${project.id}`)}}
-                    style={{ 
-                      cursor: 'pointer',
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      minHeight: 0,
-                    }}
-                  >
-                    <ProjectCard project={project} isLoading={loadingStates[`project-${project.id}`]} />
-                  </div>
-
-                  {/* Action buttons at bottom */}
-                  <Group gap="xs" style={{ borderTop: '1px solid #e9ecef', paddingTop: 8 }}>
-                    <Button
-                      variant="light"
-                      size="xs"
-                      flex={1}
-                      leftSection={<IconFolderOpen size={14} />}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setButtonLoading(`project-${project.id}`, true);
-                        router.push(`/projects/${project.id}`);
-                      }}
-                      loading={loadingStates[`project-${project.id}`]}
-                      disabled={loadingStates[`project-${project.id}`] || loadingStates[`draft-${project.id}`]}
-                    >
-                      Buka Project
-                    </Button>
-                    <Button
-                      variant="subtle"
-                      size="xs"
-                      flex={1}
-                      leftSection={<IconFileText size={14} />}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setButtonLoading(`draft-${project.id}`, true);
-
-                        // router.push(`/projects/${project.id}/draft`);
-                        if (!sessionId) {
-                          console.error('SessionId not available');
-                          setButtonLoading(`draft-${project.id}`, false);
-                          return;
-                        }
-                        const writerUrl = `${process.env.NEXT_PUBLIC_WRITER_APP_URL}/project/${project.id}/draft?sessionId=${sessionId}`
-                        window.open(writerUrl, "_blank")
-                        setButtonLoading(`draft-${project.id}`, false)
-                      }}
-                      loading={loadingStates[`draft-${project.id}`]}
-                      disabled={loadingStates[`project-${project.id}`] || loadingStates[`draft-${project.id}`]}
-                    >
-                      Draft
-                    </Button>
-                  </Group>
-                </Stack>
-              </Card>
-            </Grid.Col>
-          ))}
+            {/* Existing projects */}
+            {filteredProjects.map((project) => (
+              <Grid.Col key={project.id} span={{ base: 12, sm: 6, lg: 4 }}>
+                <div style={{ height: 300 }}>
+                  <ProjectCard
+                    project={project}
+                    isLoading={loadingStates[`project-${project.id}`]}
+                  />
+                </div>
+              </Grid.Col>
+            ))}
           </Grid>
         )}
 
@@ -826,7 +930,11 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
           opened={createModalOpen}
           onClose={() => {
             setCreateModalOpen(false);
-            setNewProject({ title: '', description: '', coverColor: '#4c6ef5' });
+            setNewProject({
+              title: '',
+              description: '',
+              coverColor: '#4c6ef5',
+            });
           }}
           title="Buat Proyek Brainstorming Baru"
           size="md"
@@ -836,7 +944,9 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
               label="Judul Proyek"
               placeholder="Masukkan judul proyek"
               value={newProject.title}
-              onChange={(e) => setNewProject({ ...newProject, title: e.currentTarget.value })}
+              onChange={(e) =>
+                setNewProject({ ...newProject, title: e.currentTarget.value })
+              }
               required
             />
 
@@ -844,7 +954,12 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
               label="Deskripsi (Opsional)"
               placeholder="Jelaskan tujuan proyek penelitian Anda"
               value={newProject.description}
-              onChange={(e) => setNewProject({ ...newProject, description: e.currentTarget.value })}
+              onChange={(e) =>
+                setNewProject({
+                  ...newProject,
+                  description: e.currentTarget.value,
+                })
+              }
               minRows={3}
             />
 
@@ -854,18 +969,31 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
               </Text>
               <ColorPicker
                 value={newProject.coverColor}
-                onChange={(color) => setNewProject({ ...newProject, coverColor: color })}
+                onChange={(color) =>
+                  setNewProject({ ...newProject, coverColor: color })
+                }
                 withPicker={false}
                 swatches={[
-                  '#4c6ef5', '#51cf66', '#ff6b6b', '#ffd43b',
-                  '#9775fa', '#40c057', '#fd7e14', '#15aabf',
-                  '#748ffc', '#69db7c', '#ffa8a8', '#ffe066',
+                  '#4c6ef5',
+                  '#51cf66',
+                  '#ff6b6b',
+                  '#ffd43b',
+                  '#9775fa',
+                  '#40c057',
+                  '#fd7e14',
+                  '#15aabf',
+                  '#748ffc',
+                  '#69db7c',
+                  '#ffa8a8',
+                  '#ffe066',
                 ]}
                 swatchesPerRow={6}
               />
               {/* TAMBAH PREVIEW WARNA TERPILIH */}
               <Group mt="xs" gap="xs" align="center">
-                <Text size="xs" c="dimmed">Warna terpilih:</Text>
+                <Text size="xs" c="dimmed">
+                  Warna terpilih:
+                </Text>
                 <Box
                   style={{
                     width: 20,
@@ -875,7 +1003,9 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
                     border: '2px solid #e9ecef',
                   }}
                 />
-                <Text size="xs" c="dimmed">{newProject.coverColor}</Text>
+                <Text size="xs" c="dimmed">
+                  {newProject.coverColor}
+                </Text>
               </Group>
             </Box>
 
@@ -884,66 +1014,90 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
                 variant="subtle"
                 onClick={() => {
                   setCreateModalOpen(false);
-                  setNewProject({ title: '', description: '', coverColor: '#4c6ef5' });
+                  setNewProject({
+                    title: '',
+                    description: '',
+                    coverColor: '#4c6ef5',
+                  });
                 }}
               >
                 Batal
               </Button>
-              <Button onClick={handleCreateProject} disabled={!newProject.title.trim()}>
+              <Button
+                onClick={handleCreateProject}
+                disabled={!newProject.title.trim()}
+              >
                 Buat Proyek
               </Button>
             </Group>
           </Stack>
         </Modal>
-      {/* Edit Project Modal */}
-      <Modal
-        opened={!!editingProject}
-        onClose={() => setEditingProject(null)}
-        title="Edit Proyek Brainstorming"
-        size="md"
-      >
-        {editingProject && (
-          <Stack gap="md">
-            <TextInput
-              label="Judul Proyek"
-              placeholder="Masukkan judul proyek"
-              value={editingProject.title}
-              onChange={(e) =>
-                setEditingProject({ ...editingProject, title: e.currentTarget.value })
-              }
-              required
-            />
-
-            <Textarea
-              label="Deskripsi (Opsional)"
-              placeholder="Jelaskan tujuan proyek penelitian Anda"
-              value={editingProject.description}
-              onChange={(e) =>
-                setEditingProject({ ...editingProject, description: e.currentTarget.value })
-              }
-              minRows={3}
-            />
-
-            <Box>
-              <Text size="sm" fw={500} mb="xs">
-                Warna Cover
-              </Text>
-              <ColorPicker
-                value={editingProject.coverColor}
-                onChange={(color) =>
-                  setEditingProject({ ...editingProject, coverColor: color })
+        {/* Edit Project Modal */}
+        <Modal
+          opened={!!editingProject}
+          onClose={() => setEditingProject(null)}
+          title="Edit Proyek Brainstorming"
+          size="md"
+        >
+          {editingProject && (
+            <Stack gap="md">
+              <TextInput
+                label="Judul Proyek"
+                placeholder="Masukkan judul proyek"
+                value={editingProject.title}
+                onChange={(e) =>
+                  setEditingProject({
+                    ...editingProject,
+                    title: e.currentTarget.value,
+                  })
                 }
-                withPicker={false}
-                swatches={[
-                  '#4c6ef5', '#51cf66', '#ff6b6b', '#ffd43b',
-                  '#9775fa', '#40c057', '#fd7e14', '#15aabf',
-                  '#748ffc', '#69db7c', '#ffa8a8', '#ffe066',
-                ]}
+                required
               />
-            </Box>
+
+              <Textarea
+                label="Deskripsi (Opsional)"
+                placeholder="Jelaskan tujuan proyek penelitian Anda"
+                value={editingProject.description}
+                onChange={(e) =>
+                  setEditingProject({
+                    ...editingProject,
+                    description: e.currentTarget.value,
+                  })
+                }
+                minRows={3}
+              />
+
+              <Box>
+                <Text size="sm" fw={500} mb="xs">
+                  Warna Cover
+                </Text>
+                <ColorPicker
+                  value={editingProject.coverColor}
+                  onChange={(color) =>
+                    setEditingProject({ ...editingProject, coverColor: color })
+                  }
+                  withPicker={false}
+                  swatches={[
+                    '#4c6ef5',
+                    '#51cf66',
+                    '#ff6b6b',
+                    '#ffd43b',
+                    '#9775fa',
+                    '#40c057',
+                    '#fd7e14',
+                    '#15aabf',
+                    '#748ffc',
+                    '#69db7c',
+                    '#ffa8a8',
+                    '#ffe066',
+                  ]}
+                />
+              </Box>
               {/* TAMBAH PREVIEW WARNA TERPILIH */}
               <Group mt="xs" gap="xs" align="center">
-                <Text size="xs" c="dimmed">Warna terpilih:</Text>
+                <Text size="xs" c="dimmed">
+                  Warna terpilih:
+                </Text>
                 <Box
                   style={{
                     width: 20,
@@ -953,24 +1107,24 @@ const ProjectCard = ({ project, isLoading }: { project: BrainstormingProject; is
                     border: '2px solid #e9ecef',
                   }}
                 />
-                <Text size="xs" c="dimmed">{editingProject.coverColor}</Text>
+                <Text size="xs" c="dimmed">
+                  {editingProject.coverColor}
+                </Text>
               </Group>
 
-            <Group justify="flex-end" mt="md">
-              <Button
-                variant="subtle"
-                onClick={() => setEditingProject(null)}
-              >
-                Batal
-              </Button>
-              <Button onClick={handleEditProject}>
-                Simpan Perubahan
-              </Button>
-            </Group>
-          </Stack>
-        )}
-      </Modal>
-      </DashboardLayout>
-    </Container>
+              <Group justify="flex-end" mt="md">
+                <Button
+                  variant="subtle"
+                  onClick={() => setEditingProject(null)}
+                >
+                  Batal
+                </Button>
+                <Button onClick={handleEditProject}>Simpan Perubahan</Button>
+              </Group>
+            </Stack>
+          )}
+        </Modal>
+      </Container>
+    </DashboardLayout>
   );
 }

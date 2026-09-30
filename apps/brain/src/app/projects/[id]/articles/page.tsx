@@ -7,7 +7,7 @@ import { notifications } from '@mantine/notifications';
 import { modals } from '@mantine/modals';
 import Link from "next/link";
 import { useCallback, useEffect, useState, useRef } from "react"
-import WebViewer from "@/components/WebViewer";
+import WebViewer from "@/components/WebViewerDynamic";
 import { handleAnalytics } from "@/components/NodeDetail";
 import { useParams } from "next/navigation";
 import { useRouter } from "next/navigation";
@@ -575,7 +575,15 @@ export default function Article(){
             >
             {selectedPDF && (
                 <div style={{ height: '100%', position: 'relative' }}>
-                <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics}  session={session}/>
+                <WebViewer fileUrl={selectedPDF} onAnalytics={handleAnalytics} session={session} onSave={() => {
+                    getAnnotations();
+                    notifications.show({
+                        title: '✅ Catatan Tersimpan',
+                        message: 'Anotasi berhasil disimpan ke riwayat.',
+                        color: 'green',
+                        position: 'top-right',
+                    });
+                }} />
                 </div>
             )}
         </Modal>

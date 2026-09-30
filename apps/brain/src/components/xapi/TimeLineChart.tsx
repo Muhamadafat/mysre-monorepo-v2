@@ -12,9 +12,9 @@ interface TimelineChartProps {
   loading?: boolean;
 }
 
-export const TimelineChart: React.FC<TimelineChartProps> = ({ 
-  data, 
-  loading = false 
+export const TimelineChart: React.FC<TimelineChartProps> = ({
+  data,
+  loading = false,
 }) => {
   if (loading) {
     return (
@@ -38,7 +38,7 @@ export const TimelineChart: React.FC<TimelineChartProps> = ({
     );
   }
 
-  const maxCount = Math.max(...data.map(d => d.count), 1);
+  const maxCount = Math.max(...data.map((d) => d.count), 1);
   const chartHeight = 300;
   const chartWidth = 800;
   const padding = { top: 20, right: 30, bottom: 60, left: 60 };
@@ -47,7 +47,8 @@ export const TimelineChart: React.FC<TimelineChartProps> = ({
 
   // Calculate points for the line
   const points = data.map((item, index) => {
-    const x = padding.left + (index / Math.max(data.length - 1, 1)) * innerWidth;
+    const x =
+      padding.left + (index / Math.max(data.length - 1, 1)) * innerWidth;
     const y = padding.top + innerHeight - (item.count / maxCount) * innerHeight;
     return { x, y, ...item };
   });
@@ -68,7 +69,7 @@ export const TimelineChart: React.FC<TimelineChartProps> = ({
       <Title order={3} mb="lg">
         Aktivitas Belajar per Sesi
       </Title>
-      
+
       <Box style={{ overflowX: 'auto' }}>
         <svg width={chartWidth} height={chartHeight + 40}>
           {/* Grid lines */}
@@ -99,19 +100,10 @@ export const TimelineChart: React.FC<TimelineChartProps> = ({
           })}
 
           {/* Area under line */}
-          <path
-            d={areaPath}
-            fill="#51cf66"
-            fillOpacity={0.2}
-          />
+          <path d={areaPath} fill="#51cf66" fillOpacity={0.2} />
 
           {/* Line */}
-          <path
-            d={linePath}
-            fill="none"
-            stroke="#51cf66"
-            strokeWidth={3}
-          />
+          <path d={linePath} fill="none" stroke="#51cf66" strokeWidth={3} />
 
           {/* Data points */}
           {points.map((point, index) => (
@@ -125,7 +117,7 @@ export const TimelineChart: React.FC<TimelineChartProps> = ({
                 strokeWidth={2}
                 style={{ cursor: 'pointer' }}
               />
-              
+
               {/* Hover label */}
               <title>{`${point.date}: ${point.count} aktivitas`}</title>
             </g>
@@ -135,8 +127,9 @@ export const TimelineChart: React.FC<TimelineChartProps> = ({
           {points.map((point, index) => {
             // Show every nth label to avoid overlap
             const showEvery = Math.max(1, Math.floor(data.length / 10));
-            if (index % showEvery !== 0 && index !== data.length - 1) return null;
-            
+            if (index % showEvery !== 0 && index !== data.length - 1)
+              return null;
+
             const dateStr = point.date.split('-').slice(1).join('-'); // MM-DD
             return (
               <text
