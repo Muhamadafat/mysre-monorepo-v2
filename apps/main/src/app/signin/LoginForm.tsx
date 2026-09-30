@@ -13,15 +13,17 @@ import {
   Title,
   Alert,
   Modal,
+  Anchor,
 } from "@mantine/core";
 import { useState, useEffect } from "react";
 import NextImage from "next/image";
+import Link from "next/link";
 import { IconEye, IconEyeOff, IconAlertCircle, IconCheck } from "@tabler/icons-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { signIn, resetPassword } from "../actions";
 
-export default function LoginPage() {
+export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
@@ -118,147 +120,158 @@ export default function LoginPage() {
       <Box
         style={{
           minHeight: "100vh",
-          backgroundImage: `url('/webp/login-background.webp')`,
-          backgroundSize: "cover",
+          backgroundImage: `url('/images/background-login-new.png')`,
+          backgroundSize: "100% 100%",
           backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+          backgroundAttachment: "fixed",
+          backgroundColor: "#1A237E",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           padding: "20px",
+          fontFamily: "'Inter', sans-serif",
         }}
       >
         <Box
           style={{
             width: "100%",
-            maxWidth: 1100,
+            maxWidth: 1000,
             minHeight: "600px",
-            maxHeight: "90vh",
             display: "flex",
-            boxShadow: "0 0 20px rgba(0,0,0,0.2)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
             borderRadius: 16,
             overflow: "hidden",
-            backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
+            backgroundColor: "white",
           }}
         >
           {/* Panel Kiri - Form Login */}
           <Box
             style={{
-              width: "55%",
-              backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
-              padding: "48px",
+              width: "50%",
+              backgroundColor: "white",
+              padding: "40px",
               display: "flex",
               flexDirection: "column",
               justifyContent: "center",
               overflowY: "auto",
             }}
           >
-            <Box style={{ textAlign: "center", marginBottom: 24 }}>
-              <Title order={1} fw={800} mb={4} style={{ color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))" }}>
+            <Box mb="md" style={{ display: "flex", justifyContent: "center" }}>
+              <Image
+                component={NextImage}
+                src='/webp/logoSRE.webp'
+                alt="My-SRE Logo"
+                width={140}
+                height={50}
+                fit="contain"
+              />
+            </Box>
+            <Box style={{ textAlign: "center", marginBottom: 32 }}>
+              <Title order={1} fw={900} style={{ color: "#111827", fontSize: "2rem", letterSpacing: "1px" }}>
                 MASUK
               </Title>
-              <Text c="dimmed" size="sm">
+              <Text size="sm" mt={8} style={{ color: "#6B7280" }}>
                 Masukkan email Anda untuk login ke akun Anda
               </Text>
             </Box>
 
-            <form onSubmit={handleSignIn}>
-              <Stack>
+            <form onSubmit={handleSignIn} style={{ width: "100%", maxWidth: "360px", margin: "0 auto" }}>
+              <Stack gap="md">
                 {error && (
-                  <Alert 
-                    icon={<IconAlertCircle size="1rem" />} 
-                    color="red" 
-                    variant="filled"
-                    mb="md"
-                  >
+                  <Alert icon={<IconAlertCircle size="1rem" />} color="red" variant="filled">
                     {error}
                   </Alert>
                 )}
 
-                <Text fw={600}>Email</Text>
-                <TextInput
-                  placeholder="Masukkan email Anda..."
-                  value={email}
-                  onChange={(e) => setEmail(e.currentTarget.value)}
-                  required
-                  type="email"
-                  disabled={loading}
-                  styles={{
-                    input: {
-                      backgroundColor: "light-dark(white, var(--mantine-color-dark-7))",
-                      borderColor: "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4))",
-                      color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))",
-                      '&::placeholder': {
-                        color: "light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))",
+                <Box>
+                  <Text fw={600} size="sm" mb={8} style={{ color: "#111827" }} suppressHydrationWarning>Email</Text>
+                  <TextInput
+                    placeholder="email@gmail.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.currentTarget.value)}
+                    required
+                    type="email"
+                    disabled={loading}
+                    size="md"
+                    radius="md"
+                    styles={{
+                      input: {
+                        backgroundColor: "#F3F4F6",
+                        borderColor: "#D1D5DB",
+                        color: "#111827",
+                        '&:focus': { borderColor: "#228BE6" }
                       }
-                    }
-                  }}
-                />
+                    }}
+                  />
+                </Box>
 
-                <Text fw={600}>Kata Sandi</Text>
-                <PasswordInput
-                  placeholder="Masukkan kata sandi Anda..."
-                  value={password}
-                  onChange={(e) => setPassword(e.currentTarget.value)}
-                  visible={showPassword}
-                  onVisibilityChange={setShowPassword}
-                  visibilityToggleIcon={({ reveal }) =>
-                    reveal ? <IconEyeOff /> : <IconEye />
-                  }
-                  required
-                  disabled={loading}
-                  styles={{
-                    input: {
-                      backgroundColor: "light-dark(white, var(--mantine-color-dark-7))",
-                      borderColor: "light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4))",
-                      color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))",
-                      '&::placeholder': {
-                        color: "light-dark(var(--mantine-color-gray-6), var(--mantine-color-dark-2))",
+                <Box>
+                  <Text fw={600} size="sm" mb={8} style={{ color: "#111827" }}>Kata Sandi</Text>
+                  <PasswordInput
+                    placeholder="••••••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.currentTarget.value)}
+                    visible={showPassword}
+                    onVisibilityChange={setShowPassword}
+                    visibilityToggleIcon={({ reveal }) =>
+                      reveal ? <IconEyeOff size={18} color="#9CA3AF" /> : <IconEye size={18} color="#9CA3AF" />
+                    }
+                    required
+                    disabled={loading}
+                    size="md"
+                    radius="md"
+                    styles={{
+                      input: {
+                        backgroundColor: "#F3F4F6",
+                        borderColor: "#D1D5DB",
+                        color: "#111827",
+                        '&:focus': { borderColor: "#228BE6" }
                       }
-                    }
-                  }}
-                />
+                    }}
+                  />
+                </Box>
 
-                <Group justify="space-between" mt="xs">
+                <Group justify="space-between" mt={4}>
                   <Checkbox
                     label="Ingat saya"
                     checked={remember}
                     onChange={(e) => setRemember(e.currentTarget.checked)}
                     disabled={loading}
+                    color="blue"
+                    styles={{ label: { color: "#4B5563", fontSize: "0.875rem" } }}
                   />
-                  <Text 
-                    size="sm" 
-                    c="blue" 
-                    style={{ cursor: "pointer" }}
-                    onClick={() => setForgotPasswordOpened(true)}
+                  <Anchor
+                    size="sm"
+                    style={{ color: "#228BE6", textDecoration: "none", fontWeight: 400 }}
+                    onClick={(e) => { e.preventDefault(); setForgotPasswordOpened(true); }}
                   >
                     Lupa kata sandi?
-                  </Text>
+                  </Anchor>
                 </Group>
 
-                <Button 
-                  fullWidth 
-                  mt="md" 
-                  size="md" 
-                  color="blue" 
-                  radius="md" 
+                <Button
+                  fullWidth
+                  mt="md"
+                  size="md"
+                  radius="md"
                   type="submit"
                   loading={loading}
                   disabled={loading}
+                  style={{ backgroundColor: "#1D8AE6", fontWeight: 600 }}
                 >
-                  {loading ? "Masuk..." : "Masuk"}
+                  Masuk
                 </Button>
-                
-                <Text ta="center" size="sm" mt="md">
+
+                <Text ta="center" size="sm" mt="md" style={{ color: "#111827" }}>
                   Belum punya akun?{" "}
-                  <Text 
-                    component="span" 
-                    c="blue" 
-                    fw={600}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => router.push('/signup')}
+                  <Anchor
+                    component={Link}
+                    href="/signup"
+                    style={{ color: "#1D8AE6", fontWeight: 400, textDecoration: "none" }}
                   >
                     Daftar di sini
-                  </Text>
+                  </Anchor>
                 </Text>
               </Stack>
             </form>
@@ -267,40 +280,20 @@ export default function LoginPage() {
           {/* Panel Kanan - Ilustrasi */}
           <Box
             style={{
-              width: "45%",
-              backgroundColor: "#0057b7",
-              padding: "32px",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              color: "white",
+              width: "50%",
+              position: "relative",
             }}
           >
-            <Image
-              component={NextImage}
-              src='/webp/logoSRE.webp'
-              alt="My-SRE Logo"
-              width={160}
-              height={50}
-              fit="contain"
-              style={{ alignSelf: "flex-start" }}
+            <img
+              src="/images/pengganti-tampilan-orang-login.png"
+              alt="Login Illustration"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block"
+              }}
             />
-
-            <Box style={{ textAlign: "center" }}>
-              <Image
-                component={NextImage}
-                src='/images/login-illustration.png'
-                alt="Illustration"
-                width={350}
-                height={350}
-                fit="contain"
-                style={{ margin: "0 auto" }}
-              />
-            </Box>
-
-            <Text size="xs" style={{ textAlign: "center" }}>
-              My-SRE © 2025
-            </Text>
           </Box>
         </Box>
       </Box>
@@ -324,19 +317,13 @@ export default function LoginPage() {
             </Text>
 
             {resetError && (
-              <Alert 
-                icon={<IconAlertCircle size="1rem" />} 
-                color="red"
-              >
+              <Alert icon={<IconAlertCircle size="1rem" />} color="red" variant="light">
                 {resetError}
               </Alert>
             )}
 
             {resetSuccess && (
-              <Alert 
-                icon={<IconCheck size="1rem" />} 
-                color="green"
-              >
+              <Alert icon={<IconCheck size="1rem" />} color="green" variant="light">
                 {resetSuccess}
               </Alert>
             )}
@@ -352,18 +339,10 @@ export default function LoginPage() {
             />
 
             <Group justify="flex-end" mt="md">
-              <Button 
-                variant="subtle" 
-                onClick={() => setForgotPasswordOpened(false)}
-                disabled={resetLoading}
-              >
+              <Button variant="subtle" color="gray" onClick={() => setForgotPasswordOpened(false)} disabled={resetLoading}>
                 Batal
               </Button>
-              <Button 
-                type="submit" 
-                loading={resetLoading}
-                disabled={resetLoading || !!resetSuccess}
-              >
+              <Button type="submit" loading={resetLoading} disabled={resetLoading || !!resetSuccess} color="blue">
                 Kirim Link Reset
               </Button>
             </Group>

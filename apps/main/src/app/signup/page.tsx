@@ -17,6 +17,7 @@ import {
 import { IconAlertCircle } from "@tabler/icons-react";
 import React, { useState } from "react";
 import NextImage from "next/image";
+import Link from "next/link";
 
 import { signUp } from "../actions";
 import { useRouter } from "next/navigation";
@@ -122,9 +123,11 @@ export default function SignUpPage() {
     <Box
       style={{
         minHeight: "100vh",
-        backgroundImage: `url('/webp/login-background.webp')`,
-        backgroundSize: "cover",
+        backgroundImage: `url('/images/signup-background.png')`,
+        backgroundSize: "100% 100%",
         backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        backgroundAttachment: "fixed",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -144,43 +147,23 @@ export default function SignUpPage() {
           backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
         }}
       >
-        {/* Panel Kiri - Ilustrasi dan Logo */}
+        {/* Panel Kiri - Ilustrasi */}
         <Box
           style={{
             width: "45%",
-            backgroundColor: "#0057b7",
-            padding: "32px",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-            color: "white",
+            position: "relative",
           }}
         >
-          <Image
-            component={NextImage}
-            src='/webp/logoSRE.webp'
-            alt="My-SRE Logo"
-            width={170}
-            height={50}
-            fit="contain"
-            style={{ alignSelf: "flex-start" }}
+          <img
+            src="/images/signup-illustration.png"
+            alt="Pengganti Tampilan Orang"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block"
+            }}
           />
-
-          <Box style={{ textAlign: "center" }}>
-            <Image
-              component={NextImage}
-              src='/images/signin-illustration.png'
-              alt="Illustration"
-              width={350}
-              height={350}
-              fit="contain"
-              style={{ margin: "0 auto" }}
-            />
-          </Box>
-
-          <Text size="xs" style={{ textAlign: "center" }}>
-            My-SRE © 2025
-          </Text>
         </Box>
 
         {/* Panel Kanan - Form */}
@@ -195,8 +178,19 @@ export default function SignUpPage() {
             justifyContent: "flex-start",
             overflowY: "auto",
             backgroundColor: "light-dark(white, var(--mantine-color-dark-6))",
+            position: "relative",
           }}
         >
+          <Box mb="md">
+            <Image
+              component={NextImage}
+              src='/webp/logoSRE.webp'
+              alt="My-SRE Logo"
+              width={140}
+              height={50}
+              fit="contain"
+            />
+          </Box>
           <Title order={1} mb={0} fw={700} style={{ color: "light-dark(var(--mantine-color-dark-9), var(--mantine-color-gray-0))" }}>
             Daftar Akun
           </Title>
@@ -209,9 +203,9 @@ export default function SignUpPage() {
           >
             <Stack gap={6}>
               {error && (
-                <Alert 
-                  icon={<IconAlertCircle size="1rem" />} 
-                  color="red" 
+                <Alert
+                  icon={<IconAlertCircle size="1rem" />}
+                  color="red"
                   variant="filled"
                   mb="md"
                 >
@@ -243,7 +237,7 @@ export default function SignUpPage() {
                 styles={inputStyles}
               />
 
-              <Text fw={600}>Email</Text>
+              <Text fw={600} suppressHydrationWarning>Email</Text>
               <TextInput
                 placeholder="Masukkan email Anda..."
                 value={form.email}
@@ -283,15 +277,15 @@ export default function SignUpPage() {
               <Button fullWidth mt="xs" color="blue" type="submit" loading={loading} disabled={loading}>
                 {loading ? "Daftar..." : "Daftar"}
               </Button>
-              
+
               <Text ta="center" size="sm" mt="md">
                 Sudah punya akun?{" "}
-                <Text 
-                  component="span" 
-                  c="blue" 
+                <Text
+                  component={Link}
+                  href="/signin"
+                  c="blue"
                   fw={600}
-                  style={{ cursor: "pointer" }}
-                  onClick={() => router.push('/signin')}
+                  style={{ cursor: "pointer", textDecoration: "none" }}
                 >
                   Masuk di sini
                 </Text>

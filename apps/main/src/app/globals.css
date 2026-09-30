@@ -26,6 +26,7 @@ body {
   cursor: none !important;
 }
 
+/* Sembunyikan cursor default di semua elemen */
 *, *::before, *::after {
   cursor: none !important;
 }
@@ -61,7 +62,7 @@ a {
   }
 }
 
-/* Misalnya di styles/globals.css */
+/* Custom Split Styles */
 .split {
   height: 100%;
   display: flex;
@@ -73,12 +74,10 @@ a {
 
 .split .gutter {
   background-color: #ddd;
-  cursor: col-resize;
   width: 10px;
 }
 
 .gutter {
   background-color: #e0e0e0;
-  cursor: col-resize;
   width: 8px;
 }
