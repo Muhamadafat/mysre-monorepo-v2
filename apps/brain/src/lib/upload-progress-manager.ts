@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/lib/upload-progress-manager.ts (File Baru)
 
 // Map ini akan menjadi "singleton" di sisi server, menyimpan semua koneksi aktif.

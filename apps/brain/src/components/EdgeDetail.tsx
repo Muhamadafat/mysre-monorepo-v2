@@ -1,14 +1,16 @@
 'use client';
 
-import { Modal, Table, Text, Loader, Skeleton, Group, Badge, Paper, ThemeIcon, Box, Stack } from '@mantine/core';
+import { Modal, Table, Text, Loader, Skeleton, Group, Badge, Paper, ThemeIcon, Box, Stack, Button, Transition, ActionIcon } from '@mantine/core';
 import { ExtendedEdge } from '@/types';
-import { useEffect, useState } from 'react';
-import { IconArrowDown, IconNetwork, IconArticle, IconEye  } from '@tabler/icons-react';
+import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
+import { IconArrowDown, IconNetwork, IconArticle, IconEye, IconArrowsSplit2, IconNotes, IconCheck } from '@tabler/icons-react';
 
 interface EdgeDetailProps {
   edge: ExtendedEdge | null;
   onClose: () => void;
   onOpenNodeDetail?:(nodeId:string) => void;
+  onDeepCompare?: (nodeIds: string[]) => void;
+  onSaveNote?: (text: string, customLabel?: string, articleId?: string) => Promise<void>;
 };
 
 interface PopulatedEdge {
@@ -68,10 +70,117 @@ function getRelationColor(relation: string | null | undefined) {
   return relationColors[key] || 'gray';
 }
 
-export default function EdgeDetail({ edge, onClose, onOpenNodeDetail }: EdgeDetailProps) {
+export default function EdgeDetail({ edge, onClose, onOpenNodeDetail, onDeepCompare, onSaveNote }: EdgeDetailProps) {
 
   const [edgeNode, setEdgeNode] = useState<PopulatedEdge>();
   const [loading, setLoading] = useState(false);
+
+  // ── Floating Save Button State ───────────────────────────────
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [floatBtn, setFloatBtn] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savedHighlights, setSavedHighlights] = useState<string[]>([]);
+  const [noteComment, setNoteComment] = useState('');
+
+  const handleMouseUp = useCallback(() => {
+    if (!onSaveNote) return;
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    if (!text || text.length < 5) {
+      setFloatBtn(null);
+      setNoteComment('');
+      return;
+    }
+    if (!containerRef.current) return;
+    const range = selection?.getRangeAt(0);
+    if (!range) return;
+    const rect = range.getBoundingClientRect();
+    const containerRect = containerRef.current.getBoundingClientRect();
+
+    if (!containerRef.current.contains(range.commonAncestorContainer)) {
+      setFloatBtn(null);
+      setNoteComment('');
+      return;
+    }
+
+    setFloatBtn({
+      x: rect.left - containerRect.left + rect.width / 2,
+      y: rect.top - containerRect.top - 70,
+      text,
+    });
+    setSaved(false);
+    setNoteComment('');
+  }, [onSaveNote]);
+
+  useEffect(() => {
+    const hide = (e: MouseEvent) => {
+      const btn = document.getElementById('edge-save-note-container');
+      if (btn && btn.contains(e.target as Node)) return;
+      setFloatBtn(null);
+    };
+    document.addEventListener('mousedown', hide);
+    return () => document.removeEventListener('mousedown', hide);
+  }, []);
+
+  const handleSaveNoteAction = async () => {
+    if (!floatBtn || !onSaveNote) return;
+    setSaving(true);
+    try {
+      const relLabel = getDisplayRelation(edge?.relation);
+      const customLabel = `Relasi: ${relLabel}`;
+      const articleId = edgeNode?.from?.id;
+
+      await onSaveNote(floatBtn.text, customLabel, articleId);
+
+      setSaved(true);
+      setSavedHighlights((prev) => [...prev, floatBtn.text]);
+      setTimeout(() => {
+        setFloatBtn(null);
+        setSaved(false);
+        setNoteComment('');
+        window.getSelection()?.removeAllRanges();
+      }, 1200);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renderTextWithHighlights = (text: string) => {
+    if (savedHighlights.length === 0 || !text) return text;
+    const sortedHighlights = [...savedHighlights].sort((a, b) => b.length - a.length);
+    let result: ReactNode[] = [text];
+    sortedHighlights.forEach((highlight) => {
+      const newResult: ReactNode[] = [];
+      result.forEach((part) => {
+        if (typeof part === 'string') {
+          const pieces = part.split(highlight);
+          pieces.forEach((piece, i) => {
+            newResult.push(piece);
+            if (i < pieces.length - 1) {
+              newResult.push(
+                <mark
+                  key={`${highlight}-${i}`}
+                  style={{
+                    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+                    color: 'inherit',
+                    borderRadius: '2px',
+                    padding: '0 2px',
+                  }}
+                >
+                  {highlight}
+                </mark>
+              );
+            }
+          });
+        } else {
+          newResult.push(part);
+        }
+      });
+      result = newResult;
+    });
+    return <>{result}</>;
+  };
 
   useEffect(() => {
     if (!edge) return;
@@ -105,6 +214,7 @@ export default function EdgeDetail({ edge, onClose, onOpenNodeDetail }: EdgeDeta
   if (!edge) return null;
 
 return (
+    <div ref={containerRef} onMouseUp={handleMouseUp} style={{ position: 'relative' }}>
     <Stack gap="lg">
       <Paper p="md" radius="md" withBorder>
         <Group justify="space-between" mb="md">
@@ -140,7 +250,7 @@ return (
                     <>
                     <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
                     <Text size="md" style={{ wordBreak: 'break-word' }}>
-                      {edgeNode?.from?.title}
+                      {renderTextWithHighlights(edgeNode?.from?.title || '')}
                     </Text>
                     {edgeNode?.from?.id && onOpenNodeDetail && (
                       <ThemeIcon
@@ -184,7 +294,7 @@ return (
                     <>
                     <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
                     <Text size="md" style={{ wordBreak: 'break-word' }}>
-                      {edgeNode?.to?.title}
+                      {renderTextWithHighlights(edgeNode?.to?.title || '')}
                     </Text>
                     {edgeNode?.to?.id && onOpenNodeDetail && (
                       <ThemeIcon
@@ -212,10 +322,88 @@ return (
             Deskripsi Hubungan:
           </Text>
           <Text size="sm" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-            {edge.label || edge.displayDescription }
+            {renderTextWithHighlights(edge.label || edge.displayDescription || '')}
           </Text>
         </Paper>
       )}
+
+      {onDeepCompare && edgeNode?.from?.id && edgeNode?.to?.id && (
+        <Button
+          fullWidth
+          size="sm"
+          radius="md"
+          variant="gradient"
+          gradient={{ from: 'indigo', to: 'teal', deg: 135 }}
+          leftSection={<IconArrowsSplit2 size={16} />}
+          onClick={() => onDeepCompare([edgeNode.from.id, edgeNode.to.id])}
+          style={{ boxShadow: '0 4px 16px rgba(99,102,241,0.3)', marginTop: 4 }}
+        >
+          Bandingkan Mendalam
+        </Button>
+      )}
     </Stack>
+
+    <Transition mounted={!!floatBtn} transition="fade" duration={120} timingFunction="ease">
+      {(styles) => (
+        <div
+          id="edge-save-note-container"
+          style={{
+            ...styles,
+            position: 'absolute',
+            left: floatBtn?.x || 0,
+            top: floatBtn?.y || 0,
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            padding: '10px',
+            borderRadius: '10px',
+            backgroundColor: 'var(--mantine-color-body)',
+            border: '1px solid var(--mantine-color-default-border)',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+            minWidth: '240px',
+          }}
+        >
+          <Stack gap={6}>
+            <Text size="xs" fw={800} c="blue" style={{ letterSpacing: '0.02em' }}>
+              Keterangan Catatan:
+            </Text>
+            <Group gap={6} align="flex-end">
+              <input
+                type="text"
+                autoFocus
+                placeholder="Tulis catatan di sini..."
+                value={noteComment}
+                onChange={(e) => setNoteComment(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--mantine-color-default-border)',
+                  backgroundColor: 'var(--mantine-color-default-hover)',
+                  color: 'var(--mantine-color-text)',
+                  fontSize: '12px',
+                  outline: 'none',
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !saving && !saved) {
+                    handleSaveNoteAction();
+                  }
+                }}
+              />
+              <ActionIcon
+                color={saved ? 'green' : 'blue'}
+                variant="filled"
+                size="md"
+                loading={saving}
+                onClick={handleSaveNoteAction}
+                disabled={saved}
+              >
+                {saved ? <IconCheck size={16} /> : <IconNotes size={16} />}
+              </ActionIcon>
+            </Group>
+          </Stack>
+        </div>
+      )}
+    </Transition>
+    </div>
   );
 }

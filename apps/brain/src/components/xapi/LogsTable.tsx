@@ -1,6 +1,16 @@
 // src/components/xapi/LogsTable.tsx
 import React from 'react';
-import { Card, Table, Badge, Group, Text, Pagination, Skeleton, Center, Stack } from '@mantine/core';
+import {
+  Card,
+  Table,
+  Badge,
+  Group,
+  Text,
+  Pagination,
+  Skeleton,
+  Center,
+  Stack,
+} from '@mantine/core';
 
 interface LogEntry {
   id: string;
@@ -23,11 +33,11 @@ interface LogsTableProps {
   onPageChange: (page: number) => void;
 }
 
-export const LogsTable: React.FC<LogsTableProps> = ({ 
-  logs, 
+export const LogsTable: React.FC<LogsTableProps> = ({
+  logs,
   loading = false,
   pagination,
-  onPageChange
+  onPageChange,
 }) => {
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -36,7 +46,7 @@ export const LogsTable: React.FC<LogsTableProps> = ({
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
   };
 
@@ -51,7 +61,7 @@ export const LogsTable: React.FC<LogsTableProps> = ({
       'text-selection': 'orange',
       'modal-interaction': 'gray',
       'tab-navigation': 'teal',
-      'view-mode-change': 'cyan'
+      'view-mode-change': 'cyan',
     };
     return colors[type] || 'gray';
   };
@@ -75,18 +85,24 @@ export const LogsTable: React.FC<LogsTableProps> = ({
       </Table.Td>
       <Table.Td>
         <div>
-          <Text size="sm" fw={500}>{log.actorName}</Text>
-          <Text size="xs" c="dimmed">{log.actorEmail}</Text>
+          <Text size="sm" fw={500}>
+            {log.actorName}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {log.actorEmail}
+          </Text>
         </div>
       </Table.Td>
       <Table.Td>
         <Text size="sm">{log.verb}</Text>
       </Table.Td>
       <Table.Td>
-        <Text size="sm" lineClamp={2}>{log.objectName}</Text>
+        <Text size="sm" lineClamp={2}>
+          {log.objectName}
+        </Text>
       </Table.Td>
       <Table.Td>
-        <Badge 
+        <Badge
           color={getInteractionBadgeColor(log.interactionType)}
           variant="light"
           size="sm"
@@ -129,7 +145,7 @@ export const LogsTable: React.FC<LogsTableProps> = ({
       {/* Pagination */}
       <Group justify="space-between" mt="lg">
         <Text size="sm" c="dimmed">
-          Menampilkan {((pagination.page - 1) * 20) + 1} sampai{' '}
+          Menampilkan {(pagination.page - 1) * 20 + 1} sampai{' '}
           {Math.min(pagination.page * 20, pagination.total)} dari{' '}
           {pagination.total} hasil
         </Text>

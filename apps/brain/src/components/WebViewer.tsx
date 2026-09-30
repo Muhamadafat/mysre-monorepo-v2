@@ -28,6 +28,7 @@ interface WebViewerProps {
   onAnalytics?: (data: any) => void
   session?: any
   articleId?: string
+  onSave?: () => void
 }
 
 interface AnnotationFromAPI {
@@ -47,7 +48,7 @@ interface AnnotationFromAPI {
   }
 }
 
-const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, articleId }) => {
+const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, articleId, onSave }) => {
   const [highlights, setHighlights] = useState<IHighlight[]>([])
   const [isLoadingAnnotations, setIsLoadingAnnotations] = useState(true)
   const [isDownloading, setIsDownloading] = useState(false)
@@ -264,9 +265,11 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics, session, ar
     const savedAnnotation = await response.json()
     console.log('✅ Annotation saved to API:', savedAnnotation)
 
-    setHighlights((prev) => 
+    setHighlights((prev) =>
       prev.map(h => h.id === tempId ? { ...h, id: savedAnnotation.id } : h)
     )
+
+    onSave?.()
 
     // ✅ Analytics hanya untuk logging, tidak POST annotation
     onAnalytics?.({

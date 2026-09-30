@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // types/global.d.ts
 
 declare class ImageCapture {
