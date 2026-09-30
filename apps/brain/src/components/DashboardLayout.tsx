@@ -177,7 +177,7 @@ export function DashboardLayout({
   <>
     <AppShell
       header={{ height: 70 }}
-      navbar={{
+      navbar={showActivityBar ? undefined : {
         width: railMode ? 76 : 280,
         breakpoint: 'sm',
         collapsed: railMode ? { mobile: false, desktop: false } : { mobile: !sidebarOpened, desktop: !sidebarOpened },
@@ -193,18 +193,20 @@ export function DashboardLayout({
         />
       </AppShellHeader>
 
-      <AppShellNavbar p={railMode ? 'xs' : 'lg'}>
-        <DashboardNavbar
-          // chatHistory={chatHistory}
-          brainstormingSessions={brainstormingSessions}
-          mounted={mounted}
-          onSessionSelect={handleSessionSelect}
-          onNewSession={handleNewSession}
-          isCollapsed={railMode}
-          // onChatSelect={onChatSelect}
-          // onNewChat={onNewChat}
-        />
-      </AppShellNavbar>
+      {!showActivityBar && (
+        <AppShellNavbar p={railMode ? 'xs' : 'lg'}>
+          <DashboardNavbar
+            // chatHistory={chatHistory}
+            brainstormingSessions={brainstormingSessions}
+            mounted={mounted}
+            onSessionSelect={handleSessionSelect}
+            onNewSession={handleNewSession}
+            isCollapsed={railMode}
+            // onChatSelect={onChatSelect}
+            // onNewChat={onNewChat}
+          />
+        </AppShellNavbar>
+      )}
 
       <AppShellMain>
         {showActivityBar ? (
