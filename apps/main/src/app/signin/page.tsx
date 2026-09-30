@@ -19,9 +19,11 @@ function SignInLoading() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        backgroundImage: `url('/webp/login-background.webp')`,
-        backgroundSize: "cover",
+        backgroundImage: `url('/images/background-login-new.png')`,
+        backgroundSize: "100% 100%",
         backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        backgroundAttachment: "fixed",
       }}
     >
       <Center>
