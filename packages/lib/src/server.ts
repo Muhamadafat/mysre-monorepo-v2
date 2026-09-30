@@ -9,3 +9,5 @@ export * from './auth-service';
 export * from './xapi-server';
 
 export * from './xapi-middleware';
+
+export * from './arcadedb';

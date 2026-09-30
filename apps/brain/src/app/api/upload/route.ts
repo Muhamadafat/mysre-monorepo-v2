@@ -10,6 +10,7 @@ import { Readable } from "stream";
 import { getServerSession } from "@sre-monorepo/lib/server";
 import { sendProgress } from "@/lib/upload-progress-manager";
 import { saveUploadedFile } from "@/lib/storage";
+import { upsertGraphNode, createGraphEdge } from "@sre-monorepo/lib/server";
 
 export const dynamic = "force-dynamic";
 
@@ -332,6 +333,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           },
         });
 
+        // Mirror into ArcadeDB for graph traversal queries. Postgres already has the
+        // row — upsertGraphNode swallows its own errors, so this never fails the upload.
+        await upsertGraphNode(parentNode);
+
         const createdChildNodes: any[] = [];
 
         let createdEdges: any[] = [];
@@ -518,6 +523,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                   });
 
                   createdEdges.push(newEdge);
+
+                  // Mirror into ArcadeDB — same swallow-errors contract as upsertGraphNode.
+                  await createGraphEdge(newEdge);
                 } catch (error: any) {
                   if (error.code === 'P2002'){
                     console.warn(`Skipping duplicate edge: from ${sourceNode.id} to ${targetNode.id}`);

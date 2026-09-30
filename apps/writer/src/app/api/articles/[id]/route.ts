@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@sre-monorepo/lib/server";
+import { prisma, deleteGraphForArticle } from "@sre-monorepo/lib/server";
 
 export async function DELETE(req: NextRequest, {params} : {
     params: Promise <{id: string}>
@@ -44,6 +44,9 @@ export async function DELETE(req: NextRequest, {params} : {
                 id: articleId,
             }
         });
+
+        // Postgres cascade-deleted the Node/Edge rows; ArcadeDB needs the same cleanup explicitly.
+        await deleteGraphForArticle(articleId);
 
         return NextResponse.json(
             { 
