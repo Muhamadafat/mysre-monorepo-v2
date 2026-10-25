@@ -1,0 +1,94 @@
+/* Floating voice pill, bottom-center: small enough not to cover the editor or the AI window. */
+.pill {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 400; /* above Mantine modals (200) so it stays reachable */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 6px 6px 6px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mantine-color-body) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--mantine-color-default-border);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
+  animation: pill-in 0.25s ease-out;
+}
+
+.orb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: radial-gradient(circle at 30% 30%, var(--mantine-color-cyan-3), var(--mantine-color-blue-6) 55%, var(--mantine-color-violet-7));
+}
+
+.orbActive {
+  animation: orb-breathe 2.4s ease-in-out infinite;
+}
+
+.wave {
+  width: 64px;
+  flex-shrink: 0;
+}
+
+.caption {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.captionText {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.captionMeta {
+  font-size: 11px;
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+}
+
+.warn {
+  color: var(--mantine-color-orange-7);
+}
+
+.error {
+  color: var(--mantine-color-red-7);
+}
+
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes orb-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--mantine-color-blue-light);
+  }
+  50% {
+    box-shadow: 0 0 0 5px var(--mantine-color-blue-light);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill,
+  .orbActive {
+    animation: none;
+  }
+}
