@@ -36,6 +36,10 @@ function plateHeadingTypeToLevel(type: string): number {
 
 // ---- inline content (text runs) ------------------------------------------
 
+function isCommentMarkKey(key: string): boolean {
+  return key === "comment" || key.startsWith("comment_");
+}
+
 function styleToLeafProps(styles?: InlineStyles): Record<string, unknown> {
   if (!styles) return {};
   const leaf: Record<string, unknown> = {};
@@ -47,6 +51,17 @@ function styleToLeafProps(styles?: InlineStyles): Record<string, unknown> {
   if (styles.textColor && styles.textColor !== "default") leaf.color = styles.textColor;
   if (styles.backgroundColor && styles.backgroundColor !== "default") {
     leaf.backgroundColor = styles.backgroundColor;
+  }
+  // Contribution attribution (see PlateEditor's "Kontribusi" tracking):
+  // not a visual style, but it has to survive every BlockNote round trip
+  // (updateBlock, replaceBlocks, setContent, undo history) or a block that
+  // merely changes type would lose who wrote it.
+  if (typeof styles.author === "string") leaf.author = styles.author;
+  if (styles.ai === true) leaf.ai = true;
+  // Inline comment anchors (@platejs/comment marks: `comment` plus one
+  // `comment_<threadId>` per thread) — same reason as authorship above.
+  for (const [key, value] of Object.entries(styles)) {
+    if (isCommentMarkKey(key) && value === true) leaf[key] = true;
   }
   return leaf;
 }
@@ -60,10 +75,18 @@ function leafPropsToStyle(leaf: Record<string, unknown>): InlineStyles {
   if (leaf.code) styles.code = true;
   if (typeof leaf.color === "string") styles.textColor = leaf.color;
   if (typeof leaf.backgroundColor === "string") styles.backgroundColor = leaf.backgroundColor;
+  if (typeof leaf.author === "string") styles.author = leaf.author;
+  if (leaf.ai === true) styles.ai = true;
+  for (const [key, value] of Object.entries(leaf)) {
+    if (isCommentMarkKey(key) && value === true) styles[key] = true;
+  }
   return styles;
 }
 
-function inlineContentToPlate(content: InlineContent[] | undefined): Descendant[] {
+function inlineContentToPlate(content: InlineContent[] | string | undefined): Descendant[] {
+  // BlockNote accepts a bare string as inline content (the AI typing
+  // animation's updateBlock calls rely on this) — treat it as one plain run.
+  if (typeof content === "string") return [{ text: content }];
   if (!content || content.length === 0) return [{ text: "" }];
   const out: Descendant[] = [];
   for (const item of content) {
@@ -125,7 +148,7 @@ function blockToPlateElement(block: Block | PartialBlock): TElement {
         id,
         type: headingLevelToPlateType(level),
         ...bn,
-        children: inlineContentToPlate(block.content as InlineContent[]),
+        children: inlineContentToPlate(block.content as InlineContent[] | string),
       } as TElement;
     }
     case "bulletListItem":
@@ -136,7 +159,7 @@ function blockToPlateElement(block: Block | PartialBlock): TElement {
         listStyleType: block.type === "bulletListItem" ? "disc" : "decimal",
         indent: Number((props as any).level) || 1,
         ...bn,
-        children: inlineContentToPlate(block.content as InlineContent[]),
+        children: inlineContentToPlate(block.content as InlineContent[] | string),
       } as TElement;
     }
     case "codeBlock": {
@@ -197,7 +220,9 @@ function blockToPlateElement(block: Block | PartialBlock): TElement {
         type: "p",
         ...bn,
         children: inlineContentToPlate(
-          Array.isArray(block.content) ? (block.content as InlineContent[]) : undefined
+          Array.isArray(block.content) || typeof block.content === "string"
+            ? (block.content as InlineContent[] | string)
+            : undefined
         ),
       } as TElement;
     }

@@ -1,79 +1,82 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@sre-monorepo/lib/server";
+import { prisma, getServerSession } from "@sre-monorepo/lib/server";
+import { canAccessWriterSession } from "@/lib/writerSessionAccess";
 
+/**
+ * Concept-map nodes (the project's "Referensi Pustaka", also the AI
+ * writer's grounding context) for a writer project.
+ *
+ * `projectId` is either a WriterSession id or a BrainstormingSession id.
+ * Nodes always come from the PROJECT OWNER's articles, and access is
+ * granted to the owner AND to invited collaborators — previously every
+ * lookup was filtered by the requesting user's id, so a collaborator got an
+ * empty list (no references, and the AI refused to write for lack of
+ * context). The user is taken from the server-side session; the old
+ * client-supplied `sessionId` (user id) query param is ignored, since
+ * trusting it let anyone read anyone's nodes by editing the URL.
+ */
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const sessionId = searchParams.get("sessionId"); // userId (bisa dari URL atau current user)
-    const projectId = searchParams.get("projectId"); // brainstormingSessionId atau writerSessionId
-    
-    console.log('=== NODES API DEBUG ===');
-    console.log('1. Raw sessionId (userId):', sessionId);
-    console.log('2. Raw projectId:', projectId);
-
-    if (!sessionId) {
-      return NextResponse.json({ error: "Missing sessionId (userId)" }, { status: 400 });
+    const authSession = await getServerSession();
+    const user = authSession?.user;
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const projectId = new URL(req.url).searchParams.get("projectId");
     if (!projectId) {
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
     }
 
-    // Clean sessionId jika mengandung underscore
-    let cleanUserId = sessionId;
-    if (sessionId.includes('_')) {
-      cleanUserId = sessionId.split('_')[0];
-      console.log('3. Cleaned userId:', cleanUserId);
-    }
+    let ownerId: string | null = null;
+    let brainstormingSessionId: string | null = null;
 
-    // STRATEGY: Coba dua pendekatan untuk mendapatkan brainstormingSessionId
-
-    let targetBrainstormingSessionId = null;
-
-    // STEP 1: Coba langsung sebagai brainstormingSessionId
-    console.log('4. Step 1: Trying projectId as brainstormingSessionId...');
-    const brainstormingSession = await prisma.brainstormingSession.findFirst({
-      where: {
-        id: projectId,
-        userId: cleanUserId
-      }
+    const writerSession = await prisma.writerSession.findUnique({
+      where: { id: projectId },
+      select: { id: true, userId: true, brainstormingSessionId: true },
     });
 
-    if (brainstormingSession) {
-      console.log('   ✅ Found as brainstormingSession');
-      targetBrainstormingSessionId = projectId;
-    } else {
-      // STEP 2: Coba sebagai writerSessionId, ambil brainstormingSessionId-nya
-      console.log('5. Step 2: Trying projectId as writerSessionId...');
-      const writerSession = await prisma.writerSession.findFirst({
-        where: {
-          id: projectId,
-          userId: cleanUserId
-        },
-        select: {
-          brainstormingSessionId: true
-        }
-      });
-
-      if (writerSession?.brainstormingSessionId) {
-        console.log('   ✅ Found as writerSession, brainstormingSessionId:', writerSession.brainstormingSessionId);
-        targetBrainstormingSessionId = writerSession.brainstormingSessionId;
+    if (writerSession) {
+      if (!(await canAccessWriterSession(writerSession.id, user.id))) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
+      ownerId = writerSession.userId;
+      brainstormingSessionId = writerSession.brainstormingSessionId;
+    } else {
+      const brainstormingSession = await prisma.brainstormingSession.findUnique({
+        where: { id: projectId },
+        select: { id: true, userId: true },
+      });
+      if (!brainstormingSession) {
+        return NextResponse.json([]);
+      }
+      // The owner, or a collaborator on one of the owner's writer sessions
+      // built from this brainstorming session.
+      const allowed =
+        brainstormingSession.userId === user.id ||
+        (await prisma.writerSession.count({
+          where: {
+            brainstormingSessionId: brainstormingSession.id,
+            collaborators: { some: { userId: user.id } },
+          },
+        })) > 0;
+      if (!allowed) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      ownerId = brainstormingSession.userId;
+      brainstormingSessionId = brainstormingSession.id;
     }
 
-    if (!targetBrainstormingSessionId) {
-      console.log('6. ❌ No valid brainstormingSessionId found');
+    if (!brainstormingSessionId || !ownerId) {
       return NextResponse.json([]);
     }
 
-    // STEP 3: Query nodes berdasarkan brainstormingSessionId yang ditemukan
-    console.log('7. Querying nodes for brainstormingSessionId:', targetBrainstormingSessionId);
     const nodes = await prisma.node.findMany({
       where: {
         article: {
-          userId: cleanUserId,
-          sessionId: targetBrainstormingSessionId  // sessionId di Article = brainstormingSessionId
-        }
+          userId: ownerId,
+          sessionId: brainstormingSessionId, // Article.sessionId = brainstormingSessionId
+        },
       },
       include: {
         article: {
@@ -82,35 +85,18 @@ export async function GET(req: NextRequest) {
             title: true,
             userId: true,
             sessionId: true,
-            session: {
-              select: {
-                id: true,
-                title: true
-              }
-            }
-          }
-        }
-      }
+            session: { select: { id: true, title: true } },
+          },
+        },
+      },
     });
 
-    console.log('8. Nodes found:', nodes.length);
-    if (nodes.length > 0) {
-      console.log('9. Sample node:', {
-        id: nodes[0].id,
-        label: nodes[0].label,
-        articleTitle: nodes[0].article?.title,
-        sessionTitle: nodes[0].article?.session?.title
-      });
-    }
-    console.log('=== END DEBUG ===');
-
     return NextResponse.json(nodes);
-
   } catch (error: any) {
     console.error("Error fetching nodes: ", error);
-    return NextResponse.json({ 
-      error: 'Failed to fetch nodes', 
-      details: error.message 
-    }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch nodes", details: error.message },
+      { status: 500 }
+    );
   }
 }

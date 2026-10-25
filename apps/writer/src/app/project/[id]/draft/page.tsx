@@ -2,6 +2,7 @@
 
 'use client'
 
+import './animations.css';
 import ConceptMap from '@/components/ConceptMap';
 import dynamic from 'next/dynamic';
 import { notifications } from '@mantine/notifications';
@@ -355,6 +356,9 @@ export default function Home() {
 
   // State untuk mengontrol tampilan panel tengah (concept map vs editor)
   const [activeCentralView, setActiveCentralView] = useState('conceptMap');
+  // Where PlateEditor portals its history/autosave indicators (next to the
+  // Peta Konsep / Editor Teks toggle).
+  const [editorStatusSlot, setEditorStatusSlot] = useState<HTMLDivElement | null>(null);
 
   const [mcpContext, setMcpContext] = useState<{
     sessionId: string;
@@ -556,7 +560,17 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("chat");
   const isMobile = useMediaQuery('(max-width: 768px)');
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  // Between phone and full desktop (small laptops, split-screen windows) the
+  // three fixed-width columns don't fit side by side — panels shrink and the
+  // outline starts collapsed there (its toggle still opens it).
+  const isTablet = useMediaQuery('(max-width: 1200px)');
+  useEffect(() => {
+    if (isTablet === undefined) return;
+    setLeftPanelCollapsed(!!isTablet && !isMobile);
+  }, [isTablet, isMobile]);
   const [fileName, setFileName] = useState("");
+  const conceptMapSyncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const editLogTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [isClient, setIsClient] = useState(false);
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
   const [draftCounter, setDraftCounter] = useState(1); // Counter untuk versi draft
@@ -668,7 +682,7 @@ export default function Home() {
       setFileName("Judul Artikel 1");
       
       // Add welcome log
-      logTransform('Editor Dimulai', 'Editor BlockNote telah siap digunakan');
+      logTransform('Editor Dimulai', 'Editor PlateJS telah siap digunakan');
     }, 100);
     
     return () => clearTimeout(timer);
@@ -3713,36 +3727,35 @@ const handleSubmitToTeacher = async () => {
     // ✅ MODIFICATION: Trigger bibliography sync when content changes
     syncBibliographyWithContent();
 
-    // ✅ Sync editor content to concept map (debounced)
-    const debouncedSync = setTimeout(() => {
+    // ✅ Sync editor content to concept map / activity log — real trailing
+    // debounces (each change restarts the timer) instead of a fresh timer per
+    // keystroke that was never cancelled.
+    clearTimeout(conceptMapSyncTimer.current);
+    conceptMapSyncTimer.current = setTimeout(() => {
       syncEditorToConceptMap(content);
     }, 1000);
 
-    // Log content changes (debounced to avoid spam)
     const contentText = extractTextFromBlockNote(content);
     const wordCount = contentText.split(/\s+/).filter(Boolean).length;
-
+    clearTimeout(editLogTimer.current);
     if (wordCount > 0) {
-      // Simple debounce - only log if significant change
-      const debouncedLog = setTimeout(() => {
+      editLogTimer.current = setTimeout(() => {
         logEdit('Konten diubah', undefined, undefined, wordCount);
       }, 2000);
-
-      return () => {
-        clearTimeout(debouncedLog);
-        clearTimeout(debouncedSync);
-      };
     }
 
-    // Logic untuk update/reset title
+    // Title derived ONLY from the shared document, so every collaborator
+    // shows the same one: first H1, else the session title, else "Tidak ada
+    // judul" for an empty canvas. (This used to be skipped entirely whenever
+    // the editor had any words — an early `return` above it — so each tab
+    // kept whatever title its own history happened to leave behind.)
     if (!hasAnyContent) {
-      // Jika editor benar-benar kosong, reset title
       setFileName("📝 Tidak ada judul");
-    } else if (firstH1Title && firstH1Title !== fileName) {
-      // Jika ada H1, update dengan H1 tersebut
+    } else if (firstH1Title) {
       setFileName(firstH1Title);
+    } else {
+      setFileName(`Draft: ${writerSession?.title || 'Artikel'}`);
     }
-    // Jika ada content tapi tidak ada H1, biarkan title yang ada
         // const plainText = extractTextFromBlockNote(content);
         // setContent(plainText);
   };
@@ -3857,8 +3870,8 @@ const handleSubmitToTeacher = async () => {
             </div>
 
             <Group gap="sm" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} suppressHydrationWarning>
-              <Tooltip 
-                label="Panduan Penggunaan" 
+              <Tooltip
+                label="Panduan Penggunaan"
               >
                 <ActionIcon
                   variant="gradient"
@@ -3868,13 +3881,14 @@ const handleSubmitToTeacher = async () => {
                   radius="md"
                   style={{
                     transition: "all 0.2s ease",
-                    animation: "pulse 2s infinite"
+                    animation: "pulse 2s infinite, pulse-glow-strong 1.2s ease-in-out infinite"
                   }}
+                  styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}
                 >
                   <IconHelp size={18} />
                 </ActionIcon>
               </Tooltip>
-              
+
               <Tooltip label={dark ? 'Mode terang' : 'Mode gelap'}>
                 <ActionIcon
                   variant="light"
@@ -3883,44 +3897,64 @@ const handleSubmitToTeacher = async () => {
                   size="lg"
                   radius="md"
                   suppressHydrationWarning
+                  style={{ transition: "all 0.2s ease" }}
+                  styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}
                 >
                   {dark ? <IconSun size={18} /> : <IconMoon size={18} />}
                 </ActionIcon>
               </Tooltip>
-            
+
               <Tooltip label="Akses Cepat Draft (Ctrl + Shift + D)">
-                <ActionIcon 
-                  variant="light" 
-                  color="green" 
-                  size="lg" 
+                <ActionIcon
+                  variant="light"
+                  color="green"
+                  size="lg"
                   onClick={() => setDraftQuickAccessOpened(true)}
                   suppressHydrationWarning
+                  style={{ transition: "all 0.2s ease" }}
+                  styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}
                 >
                   <IconFileText size={18} />
                 </ActionIcon>
               </Tooltip>
 
               <Tooltip label="Pintasan Keyboard (Ctrl + /)">
-                <ActionIcon 
-                  variant="light" 
-                  color="blue" 
-                  size="lg" 
+                <ActionIcon
+                  variant="light"
+                  color="blue"
+                  size="lg"
                   onClick={() => setShortcutsModalOpened(true)}
                   suppressHydrationWarning
+                  style={{ transition: "all 0.2s ease" }}
+                  styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}
                 >
                   <IconKeyboard size={18} />
                 </ActionIcon>
               </Tooltip>
 
               <Tooltip label="Pengaturan">
-                <ActionIcon variant="light" color="gray" size="lg" suppressHydrationWarning>
+                <ActionIcon
+                  variant="light"
+                  color="gray"
+                  size="lg"
+                  suppressHydrationWarning
+                  style={{ transition: "all 0.2s ease" }}
+                  styles={{ root: { '&:hover': { transform: 'scale(1.16) rotate(30deg)' } } }}
+                >
                   <IconSettings size={18} />
                 </ActionIcon>
               </Tooltip>
-                      
+
               <Menu shadow="lg" width={220} position="bottom-end" offset={10}>
                 <Menu.Target>
-                  <ActionIcon variant="light" size="lg" radius="xl" suppressHydrationWarning>
+                  <ActionIcon
+                    variant="light"
+                    size="lg"
+                    radius="xl"
+                    suppressHydrationWarning
+                    style={{ transition: "all 0.2s ease" }}
+                    styles={{ root: { '&:hover': { transform: 'scale(1.08)' } } }}
+                  >
                     <Avatar
                       size="sm"
                       radius="xl"
@@ -4245,8 +4279,10 @@ const handleSubmitToTeacher = async () => {
                     alignSelf: 'flex-start',
                     marginTop: '20px',
                     borderTopLeftRadius: 0,
-                    borderBottomLeftRadius: 0
+                    borderBottomLeftRadius: 0,
+                    transition: 'all 0.2s ease',
                   }}
+                  styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}
                 >
                   <IconLayoutSidebarRightCollapse size={18} />
                 </ActionIcon>
@@ -4256,7 +4292,7 @@ const handleSubmitToTeacher = async () => {
             <Box
               data-onboarding-tour-id="panel-kiri-tour" 
               style={{
-                width: leftPanelCollapsed ? 0 : (isMobile ? '100%' : 280), // Diperbesar dari 240px
+                width: leftPanelCollapsed ? 0 : (isMobile ? '100%' : isTablet ? 240 : 280),
                 flexShrink: 0,
                 transition: 'width 0.3s ease, padding 0.3s ease',
                 visibility: leftPanelCollapsed ? 'hidden' : 'visible',
@@ -4302,6 +4338,8 @@ const handleSubmitToTeacher = async () => {
                     <ActionIcon
                       variant="default"
                       onClick={() => setLeftPanelCollapsed(true)}
+                      style={{ transition: 'all 0.2s ease' }}
+                      styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}
                     >
                       <IconLayoutSidebarLeftCollapse size={18} />
                     </ActionIcon>
@@ -4348,20 +4386,29 @@ const handleSubmitToTeacher = async () => {
                   <Stack gap={6}>
                     {headings.length === 0 ? (
                       <Box ta="center" py="xl">
-                        <Box
+                        <Paper
                           style={{
-                            background: computedColorScheme === 'dark' 
-                              ? 'linear-gradient(135deg, #2d3748, #4a5568)' 
+                            background: computedColorScheme === 'dark'
+                              ? 'linear-gradient(135deg, #2d3748, #4a5568)'
                               : 'linear-gradient(135deg, #f8f9fa, #e9ecef)',
                             borderRadius: '12px',
                             padding: '24px',
                             border: `2px dashed ${computedColorScheme === 'dark' ? '#4a5568' : '#dee2e6'}`,
+                            transition: 'all 0.25s ease',
+                          }}
+                          styles={{
+                            root: {
+                              '&:hover': {
+                                borderColor: '#007BFF',
+                                transform: 'translateY(-4px)',
+                              },
+                            },
                           }}
                         >
-                          <IconBulb 
-                            size={32} 
-                            color={computedColorScheme === 'dark' ? '#a0aec0' : '#6c757d'} 
-                            style={{ marginBottom: '12px' }} 
+                          <IconBulb
+                            size={32}
+                            color={computedColorScheme === 'dark' ? '#a0aec0' : '#6c757d'}
+                            style={{ marginBottom: '12px', animation: 'gentle-float 2s ease-in-out infinite' }}
                           />
                           <Text size="sm" fw={600} c="dimmed" mb="xs">
                             Outline Kosong
@@ -4369,7 +4416,7 @@ const handleSubmitToTeacher = async () => {
                           <Text size="xs" c="dimmed" ta="center" lh={1.4}>
                             Mulai menulis dengan heading atau gunakan AI untuk membuat struktur artikel
                           </Text>
-                        </Box>
+                        </Paper>
                       </Box>
                     ) : (
                       headings.map(({ id, text, level }) => {
@@ -4439,11 +4486,15 @@ const handleSubmitToTeacher = async () => {
                                 backgroundColor: config.bgColor,
                                 border: `1px solid ${config.borderColor}`,
                                 overflow: 'hidden',
-                                '&:hover': {
-                                  transform: 'translateY(-1px)',
-                                  boxShadow: `0 4px 12px ${config.borderColor}`,
-                                  backgroundColor: config.bgColor,
-                                }
+                              }}
+                              styles={{
+                                root: {
+                                  '&:hover': {
+                                    transform: 'translateY(-3px)',
+                                    boxShadow: `0 4px 12px ${config.borderColor}`,
+                                    backgroundColor: config.bgColor,
+                                  },
+                                },
                               }}
                               onClick={() => {
                                 try {
@@ -4868,24 +4919,25 @@ const handleSubmitToTeacher = async () => {
                       </Box>
 
                       {/* Action Buttons */}
-                      <Group justify="flex-end" mt="sm" gap="md">
-                        <Button 
-                          variant="outline" 
-                          color="blue" 
+                      <Group justify="flex-end" mt="sm" gap={isTablet ? "xs" : "md"} wrap="wrap">
+                        <Button
+                          variant="outline"
+                          color="blue"
                           leftSection={
                             isScanning ? (
                               <Loader size={18} color="white" />
                             ) : (
                               <IconFileText size={18} />
                             )
-                          } 
-                          radius="md" 
-                          size="md" 
-                          px={24} 
+                          }
+                          radius="md"
+                          size={isTablet ? "sm" : "md"}
+                          px={isTablet ? 14 : 24}
                           onClick={handleSaveDraft}
                           style={{
                             transition: 'all 0.2s ease',
                           }}
+                          styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
                           disabled={isScanning || loading}
                           loading={loading}
                         >
@@ -4897,36 +4949,39 @@ const handleSubmitToTeacher = async () => {
                           color="grape"
                           leftSection={<IconUsers size={18} />}
                           radius="md"
-                          size="md"
+                          size={isTablet ? "sm" : "md"}
                           disabled={!writerSession?.id}
                           onClick={() => setShareModalOpened(true)}
+                          style={{ transition: 'all 0.2s ease' }}
+                          styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
                         >
                           Kolaborator
                         </Button>
 
-                        <Button 
-                          variant="filled" 
-                          color="blue" 
+                        <Button
+                          variant="gradient"
+                          gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
                           leftSection={
                             isScanning ? (
                               <Loader size={18} color="white" />
                             ) : (
                               <IconUpload size={18} />
                             )
-                          } 
-                          radius="md" 
-                          size="md" 
-                          px={24} 
+                          }
+                          radius="md"
+                          size={isTablet ? "sm" : "md"}
+                          px={isTablet ? 14 : 24}
                           onClick={handleFinalSave}
                           style={{
                             transition: 'all 0.2s ease',
                           }}
+                          styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
                           disabled={isScanning}
                         >
                           {isScanning ? "AI Checker..." : "Simpan Final"}
                         </Button>
                       </Group>
-                    </Box> 
+                    </Box>
                   </Box>
                   <Box style={{
                     width: '100%',
@@ -4940,7 +4995,7 @@ const handleSubmitToTeacher = async () => {
                     {/* Panel Kanan */}
                     <Box
                       style={{
-                        width: isMobile ? "100%" : "280",
+                        width: isMobile ? "100%" : isTablet ? 260 : 300,
                         border: "1px solid #ccc",
                         borderRadius: "8px",
                         backgroundColor: computedColorScheme === "dark" ? "#2a2a2a" : "#f9f9f9",
@@ -4962,12 +5017,13 @@ const handleSubmitToTeacher = async () => {
                           display: 'flex',
                           justifyContent: 'center',
                           alignItems: 'center',
-                          gap: '16px',
-                          marginBottom: '20px',
-                          padding: '8px 12px',
+                          flexWrap: 'wrap',
+                          gap: isTablet ? '6px' : '10px',
+                          marginBottom: '16px',
+                          padding: '8px 10px',
                           borderRadius: '20px',
                           backgroundColor: computedColorScheme === "dark" ? "rgba(0, 123, 255, 0.08)" : "rgba(0, 123, 255, 0.15)",
-                          marginInline: '20px',
+                          marginInline: 0,
                           boxShadow: '0 4px 12px rgba(0, 123, 255, 0.15)',
                           backdropFilter: 'blur(12px)',
                           WebkitBackdropFilter: 'blur(12px)',
@@ -4975,13 +5031,15 @@ const handleSubmitToTeacher = async () => {
                       >
                         {[
                           // { icon: <IconHighlight size={20} />, value: "knowledge" },
-                          { icon: <IconGraph size={24} />, value: "chat", label: "Referensi Pustaka" },
-                          { icon: <IconList size={24} />, value: "bibliography", label: "Daftar Pustaka" },
-                          { icon: <IconHistory size={24} />, value: "history", label: "Riwayat" },
-                          { icon: <IconHighlight size={24} />, value: "annotation", label: "Catatan" },
-                          { icon: <IconEdit size={24} />, value: "draft", label: "Tulis Draft Artikel" },
-                          { icon: <IconActivity size={24} />, value: "activity", label: "Log Aktivitas", special: true },
-                        ].map((item) => (
+                          { icon: <IconGraph size={isTablet ? 18 : 22} />, value: "chat", label: "Referensi Pustaka", color: "blue" },
+                          { icon: <IconList size={isTablet ? 18 : 22} />, value: "bibliography", label: "Daftar Pustaka", color: "teal" },
+                          { icon: <IconHistory size={isTablet ? 18 : 22} />, value: "history", label: "Riwayat", color: "grape" },
+                          { icon: <IconHighlight size={isTablet ? 18 : 22} />, value: "annotation", label: "Catatan", color: "yellow" },
+                          { icon: <IconEdit size={isTablet ? 18 : 22} />, value: "draft", label: "Tulis Draft Artikel", color: "blue" },
+                          { icon: <IconActivity size={isTablet ? 18 : 22} />, value: "activity", label: "Log Aktivitas", special: true },
+                        ].map((item) => {
+                          const active = item.value !== "activity" && activeTab === item.value;
+                          return (
                           <Tooltip
                             key={item.value}
                             label={item.label}
@@ -5002,29 +5060,32 @@ const handleSubmitToTeacher = async () => {
                                 }
                               }}
                               radius="xl"
-                              size="lg"
+                              size={isTablet ? "md" : "lg"}
                               variant={
-                                item.value === "activity" 
-                                  ? "gradient" 
-                                  : activeTab === item.value 
-                                    ? "filled" 
+                                item.value === "activity"
+                                  ? "gradient"
+                                  : active
+                                    ? "filled"
                                     : "light"
                               }
-                              color={item.value === "activity" ? "orange" : "#007BFF"}
+                              color={item.value === "activity" ? "orange" : item.color}
                               gradient={item.value === "activity" ? { from: 'orange', to: 'red' } : undefined}
-                              style={{
-                                // border: activeTab === item.value ? "2px solid transparent" : "2px solid #007BFF",
-                                // backgroundColor: activeTab === item.value ? "#007BFF" : "transparent",
-                                // color: activeTab === item.value ? "#fff" : "#007BFF",
-                                transition: 'all 0.3s ease',
-                                boxShadow: activeTab === item.value ? '0 0 8px rgba(0, 123, 255, 0.4)' : 'none',
-                                transform: activeTab === item.value ? 'scale(1.1)' : 'scale(1)',
+                              styles={{
+                                root: {
+                                  transition: 'all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                                  animation: active ? 'tab-active-glow 1.6s ease-in-out infinite' : undefined,
+                                  transform: active ? 'scale(1.16)' : 'scale(1)',
+                                  '&:hover': {
+                                    transform: 'scale(1.22)',
+                                  },
+                                },
                               }}
                             >
                               {item.icon}
                             </ActionIcon>
                           </Tooltip>
-                        ))}
+                          );
+                        })}
                       </Box>
 
                       <div
@@ -5320,7 +5381,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                             {/* Header section dengan informasi */}
                             <Group align="center" justify="space-between" mb="md">
                               <Group align="center" gap="sm">
-                                <Box
+                                <Paper
                                   style={{
                                     backgroundColor: "#007BFF",
                                     padding: "8px",
@@ -5328,10 +5389,16 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
+                                    transition: "all 0.2s ease",
+                                  }}
+                                  styles={{
+                                    root: {
+                                      "&:hover": { transform: "scale(1.08) rotate(-3deg)" },
+                                    },
                                   }}
                                 >
                                   <IconList size={18} color="#fff" />
-                                </Box>
+                                </Paper>
                                 <Box>
                                   <Title
                                     order={4}
@@ -5367,11 +5434,18 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                 leftSection={<IconSearch size={16} />}
                                 value={isClient ? searchQuery : ""}
                                 suppressHydrationWarning={true}
-                                style={{
-                                  backgroundColor:
-                                    computedColorScheme === "dark"
-                                      ? "#2a2a2a"
-                                      : "#f8f9fa",
+                                styles={{
+                                  input: {
+                                    backgroundColor:
+                                      computedColorScheme === "dark"
+                                        ? "#2a2a2a"
+                                        : "#f8f9fa",
+                                    transition: "all 0.2s ease",
+                                    "&:focus": {
+                                      borderColor: "#007BFF",
+                                      boxShadow: "0 0 0 3px rgba(0, 123, 255, 0.15)",
+                                    },
+                                  },
                                 }}
                                 onChange={(e) => {
                                   setSearchQuery(e.currentTarget.value);
@@ -5394,6 +5468,21 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                             >
                               {filteredArticles.length === 0 ? (
                                 <Box ta="center" py="xl">
+                                  <Box
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      width: 56,
+                                      height: 56,
+                                      borderRadius: "50%",
+                                      backgroundColor: computedColorScheme === "dark" ? "rgba(0,123,255,0.12)" : "rgba(0,123,255,0.08)",
+                                      marginBottom: 12,
+                                      animation: "gentle-float 2s ease-in-out infinite",
+                                    }}
+                                  >
+                                    <IconSearch size={24} color="#007BFF" />
+                                  </Box>
                                   <Text size="sm" c="dimmed">
                                     {searchQuery
                                       ? "Tidak ditemukan artikel yang sesuai dengan pencarian Anda"
@@ -5413,7 +5502,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                               ) : (
                                 <Stack gap="md">
                                   {filteredArticles.map((item, i) => (
-                                    <Box
+                                    <Paper
                                       key={item.id}
                                       p="md"
                                       style={{
@@ -5429,15 +5518,23 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                         }`,
                                         cursor: "pointer",
                                         transition: "all 0.2s ease",
-                                        "&:hover": {
-                                          backgroundColor:
-                                            computedColorScheme === "dark"
-                                              ? "#2a2a2a"
-                                              : "#f8f9fa",
-                                          borderColor:
-                                            computedColorScheme === "dark"
-                                              ? "#444"
-                                              : "#dee2e6",
+                                      }}
+                                      styles={{
+                                        root: {
+                                          "&:hover": {
+                                            transform: "translateY(-4px)",
+                                            boxShadow: computedColorScheme === "dark"
+                                              ? "0 6px 16px rgba(0,0,0,0.4)"
+                                              : "0 6px 16px rgba(0,0,0,0.08)",
+                                            backgroundColor:
+                                              computedColorScheme === "dark"
+                                                ? "#2a2a2a"
+                                                : "#f8f9fa",
+                                            borderColor:
+                                              computedColorScheme === "dark"
+                                                ? "#444"
+                                                : "#dee2e6",
+                                          },
                                         },
                                       }}
                                       onClick={() => {
@@ -5597,7 +5694,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                           AI Chat
                                         </Button> */}
                                       </Group>
-                                    </Box>
+                                    </Paper>
                                   ))}
                                 </Stack>
                               )}
@@ -6006,16 +6103,25 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                   }}
                 >
 
-                  {/* Toggle untuk switch antara Concept Map dan Editor */}
-                  <Box mb="md">
+                  {/* Toggle untuk switch antara Concept Map dan Editor, plus slot
+                      untuk indikator riwayat/autosave dari PlateEditor */}
+                  <Group mb="md" justify="space-between" wrap="wrap" gap="sm">
                     <SegmentedControl
                       value={activeCentralView}
                       onChange={setActiveCentralView}
+                      radius="md"
+                      color="blue"
+                      transitionDuration={200}
+                      transitionTimingFunction="ease"
+                      styles={{
+                        root: { transition: 'box-shadow 0.2s ease' },
+                        label: { transition: 'transform 0.2s ease' },
+                      }}
                       data={[
                         {
                           value: 'conceptMap',
                           label: (
-                            <Center>
+                            <Center style={{ transform: activeCentralView === 'conceptMap' ? 'scale(1.12)' : 'scale(1)', transition: 'transform 0.2s ease' }}>
                               <IconMap2 size={16} />
                               <Box ml="sm">Peta Konsep</Box>
                             </Center>
@@ -6024,7 +6130,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                         {
                           value: 'editor',
                           label: (
-                            <Center>
+                            <Center style={{ transform: activeCentralView === 'editor' ? 'scale(1.12)' : 'scale(1)', transition: 'transform 0.2s ease' }}>
                               <IconEdit size={16} />
                               <Box ml="sm">Editor Teks</Box>
                             </Center>
@@ -6032,7 +6138,8 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                         },
                       ]}
                     />
-                  </Box>
+                    <Box ref={setEditorStatusSlot} />
+                  </Group>
 
                   {/* Tampilkan konten berdasarkan state activeCentralView */}
                   {activeCentralView === 'conceptMap' ? (
@@ -6067,6 +6174,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                         isFromBrainstorming={isFromBrainstorming}
                         nodesData={article}
                         collaboration={collaborationConfig}
+                        statusSlot={editorStatusSlot}
                       />
                     ) : (
                       <Box
@@ -6150,7 +6258,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                       </Box>
 
                       {/* Action Buttons - hanya untuk editor mode */}
-                      <Group justify="flex-end" mt="sm" gap="md">
+                      <Group justify="flex-end" mt="sm" gap={isTablet ? "xs" : "md"} wrap="wrap">
                         <Button
                           variant="outline"
                           color="blue"
@@ -6162,12 +6270,13 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                             )
                           }
                           radius="md"
-                          size="md"
-                          px={24}
+                          size={isTablet ? "sm" : "md"}
+                          px={isTablet ? 14 : 24}
                           onClick={handleSaveDraft}
                           style={{
                             transition: 'all 0.2s ease',
                           }}
+                          styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
                           disabled={isScanning || loading}
                           loading={loading}
                         >
@@ -6179,16 +6288,18 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                           color="grape"
                           leftSection={<IconUsers size={18} />}
                           radius="md"
-                          size="md"
+                          size={isTablet ? "sm" : "md"}
                           disabled={!writerSession?.id}
                           onClick={() => setShareModalOpened(true)}
+                          style={{ transition: 'all 0.2s ease' }}
+                          styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
                         >
                           Kolaborator
                         </Button>
 
                         <Button
-                          variant="filled"
-                          color="blue"
+                          variant="gradient"
+                          gradient={{ from: 'blue', to: 'cyan', deg: 45 }}
                           leftSection={
                             isScanning ? (
                               <Loader size={18} color="white" />
@@ -6197,12 +6308,13 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                             )
                           }
                           radius="md"
-                          size="md"
-                          px={24}
+                          size={isTablet ? "sm" : "md"}
+                          px={isTablet ? 14 : 24}
                           onClick={handleFinalSave}
                           style={{
                             transition: 'all 0.2s ease',
                           }}
+                          styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
                           disabled={isScanning}
                         >
                           {isScanning ? "AI Checker..." : "Simpan Final"}
@@ -6214,7 +6326,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                 {/* Panel Kanan */}
                 <Box
                   style={{
-                    width: isMobile ? "100%" : "280",
+                    width: isMobile ? "100%" : isTablet ? 260 : 300,
                     border: "1px solid #ccc",
                     borderRadius: "8px",
                     backgroundColor: computedColorScheme === "dark" ? "#2a2a2a" : "#f9f9f9",
@@ -6236,12 +6348,13 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                       display: 'flex',
                       justifyContent: 'center',
                       alignItems: 'center',
-                      gap: '16px',
-                      marginBottom: '20px',
-                      padding: '8px 12px',
+                      flexWrap: 'wrap',
+                      gap: isTablet ? '6px' : '10px',
+                      marginBottom: '16px',
+                      padding: '8px 10px',
                       borderRadius: '20px',
                       backgroundColor: computedColorScheme === "dark" ? "rgba(0, 123, 255, 0.08)" : "rgba(0, 123, 255, 0.15)",
-                      marginInline: '20px',
+                      marginInline: 0,
                       boxShadow: '0 4px 12px rgba(0, 123, 255, 0.15)',
                       backdropFilter: 'blur(12px)',
                       WebkitBackdropFilter: 'blur(12px)',
@@ -6249,13 +6362,15 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                   >
                     {[
                       // { icon: <IconHighlight size={20} />, value: "knowledge" },
-                      { icon: <IconGraph size={24} />, value: "chat", label: "Referensi Pustaka" },
-                      { icon: <IconList size={24} />, value: "bibliography", label: "Daftar Pustaka" },
-                      { icon: <IconHistory size={24} />, value: "history", label: "Riwayat" },
-                      { icon: <IconHighlight size={24} />, value: "annotation", label: "Catatan" },
-                      { icon: <IconEdit size={24} />, value: "draft", label: "Tulis Draft Artikel" },
-                      { icon: <IconActivity size={24} />, value: "activity", label: "Log Aktivitas", special: true },
-                    ].map((item) => (
+                      { icon: <IconGraph size={isTablet ? 18 : 22} />, value: "chat", label: "Referensi Pustaka", color: "blue" },
+                      { icon: <IconList size={isTablet ? 18 : 22} />, value: "bibliography", label: "Daftar Pustaka", color: "teal" },
+                      { icon: <IconHistory size={isTablet ? 18 : 22} />, value: "history", label: "Riwayat", color: "grape" },
+                      { icon: <IconHighlight size={isTablet ? 18 : 22} />, value: "annotation", label: "Catatan", color: "yellow" },
+                      { icon: <IconEdit size={isTablet ? 18 : 22} />, value: "draft", label: "Tulis Draft Artikel", color: "blue" },
+                      { icon: <IconActivity size={isTablet ? 18 : 22} />, value: "activity", label: "Log Aktivitas", special: true },
+                    ].map((item) => {
+                      const active = item.value !== "activity" && activeTab === item.value;
+                      return (
                       <Tooltip
                         key={item.value}
                         label={item.label}
@@ -6276,22 +6391,32 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                             }
                           }}
                           radius="xl"
-                          size="lg"
-                          variant={item.value !== "activity" && activeTab === item.value ? "filled" : "light"}
-                          color="#007BFF"
-                          style={{
-                            // border: activeTab === item.value ? "2px solid transparent" : "2px solid #007BFF",
-                            // backgroundColor: activeTab === item.value ? "#007BFF" : "transparent",
-                            // color: activeTab === item.value ? "#fff" : "#007BFF",
-                            transition: 'all 0.3s ease',
-                            boxShadow: (item.value !== "activity" && activeTab === item.value) ? '0 0 8px rgba(0, 123, 255, 0.4)' : 'none',
-                            transform: (item.value !== "activity" && activeTab === item.value) ? 'scale(1.1)' : 'scale(1)',
+                          size={isTablet ? "md" : "lg"}
+                          variant={
+                            item.value === "activity"
+                              ? "gradient"
+                              : active
+                                ? "filled"
+                                : "light"
+                          }
+                          color={item.value === "activity" ? "orange" : item.color}
+                          gradient={item.value === "activity" ? { from: 'orange', to: 'red' } : undefined}
+                          styles={{
+                            root: {
+                              transition: 'all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                              animation: active ? 'tab-active-glow 1.6s ease-in-out infinite' : undefined,
+                              transform: active ? 'scale(1.16)' : 'scale(1)',
+                              '&:hover': {
+                                transform: 'scale(1.22)',
+                              },
+                            },
                           }}
                         >
                           {item.icon}
                         </ActionIcon>
                       </Tooltip>
-                    ))}
+                      );
+                    })}
                   </Box>
 
                   <div
@@ -6840,7 +6965,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                         {/* Header section dengan informasi */}
                         <Group align="center" justify="space-between" mb="md">
                           <Group align="center" gap="sm">
-                            <Box
+                            <Paper
                               style={{
                                 backgroundColor: "#007BFF",
                                 padding: "8px",
@@ -6848,10 +6973,16 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
+                                transition: "all 0.2s ease",
+                              }}
+                              styles={{
+                                root: {
+                                  "&:hover": { transform: "scale(1.08) rotate(-3deg)" },
+                                },
                               }}
                             >
                               <IconList size={18} color="#fff" />
-                            </Box>
+                            </Paper>
                             <Box>
                               <Title
                                 order={4}
@@ -6887,11 +7018,18 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                             leftSection={<IconSearch size={16} />}
                             value={isClient ? searchQuery : ""}
                             suppressHydrationWarning={true}
-                            style={{
-                              backgroundColor:
-                                computedColorScheme === "dark"
-                                  ? "#2a2a2a"
-                                  : "#f8f9fa",
+                            styles={{
+                              input: {
+                                backgroundColor:
+                                  computedColorScheme === "dark"
+                                    ? "#2a2a2a"
+                                    : "#f8f9fa",
+                                transition: "all 0.2s ease",
+                                "&:focus": {
+                                  borderColor: "#007BFF",
+                                  boxShadow: "0 0 0 3px rgba(0, 123, 255, 0.15)",
+                                },
+                              },
                             }}
                             onChange={(e) => {
                               setSearchQuery(e.currentTarget.value);
@@ -6914,6 +7052,21 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                         >
                           {filteredArticles.length === 0 ? (
                             <Box ta="center" py="xl">
+                              <Box
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  width: 56,
+                                  height: 56,
+                                  borderRadius: "50%",
+                                  backgroundColor: computedColorScheme === "dark" ? "rgba(0,123,255,0.12)" : "rgba(0,123,255,0.08)",
+                                  marginBottom: 12,
+                                  animation: "gentle-float 2s ease-in-out infinite",
+                                }}
+                              >
+                                <IconSearch size={24} color="#007BFF" />
+                              </Box>
                               <Text size="sm" c="dimmed">
                                 {searchQuery
                                   ? "Tidak ditemukan artikel yang sesuai dengan pencarian Anda"
@@ -6933,7 +7086,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                           ) : (
                             <Stack gap="md">
                               {filteredArticles.map((item, i) => (
-                                <Box
+                                <Paper
                                   key={item.id}
                                   p="md"
                                   style={{
@@ -6949,15 +7102,23 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                     }`,
                                     cursor: "pointer",
                                     transition: "all 0.2s ease",
-                                    "&:hover": {
-                                      backgroundColor:
-                                        computedColorScheme === "dark"
-                                          ? "#2a2a2a"
-                                          : "#f8f9fa",
-                                      borderColor:
-                                        computedColorScheme === "dark"
-                                          ? "#444"
-                                          : "#dee2e6",
+                                  }}
+                                  styles={{
+                                    root: {
+                                      "&:hover": {
+                                        transform: "translateY(-4px)",
+                                        boxShadow: computedColorScheme === "dark"
+                                          ? "0 6px 16px rgba(0,0,0,0.4)"
+                                          : "0 6px 16px rgba(0,0,0,0.08)",
+                                        backgroundColor:
+                                          computedColorScheme === "dark"
+                                            ? "#2a2a2a"
+                                            : "#f8f9fa",
+                                        borderColor:
+                                          computedColorScheme === "dark"
+                                            ? "#444"
+                                            : "#dee2e6",
+                                      },
                                     },
                                   }}
                                   onClick={() => {
@@ -7117,7 +7278,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                       AI Chat
                                     </Button> */}
                                   </Group>
-                                </Box>
+                                </Paper>
                               ))}
                             </Stack>
                           )}
@@ -8323,7 +8484,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
               box-shadow: 0 8px 32px rgba(0, 123, 255, 0.3);
             }
             50% {
-              transform: scale(1.05);
+              transform: scale(1.12);
               box-shadow: 0 12px 40px rgba(0, 123, 255, 0.5);
             }
             100% {
