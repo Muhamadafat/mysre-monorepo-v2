@@ -34,6 +34,14 @@ import { CodeBlockPlugin, CodeLinePlugin, CodeSyntaxPlugin } from "@platejs/code
 import { ImagePlugin } from "@platejs/media/react";
 import { LinkPlugin } from "@platejs/link/react";
 import { KEYS } from "platejs";
+import { DndPlugin } from "@platejs/dnd";
+import { CommentPlugin } from "@platejs/comment/react";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
+import { createElement } from "react";
+
+import { BlockDraggable } from "./nodes/BlockDraggable";
+import { CommentLeaf } from "./comments";
 
 import { ParagraphElement } from "./nodes/ParagraphElement";
 import { makeHeadingElement } from "./nodes/HeadingElement";
@@ -106,6 +114,20 @@ export const WriterEditorKit = [
   }).withComponent(ImageElement),
 
   LinkPlugin.withComponent(LinkElement),
+
+  // Drag-and-drop block reordering (handle in the left gutter of every
+  // top-level block). DndProvider is mounted above the editor by the plugin
+  // itself, so nothing outside <Plate> needs to know about react-dnd.
+  DndPlugin.configure({
+    options: { enableScroller: true },
+    render: {
+      aboveNodes: BlockDraggable,
+      aboveSlate: ({ children }) => createElement(DndProvider, { backend: HTML5Backend }, children),
+    },
+  }),
+
+  // Inline comment anchors (see ./comments.tsx).
+  CommentPlugin.withComponent(CommentLeaf),
 ];
 
 export { uploadFile };

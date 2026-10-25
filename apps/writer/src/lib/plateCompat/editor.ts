@@ -27,6 +27,8 @@ import { resolveBlockId } from "./types";
 
 type Listener = () => void;
 
+export type Authorship = "user" | "ai" | "system";
+
 /**
  * BlockNote's own types declare every "reference block" parameter as
  * non-nullable, but plenty of call sites across this app pass through a
@@ -43,6 +45,27 @@ export class BlockNoteCompatEditor {
   /** Escape hatch for anything not covered below. */
   get raw(): PlateEditor {
     return this.plate;
+  }
+
+  /**
+   * Who any content inserted right now should be credited to in the
+   * "Kontribusi" stats (read by PlateEditor's `apply` wrapper):
+   * - "user":   the local collaborator (the default — typing, pasting, menus)
+   * - "ai":     the local collaborator, flagged as AI-generated
+   * - "system": nobody — loading a saved draft / restoring undo snapshots,
+   *             which re-inserts existing content rather than writing new.
+   */
+  authorship: Authorship = "user";
+
+  /** Run `fn` synchronously with every insertion credited per `mode`. */
+  withAuthorship<T>(mode: Authorship, fn: () => T): T {
+    const previous = this.authorship;
+    this.authorship = mode;
+    try {
+      return fn();
+    } finally {
+      this.authorship = previous;
+    }
   }
 
   private listeners = new Set<Listener>();
