@@ -7888,47 +7888,8 @@ INSTRUKSI:
             </div>
           )}
 
-          {/* Enhanced Continue Writing Button with BlockNote-style animations */}
-          {continueState.isVisible && !isAutoContinuing && !aiStreamingState.isStreaming && !aiStreamingState.showControls && (
-            <div
-              ref={continueRef}
-              className="continue-button-wrapper"
-              style={{
-                position: 'fixed',
-                left: continueState.position.x,
-                top: continueState.position.y,
-                zIndex: 999,
-                pointerEvents: 'auto',
-                transition: 'all 0.2s ease-out' // Smooth transition for position changes
-              }}
-            >
-              <Tooltip label="Lanjutkan Menulis dengan AI" position="top" withArrow>
-                <ActionIcon
-                  className="continue-button"
-                  size="lg"
-                  radius="xl"
-                  variant="gradient"
-                  gradient={{ from: 'blue', to: 'cyan' }}
-                  onClick={() => handleInlineAIAction('continue')}
-                  style={{
-                    boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3), 0 0 20px rgba(59, 130, 246, 0.2)',
-                    border: '2px solid rgba(255, 255, 255, 0.3)',
-                    backdropFilter: 'blur(10px)',
-                    position: 'relative',
-                    overflow: 'visible'
-                  }}
-                >
-                  <IconSparkles
-                    className="icon-sparkle"
-                    size={18}
-                    style={{
-                      filter: 'drop-shadow(0 0 4px rgba(255, 255, 255, 0.8))'
-                    }}
-                  />
-                </ActionIcon>
-              </Tooltip>
-            </div>
-          )}
+          {/* The floating "Lanjutkan Menulis dengan AI" button that used to sit
+              here is gone: ghost-text autocomplete (plate/copilot.tsx) replaces it. */}
 
           {/* NEW: AI Streaming Controls */}
           {aiStreamingState.showControls && aiStreamingState.currentBlock && (
