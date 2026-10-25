@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.45",
+    "@ai-sdk/react": "^4.0.157",
     "@blocknote/core": "^0.54.0",
     "@blocknote/mantine": "^0.54.0",
     "@blocknote/react": "^0.54.0",
+    "@platejs/ai": "~53.3.12",
     "@platejs/basic-nodes": "^53.0.0",
     "@platejs/basic-styles": "^53.0.0",
     "@platejs/code-block": "^53.0.0",

@@ -42,6 +42,7 @@ import { createElement } from "react";
 
 import { BlockDraggable } from "./nodes/BlockDraggable";
 import { CommentLeaf } from "./comments";
+import { WriterCopilotPlugin } from "./copilot";
 
 import { ParagraphElement } from "./nodes/ParagraphElement";
 import { makeHeadingElement } from "./nodes/HeadingElement";
@@ -128,6 +129,9 @@ export const WriterEditorKit = [
 
   // Inline comment anchors (see ./comments.tsx).
   CommentPlugin.withComponent(CommentLeaf),
+
+  // AI autocomplete ghost text (see ./copilot.tsx).
+  WriterCopilotPlugin,
 ];
 
 export { uploadFile };
