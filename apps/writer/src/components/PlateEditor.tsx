@@ -1,14 +1,26 @@
 "use client";
 
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createPortal } from "react-dom";
 import * as Y from "yjs";
 import YPartyKitProvider from "y-partykit/provider";
 import { Plate, PlateContent, usePlateEditor } from "platejs/react";
 import { YjsPlugin } from "@platejs/yjs/react";
-import { YjsEditor } from "@slate-yjs/core";
+import { YjsEditor, slateNodesToInsertDelta } from "@slate-yjs/core";
+import { NodeApi, RangeApi, nanoid } from "platejs";
+import { getCommentKey } from "@platejs/comment";
+import { CommentPlugin } from "@platejs/comment/react";
+import {
+  CommentUIContext,
+  type CommentReply,
+  type CommentThread,
+  type CommentUIContextValue,
+} from "@/components/plate/comments";
+import { CommentsPanel, type CommentUser } from "@/components/plate/CommentsPanel";
+import { FloatingCommentButton } from "@/components/plate/FloatingCommentButton";
 import { WriterEditorKit } from "@/components/plate/kit";
 import { BlockNoteCompatEditor } from "@/lib/plateCompat/editor";
-import type { Block, PartialBlock } from "@/lib/plateCompat/types";
+import type { Block, InlineContent, PartialBlock } from "@/lib/plateCompat/types";
 import { blockNoteBlocksToPlateValue } from "@/lib/plateCompat/convert";
 import { PartyKitUnifiedProvider } from "@/lib/plateCompat/yjsProvider";
 import {
@@ -63,11 +75,14 @@ import {
   IconRobot,
   IconSparkles,
   IconTrash,
+  IconWifiOff,
+  IconMessage,
   IconX,
 } from "@tabler/icons-react";
 import { generateText } from "ai";
 import "katex/dist/katex.min.css";
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle } from "react";
+import VoiceAssistant from "@/components/voice/VoiceAssistant";
 // import Katex from "react-katex";
 const LaTeXModal = React.lazy(() => import("./LaTeXModal"));
 const SearchModal = React.lazy(() => import("./SearchModal"));
@@ -118,6 +133,15 @@ interface PlateEditorRef {
   canRedo: () => boolean;
   openLatexModal: () => void;
   isCollaborative: () => boolean;
+  /** Runs one realtime-voice command (see `runVoiceCommand`). */
+  runVoiceCommand: (name: string, args?: Record<string, unknown>) => Promise<VoiceCommandResult>;
+}
+
+export interface VoiceCommandResult {
+  ok: boolean;
+  /** Told back to the voice model, which phrases it for the user. */
+  message: string;
+  data?: unknown;
 }
 
 interface CollaborationConfig {
@@ -160,6 +184,9 @@ interface PlateEditorProps {
    * standalone local document — multiple users editing the same roomId see
    * each other's changes and cursors in realtime. */
   collaboration?: CollaborationConfig;
+  /** Element the page reserves (next to its view toggle) for the editor's
+   * history/autosave indicators. Omitted -> they render in the toolbar. */
+  statusSlot?: HTMLElement | null;
 }
 
 interface ContinueWritingState {
@@ -188,6 +215,18 @@ interface AIStreamingState {
   totalChunks: number;
   currentChunk: number;
 }
+
+const IDLE_AI_STREAMING_STATE: AIStreamingState = {
+  isStreaming: false,
+  streamedText: "",
+  currentBlock: null,
+  originalText: "",
+  showControls: false,
+  position: { x: 0, y: 0 },
+  progress: 0,
+  totalChunks: 0,
+  currentChunk: 0,
+};
 
 // Undo/Redo State
 interface UndoRedoState {
@@ -245,7 +284,7 @@ const animationStyles = `
     }
     50% {
       opacity: 0.8;
-      transform: scale(1.05);
+      transform: scale(1.12);
     }
   }
 
@@ -272,7 +311,7 @@ const animationStyles = `
       transform: translateY(0px);
     }
     50% {
-      transform: translateY(-2px);
+      transform: translateY(-4px);
     }
   }
 
@@ -309,7 +348,7 @@ const animationStyles = `
 
   @keyframes progress-pulse {
     0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.05); }
+    50% { transform: scale(1.12); }
   }
 
   .continue-button {
@@ -323,7 +362,7 @@ const animationStyles = `
     animation: sparkle-pulse 1s ease-in-out infinite, 
                sparkle-glow 1s ease-in-out infinite,
                sparkle-float 1.5s ease-in-out infinite;
-    transform: scale(1.1) !important;
+    transform: scale(1.16) !important;
   }
 
   .continue-button .icon-sparkle {
@@ -544,6 +583,78 @@ function acquireCollaborationRoom(roomId: string): CollaborationRoomHandle {
   return entry;
 }
 
+/** Resolves once y-partykit has completed its initial sync (or after 5s). */
+function waitForProviderSync(provider: YPartyKitProvider): Promise<void> {
+  if ((provider as any).synced) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      provider.off("sync", onSync);
+      resolve();
+    };
+    const onSync = (isSynced: boolean) => {
+      if (isSynced) done();
+    };
+    const timer = setTimeout(done, 5000);
+    provider.on("sync", onSync);
+  });
+}
+
+/**
+ * The editor canvas starts EMPTY on every page load (user-requested) —
+ * the PartyKit room persists the Y.Doc, so without this a refresh would
+ * bring the previous text straight back. Named versions are kept in
+ * Postgres via "Simpan Versi", not in the live room.
+ *
+ * Only done when nobody else is in the room right now: if a collaborator is
+ * mid-session, wiping the shared document would delete their live work, so
+ * a refreshing user just rejoins it instead. Runs once per room per page
+ * load (tracked on `window`, so a dev Fast Refresh re-running this module
+ * doesn't wipe the canvas again), and before the editor binds to the doc,
+ * so the clear is a plain Y-level reset rather than a stream of editor ops.
+ */
+/**
+ * Guarantees the shared document holds at least one (empty) paragraph
+ * before the editor binds to it.
+ *
+ * @platejs/yjs's own init only seeds an EMPTY room, and it decides
+ * "empty" by `sharedRoot._start == null` — but a room whose content was
+ * deleted (cleared by resetRoomOnFirstJoinIfAlone below, or emptied in an
+ * earlier session) still has tombstoned items, so `_start` is set and it
+ * skips seeding. Plate then fills the editor with a default paragraph
+ * directly in memory, with no operation that ever reaches Yjs, so the
+ * editor holds a block the Y.Doc doesn't — and the very first keystroke
+ * throws "Path doesn't match yText" and nothing syncs from then on.
+ */
+function ensureRoomHasContent(doc: Y.Doc) {
+  const content = doc.get("content", Y.XmlText);
+  if (content.length > 0) return;
+  doc.transact(() => {
+    content.applyDelta(slateNodesToInsertDelta(blockNoteBlocksToPlateValue([]) as any));
+  });
+}
+
+function resetRoomOnFirstJoinIfAlone(room: CollaborationRoomHandle, roomId: string) {
+  const w = window as unknown as { __writerResetRooms?: Set<string> };
+  const resetRooms = (w.__writerResetRooms ||= new Set<string>());
+  if (resetRooms.has(roomId)) return;
+  resetRooms.add(roomId);
+
+  const awareness = room.provider.awareness;
+  const othersOnline = [...awareness.getStates().keys()].some((clientId) => clientId !== awareness.clientID);
+  if (othersOnline) return;
+
+  const { doc } = room;
+  doc.transact(() => {
+    const content = doc.get("content", Y.XmlText);
+    if (content.length > 0) content.delete(0, content.length);
+    for (const name of ["commentThreads", "commentReplies", "wordStats"]) {
+      const map = doc.getMap(name);
+      [...map.keys()].forEach((key) => map.delete(key));
+    }
+  });
+}
+
 function releaseCollaborationRoom(roomId: string) {
   const entry = collaborationRoomCache.get(roomId);
   if (!entry) return;
@@ -560,28 +671,181 @@ function releaseCollaborationRoom(roomId: string) {
   }
 }
 
-// Same text-extraction/word-splitting convention as draft/page.tsx's
-// extractTextFromBlockNote — kept independent here since that function is
-// local to the page component, not exported.
-function countWordsInDocument(blocks: Block[]): number {
-  const text = blocks
-    .map((block) => {
-      if (!block?.content) return "";
-      if (typeof block.content === "string") return block.content;
-      if (Array.isArray(block.content)) {
-        return block.content.map((item: any) => (typeof item === "string" ? item : item?.text || "")).join(" ");
+/** The JSON payload mcp-sre puts in `result.content[0].text`, if parseable. */
+function parseMcpPayload(data: any): any | null {
+  const text = data?.result?.content?.[0]?.text;
+  if (typeof text !== "string") return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The AI's answer text from whichever response shape came back — writer's
+ * own /api/chat returns `answer` (plus the raw JSON-RPC `result`), older
+ * shapes used `content`/`text`/`data`.
+ */
+function extractMcpText(data: any): string {
+  if (typeof data?.answer === "string" && data.answer) return data.answer;
+  if (typeof data?.content === "string" && data.content) return data.content;
+  const payload = parseMcpPayload(data);
+  if (payload) return String(payload.response || payload.answer || payload.text || payload.content || "");
+  if (typeof data?.result?.content?.[0]?.text === "string") return data.result.content[0].text;
+  if (typeof data?.text === "string") return data.text;
+  if (data?.success && data?.data) return String(data.data.content || data.data.text || data.data.message || "");
+  return "";
+}
+
+/**
+ * Strips what mcp-sre's chat answers append for its own chat UI but must
+ * not land in an article: reference markers (`[G-8f04]`, `[1] [2] …`) and
+ * LangChain metadata leaking as ` additional_kwargs=…`. Line breaks are
+ * kept (structure generation returns multi-line markdown).
+ */
+function cleanAIText(text: string): string {
+  let out = text;
+  const metadataStart = out.indexOf(" additional_kwargs=");
+  if (metadataStart !== -1) out = out.slice(0, metadataStart);
+  out = out.replace(/[ \t]*\[(?:G-[^\]]+|\d+)\]/g, "");
+  out = out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n");
+  return out.trim();
+}
+
+/**
+ * When asked to continue a text, the model often repeats it (or its last
+ * sentence) before writing the continuation — appended after the original,
+ * that would show the same sentence twice. Drops such an echoed prefix.
+ */
+function stripEchoedPrefix(aiText: string, existing: string): string {
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  const ai = norm(aiText);
+  const before = norm(existing);
+  if (!before) return ai;
+  if (ai.toLowerCase().startsWith(before.toLowerCase())) return ai.slice(before.length).trim();
+  const sentences = before.split(/(?<=[.!?])\s+/);
+  const last = sentences[sentences.length - 1];
+  if (last && last.length >= 15 && ai.toLowerCase().startsWith(last.toLowerCase())) {
+    return ai.slice(last.length).trim();
+  }
+  return ai;
+}
+
+// ---- "Kontribusi" (per-collaborator word count) ---------------------------
+//
+// Every text leaf carries who wrote it: `author` (collaboration user id) and
+// `ai: true` when it came from an AI insertion. Those are ordinary Slate leaf
+// props, so Yjs syncs them to every collaborator, they survive undo/redo,
+// and deleting text deletes its attribution with it. The counts are then
+// simply DERIVED from the current document — never accumulated from edit
+// deltas — so they're always exactly "how many words in the document right
+// now each person (and each person's AI) wrote", and deleting words lowers
+// the count of whoever wrote them, whoever does the deleting.
+
+type Contribution = { typed: number; ai: number };
+
+/** Leaf props marking who wrote a piece of text. */
+function authorProps(author: string, ai: boolean): { author: string; ai?: true } {
+  return ai ? { author, ai: true } : { author };
+}
+
+/** Credits every not-yet-attributed text leaf inside `node` (an insert_node payload). */
+function stampAuthorship(node: any, author: string, ai: boolean): any {
+  if (!node || typeof node !== "object") return node;
+  if (typeof node.text === "string") {
+    return typeof node.author === "string" ? node : { ...node, ...authorProps(author, ai) };
+  }
+  if (!Array.isArray(node.children)) return node;
+  let changed = false;
+  const children = node.children.map((child: any) => {
+    const stamped = stampAuthorship(child, author, ai);
+    if (stamped !== child) changed = true;
+    return stamped;
+  });
+  return changed ? { ...node, children } : node;
+}
+
+/**
+ * Counts words per author over the whole Slate tree. A word is a maximal
+ * run of non-whitespace inside one text block; a word whose characters were
+ * written by several people (e.g. someone appended "s" to another person's
+ * word) is credited to whoever wrote most of its characters, so every word
+ * in the document is counted exactly once. Unattributed text (drafts saved
+ * before attribution existed) is counted for nobody.
+ */
+function computeContributions(nodes: any[]): Record<string, Contribution> {
+  const result: Record<string, Contribution> = {};
+  let owners: (string | null)[] = [];
+  let chars: string[] = [];
+
+  const creditWord = (start: number, end: number) => {
+    const tally = new Map<string, number>();
+    let best: string | null = null;
+    let bestCount = 0;
+    for (let i = start; i < end; i++) {
+      const owner = owners[i];
+      if (owner === null) continue;
+      const count = (tally.get(owner) || 0) + 1;
+      tally.set(owner, count);
+      if (count > bestCount) {
+        best = owner;
+        bestCount = count;
       }
-      return "";
-    })
-    .join("\n")
-    .trim();
-  return text.split(/\s+/).filter(Boolean).length;
+    }
+    // Majority must also beat the unattributed characters, otherwise a
+    // one-letter edit to legacy text would claim the whole word.
+    if (best === null || bestCount * 2 < end - start) return;
+    const isAI = best.startsWith("ai:");
+    const author = best.slice(3);
+    const entry = (result[author] ||= { typed: 0, ai: 0 });
+    if (isAI) entry.ai += 1;
+    else entry.typed += 1;
+  };
+
+  const flushBlock = () => {
+    let wordStart = -1;
+    for (let i = 0; i <= chars.length; i++) {
+      const isSpace = i === chars.length || /\s/.test(chars[i]);
+      if (isSpace) {
+        if (wordStart !== -1) creditWord(wordStart, i);
+        wordStart = -1;
+      } else if (wordStart === -1) {
+        wordStart = i;
+      }
+    }
+    owners = [];
+    chars = [];
+  };
+
+  const walk = (node: any) => {
+    if (!node || typeof node !== "object") return;
+    if (typeof node.text === "string") {
+      const owner = typeof node.author === "string" ? `${node.ai === true ? "ai" : "me"}:${node.author}` : null;
+      for (const ch of node.text) {
+        chars.push(ch);
+        owners.push(owner);
+      }
+      return;
+    }
+    if (!Array.isArray(node.children)) return;
+    // Links are inline — their text continues the surrounding words.
+    // Every other element is a block boundary.
+    const isInline = node.type === "a";
+    if (!isInline) flushBlock();
+    node.children.forEach(walk);
+    if (!isInline) flushBlock();
+  };
+
+  nodes.forEach(walk);
+  flushBlock();
+  return result;
 }
 
 // Main component
 const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
   function PlateEditorComponent(
-    { onContentChange, style, onLogFormula, onLogEdit, mcpContext, writerSession, projectId, isFromBrainstorming, nodesData, collaboration }: PlateEditorProps,
+    { onContentChange, style, onLogFormula, onLogEdit, mcpContext, writerSession, projectId, isFromBrainstorming, nodesData, collaboration, statusSlot }: PlateEditorProps,
     ref
   ) {
     const computedColorScheme = useComputedColorScheme("light");
@@ -703,7 +967,17 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
     });
     const inlineAIRef = useClickOutside(() => setInlineAIState(prev => ({ ...prev, isVisible: false })));
 
-    const callMCPAPI = async (systemPrompt: string, maxTokens: number = 2000): Promise<string | null> => {
+    /**
+     * `writer` routes the prompt to mcp-sre's writer_generate, which follows
+     * it as a writing task (pral_chat answers everything like a question).
+     * `retrievalQuery` is what the references are searched with — keep it
+     * short and about the content, never the whole instruction prompt.
+     */
+    const callMCPAPI = async (
+      systemPrompt: string,
+      maxTokens: number = 2000,
+      writer?: { mode: "continue" | "rewrite" | "structure" | "content" | "summarize"; retrievalQuery: string }
+    ): Promise<string | null> => {
     try {
       // Check if mcpContext is null
       if (!mcpContext) {
@@ -718,7 +992,8 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
         forceWeb: false,
         mode: mcpContext.mode,
         ...(mcpContext.nodeId && { nodeId: mcpContext.nodeId }),
-        ...(mcpContext.nodeIds.length > 0 && { nodeIds: mcpContext.nodeIds })
+        ...(mcpContext.nodeIds.length > 0 && { nodeIds: mcpContext.nodeIds }),
+        ...(writer && { writer })
       };
 
       const response = await fetch('/api/chat', {
@@ -736,61 +1011,25 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
       const data = await response.json();
       console.log('MCP Response:', data);
 
-      if (data.content) {
-        let cleanContent = data.content;
-        
-        // Remove metadata that starts with ' additional_kwargs='
-        const metadataStart = cleanContent.indexOf(' additional_kwargs=');
-        if (metadataStart !== -1) {
-          cleanContent = cleanContent.substring(0, metadataStart);
-        }
-        
-        // Remove reference codes like [G-7475] [G-b171] etc at the end
-        cleanContent = cleanContent.replace(/\s*\[G-[^\]]+\](\s*\[G-[^\]]+\])*\s*\[\d+\](\s*\[\d+\])*\s*$/, '');
-        
-        // Remove any trailing whitespace or newlines
-        cleanContent = cleanContent.trim();
-        
-        return cleanContent;
+      // mcp-sre answers without writing anything when it has no node /
+      // article to ground on — that sentence must never be typed into the
+      // document as if it were the AI's writing.
+      const rawText = extractMcpText(data);
+      const actionType = parseMcpPayload(data)?.metadata?.action?.action_type;
+      if (actionType === "no_context" || rawText.trim() === "Anda belum memilih node") {
+        const err = new Error(
+          "AI butuh konteks: tambahkan minimal satu artikel/referensi ke project ini, lalu coba lagi."
+        ) as Error & { noRetry?: boolean };
+        err.noRetry = true;
+        throw err;
       }
-      
-      if (data.result?.content?.[0]?.text) {
-        try {
-          // Parse the JSON string from the text field
-          const parsedContent = JSON.parse(data.result.content[0].text);
-          if (parsedContent.success && parsedContent.response) {
-            return parsedContent.response;
-          } else if (parsedContent.response) {
-            return parsedContent.response;
-          } else {
-            return parsedContent.text || parsedContent.content || '';
-          }
-        } catch (parseError) {
-          // If parsing fails, return the text directly
-          return data.result.content[0].text;
-        }
-      }
-      // Handle different response formats from MCP
-      // if (data.success && data.data) {
-      //   // Extract text from MCP response - adjust based on actual response format
-      //   return data.data.content || data.data.text || data.data.message || '';
-      // } else if (data.text) {
-      //   return data.text;
-      // } else if (data.content) {
-      //   return data.content;
-      // } else {
-      //   throw new Error(data.error || 'Invalid response format from MCP');
-      // }
-      if (data.answer) {
-        return data.answer;
-      } else if (data.text) {
-        return data.text;
-      } else if (data.success && data.data) {
-        return data.data.content || data.data.text || data.data.message || '';
-      } else {
+
+      const cleaned = cleanAIText(rawText);
+      if (!cleaned) {
         console.error('Unexpected response format:', data);
         throw new Error(data.error?.message || 'Invalid response format from MCP');
       }
+      return cleaned;
     } catch (error) {
       console.error('MCP API call failed:', error);
       throw error;
@@ -931,6 +1170,11 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
                 options: {
                   cursors: { data: { name: collaboration!.user.name, color: collaboration!.user.color } },
                   ydoc: collabRoom.doc,
+                  // The provider's OWN awareness — without this the plugin
+                  // keeps cursor name/color on a private Awareness that is
+                  // never broadcast, so collaborators never see who's who
+                  // (remote cursors, "X sedang mengetik").
+                  awareness: collabRoom.provider.awareness,
                   // Passing the shared Y.XmlText explicitly (instead of
                   // letting @platejs/yjs derive it from `ydoc` on its own)
                   // makes it seed a brand-new room by applying the initial
@@ -941,6 +1185,18 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
                   // "localhost", e.g. this app's *.lvh.me dev domains).
                   sharedType: collabRoom.doc.get("content", Y.XmlText),
                   providers: [new PartyKitUnifiedProvider(collabRoom.provider)],
+                  // A UNIQUE origin per editor instance. @slate-yjs ignores
+                  // every Y change tagged with its own localOrigin (treating
+                  // it as already applied), and its default is ONE global
+                  // Symbol shared by all editors — so whenever two editors
+                  // in the same tab are bound to the same Y.Doc, even
+                  // briefly (dev Fast Refresh, switching between the page's
+                  // two editor layouts, an old editor whose deferred
+                  // teardown hasn't run yet), each silently skips the
+                  // other's edits. Their Slate trees then drift away from
+                  // the Y.Doc and every later keystroke throws "Path doesn't
+                  // match yText, cannot descent into non-yText".
+                  localOrigin: Symbol("writer-plate-editor"),
                 },
               }),
             ],
@@ -990,15 +1246,29 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
         clearTimeout(yjsDestroyTimer.current);
         yjsDestroyTimer.current = null;
       } else {
-        yjsInitPromise.current = yjsApi.init({
-          id: collaboration!.roomId,
-          // A brand-new room gets seeded with one empty paragraph — safe to
-          // pass a real value here now that `sharedType` above (not this
-          // value) is what decides whether that seeding goes through the
-          // crypto-hashing path or the plain applyDelta path.
-          value: blockNoteBlocksToPlateValue([]),
-          autoConnect: true,
-        });
+        const roomId = collaboration!.roomId;
+        yjsInitPromise.current = (async () => {
+          // @platejs/yjs only hears "synced" from providers it builds from a
+          // config — for a provider INSTANCE like ours it never resolves its
+          // sync wait and always sits out its full 5s timeout before binding
+          // the editor (the "have to wait before I can type" delay). So wait
+          // for y-partykit's own sync here (usually a few hundred ms) and
+          // let init skip its wait via autoConnect: false — the provider is
+          // already connected by acquireCollaborationRoom.
+          await waitForProviderSync(collabRoom.provider);
+          resetRoomOnFirstJoinIfAlone(collabRoom, roomId);
+          ensureRoomHasContent(collabRoom.doc);
+          await yjsApi.init({
+            id: roomId,
+            // A brand-new (or just-reset) room gets seeded with one empty
+            // paragraph — safe to pass a real value here now that
+            // `sharedType` above (not this value) is what decides whether
+            // that seeding goes through the crypto-hashing path or the plain
+            // applyDelta path.
+            value: blockNoteBlocksToPlateValue([]),
+            autoConnect: false,
+          });
+        })();
       }
 
       return () => {
@@ -1014,49 +1284,478 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [collabRoom, plateEditor]);
 
-    // Persistent per-collaborator word-count stats, stored in the Yjs doc
-    // itself (`wordStats` Y.Map, keyed by collaboration.user.id) so they
-    // survive reloads/reconnects and are visible to every collaborator, not
-    // just the tab that typed them.
+    // Live connection state of the collaboration room. Without the PartyKit
+    // server every tab silently edits its own private copy (nothing syncs —
+    // collaborators see different documents), so this is surfaced in the
+    // status bar instead of failing quietly.
+    const [collabStatus, setCollabStatus] = React.useState<"connecting" | "synced" | "offline">("connecting");
+    React.useEffect(() => {
+      if (!collabRoom) return;
+      const provider = collabRoom.provider as any;
+      const update = () => {
+        const next = provider.wsconnected ? (provider.synced ? "synced" : "connecting") : provider.wsconnecting ? "connecting" : "offline";
+        queueMicrotask(() => setCollabStatus(next));
+      };
+      update();
+      provider.on("status", update);
+      provider.on("sync", update);
+      // y-websocket only reports a failed first connection through its
+      // retry loop, so also re-check periodically.
+      const interval = setInterval(update, 3000);
+      return () => {
+        provider.off("status", update);
+        provider.off("sync", update);
+        clearInterval(interval);
+      };
+    }, [collabRoom]);
+
+    // Per-collaborator "Kontribusi" stats, derived from the authorship props
+    // on the document's text leaves (see computeContributions above).
     //
-    // `editor.onChange` (wired below to Plate's own onChange prop) fires for
-    // every content change — local edits AND remote ones replayed through
-    // Yjs sync alike. Without filtering, every collaborator's typing would
-    // get credited to whichever tab happens to be open. `YjsEditor.isLocal`
-    // is the exact same check @slate-yjs/core's own withYjs binding uses
-    // internally (see its `e.apply`/`e.onChange` overrides, which likewise
-    // read it from inside this same onChange pass) to decide whether an
-    // operation is local, so the origin tracking it depends on is still
-    // valid at this point.
-    const [wordStats, setWordStats] = React.useState<Record<string, { name: string; count: number }>>({});
+    // Attribution is stamped by wrapping `plateEditor.apply` — the same
+    // synchronous checkpoint slate-yjs's own withYjs binding uses to decide
+    // local vs remote, so a remote collaborator's edit can never be stamped
+    // with this tab's user (earlier onChange/Y.XmlText-observer approaches
+    // raced exactly that way). Only LOCAL operations are stamped; remote
+    // ones already carry their author's props through Yjs.
+    //
+    // Collaborator display names live in a small shared `contributors`
+    // Y.Map (userId -> name) so every tab can label every author, including
+    // ones that aren't online right now.
+    const [contributorNames, setContributorNames] = React.useState<Record<string, string>>({});
+    const [contributions, setContributions] = React.useState<Record<string, Contribution>>({});
     React.useEffect(() => {
       if (!collabRoom || !collaboration?.user?.id) return;
       const userId = collaboration.user.id;
       const userName = collaboration.user.name;
-      const stats = collabRoom.doc.getMap<{ name: string; count: number }>("wordStats");
-      let lastWordCount = countWordsInDocument(editor.document);
+      const names = collabRoom.doc.getMap<string>("contributors");
+      if (names.get(userId) !== userName) names.set(userId, userName);
 
-      const syncState = () => setWordStats({ ...stats.toJSON() });
-      syncState();
-      stats.observe(syncState);
+      // Deferred via queueMicrotask: Plate/Yjs can flush changes
+      // synchronously from INSIDE a React render pass (confirmed via a real
+      // "Cannot update a component while rendering a different component"
+      // warning), so state writes always go through a microtask.
+      const syncNames = () => queueMicrotask(() => setContributorNames({ ...names.toJSON() }));
+      syncNames();
+      names.observe(syncNames);
 
-      const handleChange = () => {
-        if (!YjsEditor.isYjsEditor(plateEditor) || !YjsEditor.isLocal(plateEditor)) return;
-        const wordCount = countWordsInDocument(editor.document);
-        const delta = wordCount - lastWordCount;
-        lastWordCount = wordCount;
-        if (delta > 0) {
-          const previous = stats.get(userId);
-          stats.set(userId, { name: userName, count: (previous?.count ?? 0) + delta });
+      // Recount after any change, local or remote. Coalesced to one pass per
+      // animation frame — a burst of keystrokes or a big remote sync costs a
+      // single walk over the document.
+      let recountFrame: number | null = null;
+      const scheduleRecount = () => {
+        if (recountFrame !== null) return;
+        recountFrame = requestAnimationFrame(() => {
+          recountFrame = null;
+          setContributions(computeContributions(plateEditor.children as any[]));
+        });
+      };
+      scheduleRecount();
+      const unsubscribeChange = editor.onChange(scheduleRecount);
+
+      if (!YjsEditor.isYjsEditor(plateEditor)) {
+        return () => {
+          names.unobserve(syncNames);
+          unsubscribeChange();
+          if (recountFrame !== null) cancelAnimationFrame(recountFrame);
+        };
+      }
+
+      // insert_text ops carry no leaf props — the typed characters land in
+      // whatever leaf the cursor is in, which may belong to someone else (or
+      // to AI). Those ranges get re-attributed right after the current
+      // transform finishes: setNodes with `split: true` cuts them out into
+      // their own leaf. Range refs keep the ranges valid across any further
+      // ops in the same transform. Y.UndoManager merges this follow-up into
+      // the same undo step as the typing itself (it's well within its
+      // capture window), so Ctrl+Z still undoes "what I typed" in one go.
+      const pending: { ref: ReturnType<typeof plateEditor.api.rangeRef>; ai: boolean }[] = [];
+      let flushScheduled = false;
+      const flushPending = () => {
+        flushScheduled = false;
+        const batch = pending.splice(0);
+        for (const { ref, ai } of batch) {
+          const range = ref.unref();
+          if (!range || RangeApi.isCollapsed(range)) continue;
+          plateEditor.tf.setNodes(
+            { author: userId, ai: ai ? true : null } as any,
+            { at: range, match: (n: any) => typeof n.text === "string", split: true }
+          );
         }
       };
-      const unsubscribe = editor.onChange(handleChange);
+
+      const origApply = plateEditor.apply;
+      plateEditor.apply = (op) => {
+        const isLocal = YjsEditor.isLocal(plateEditor);
+        const mode = editor.authorship;
+        if (isLocal && mode !== "system" && op.type === "insert_node") {
+          op = { ...op, node: stampAuthorship(op.node, userId, mode === "ai") };
+        }
+        origApply(op);
+        if (!isLocal) return;
+
+        if (mode === "system" || op.type !== "insert_text" || op.text.length === 0) return;
+        const ai = mode === "ai";
+        const leaf = NodeApi.get(plateEditor, op.path) as any;
+        if (leaf && leaf.author === userId && (leaf.ai === true) === ai) return;
+        const at = { path: op.path, offset: op.offset };
+        pending.push({
+          ref: plateEditor.api.rangeRef(
+            { anchor: at, focus: { path: op.path, offset: op.offset + op.text.length } },
+            { affinity: "inward" }
+          ),
+          ai,
+        });
+        if (!flushScheduled) {
+          flushScheduled = true;
+          queueMicrotask(flushPending);
+        }
+      };
 
       return () => {
-        unsubscribe();
-        stats.unobserve(syncState);
+        plateEditor.apply = origApply;
+        pending.splice(0).forEach(({ ref }) => ref.unref());
+        names.unobserve(syncNames);
+        unsubscribeChange();
+        if (recountFrame !== null) cancelAnimationFrame(recountFrame);
       };
     }, [collabRoom, plateEditor, editor, collaboration?.user?.id, collaboration?.user?.name]);
+
+    // What the "Kontribusi" menu lists: everyone who has joined this room or
+    // has words in the document, most words first.
+    const contributionRows = React.useMemo(() => {
+      const ids = new Set([...Object.keys(contributorNames), ...Object.keys(contributions)]);
+      return [...ids]
+        .map((id) => {
+          const c = contributions[id] || { typed: 0, ai: 0 };
+          return { id, name: contributorNames[id] || "Kolaborator", typed: c.typed, ai: c.ai, total: c.typed + c.ai };
+        })
+        .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    }, [contributorNames, contributions]);
+
+    // ---- Inline comments (anchors: leaf marks; threads: Y.Doc) ------------
+    //
+    // See components/plate/comments.tsx for the overall design. Thread
+    // metadata and replies are stored in two SEPARATE flat Y.Maps (replies
+    // keyed by their own id, carrying threadId) rather than one object per
+    // thread with a replies array: two collaborators replying to the same
+    // thread at the same moment then each add their own key, instead of each
+    // overwriting the whole thread object and one reply getting lost.
+    // Without a collaboration room, a private local Y.Doc keeps the code path
+    // identical (comments just aren't shared or persisted then).
+    const commentUser = React.useMemo<CommentUser>(
+      () =>
+        collaboration?.user
+          ? { id: collaboration.user.id, name: collaboration.user.name, color: collaboration.user.color || "#228be6" }
+          : { id: "local", name: "Saya", color: "#228be6" },
+      [collaboration?.user?.id, collaboration?.user?.name, collaboration?.user?.color]
+    );
+    const localCommentDoc = React.useMemo(() => new Y.Doc(), []);
+    const commentDoc = collabRoom?.doc ?? localCommentDoc;
+    const threadMetaMap = React.useMemo(() => commentDoc.getMap<Omit<CommentThread, "replies">>("commentThreads"), [commentDoc]);
+    const replyMap = React.useMemo(
+      () => commentDoc.getMap<CommentReply & { threadId: string }>("commentReplies"),
+      [commentDoc]
+    );
+
+    const [commentThreads, setCommentThreads] = React.useState<Record<string, CommentThread>>({});
+    React.useEffect(() => {
+      const rebuild = () => {
+        const threads: Record<string, CommentThread> = {};
+        threadMetaMap.forEach((meta, id) => {
+          threads[id] = { ...meta, replies: [] };
+        });
+        replyMap.forEach((reply) => {
+          const { threadId, ...rest } = reply;
+          threads[threadId]?.replies.push(rest);
+        });
+        Object.values(threads).forEach((t) => t.replies.sort((a, b) => a.createdAt - b.createdAt));
+        setCommentThreads(threads);
+      };
+      // Deferred for the same render-phase reason as the contributors sync.
+      const deferredRebuild = () => queueMicrotask(rebuild);
+      rebuild();
+      threadMetaMap.observe(deferredRebuild);
+      replyMap.observe(deferredRebuild);
+      return () => {
+        threadMetaMap.unobserve(deferredRebuild);
+        replyMap.unobserve(deferredRebuild);
+      };
+    }, [threadMetaMap, replyMap]);
+
+    const [commentsOpen, setCommentsOpen] = React.useState(false);
+    const [activeCommentId, setActiveCommentId] = React.useState<string | null>(null);
+    const [hoverCommentId, setHoverCommentId] = React.useState<string | null>(null);
+    const [pendingCommentQuote, setPendingCommentQuote] = React.useState<string | null>(null);
+    // The selection being commented on, kept as a range ref so it stays
+    // valid while the user types the comment (and while collaborators keep
+    // editing around it).
+    const pendingCommentRange = React.useRef<ReturnType<typeof plateEditor.api.rangeRef> | null>(null);
+
+    const clearPendingComment = React.useCallback(() => {
+      pendingCommentRange.current?.unref();
+      pendingCommentRange.current = null;
+      setPendingCommentQuote(null);
+    }, []);
+
+    const startComment = React.useCallback(() => {
+      const selection = plateEditor.selection;
+      if (!selection || RangeApi.isCollapsed(selection)) {
+        // Nothing selected: the button just opens the panel.
+        setCommentsOpen(true);
+        return;
+      }
+      const quote = plateEditor.api.string(selection).trim();
+      if (!quote) {
+        setCommentsOpen(true);
+        return;
+      }
+      pendingCommentRange.current?.unref();
+      pendingCommentRange.current = plateEditor.api.rangeRef(selection);
+      setPendingCommentQuote(quote.length > 300 ? `${quote.slice(0, 300)}…` : quote);
+      setActiveCommentId(null);
+      setCommentsOpen(true);
+    }, [plateEditor]);
+
+    const createComment = React.useCallback(
+      (text: string) => {
+        const range = pendingCommentRange.current?.unref();
+        pendingCommentRange.current = null;
+        const quote = pendingCommentQuote ?? "";
+        setPendingCommentQuote(null);
+        if (!range || RangeApi.isCollapsed(range)) {
+          notifications.show({
+            title: "Teks tidak ditemukan",
+            message: "Teks yang dipilih sudah dihapus. Blok ulang teksnya lalu coba lagi.",
+            color: "yellow",
+          });
+          return;
+        }
+        const id = nanoid();
+        const now = Date.now();
+        plateEditor.tf.setNodes({ comment: true, [getCommentKey(id)]: true } as any, {
+          at: range,
+          match: (n: any) => typeof n.text === "string",
+          split: true,
+        });
+        commentDoc.transact(() => {
+          threadMetaMap.set(id, {
+            id,
+            quote,
+            authorId: commentUser.id,
+            authorName: commentUser.name,
+            authorColor: commentUser.color,
+            createdAt: now,
+            resolved: false,
+          });
+          const replyId = nanoid();
+          replyMap.set(replyId, {
+            id: replyId,
+            threadId: id,
+            authorId: commentUser.id,
+            authorName: commentUser.name,
+            authorColor: commentUser.color,
+            text,
+            createdAt: now,
+          });
+        });
+        setActiveCommentId(id);
+      },
+      [pendingCommentQuote, plateEditor, commentDoc, threadMetaMap, replyMap, commentUser]
+    );
+
+    const replyToComment = React.useCallback(
+      (threadId: string, text: string) => {
+        const replyId = nanoid();
+        replyMap.set(replyId, {
+          id: replyId,
+          threadId,
+          authorId: commentUser.id,
+          authorName: commentUser.name,
+          authorColor: commentUser.color,
+          text,
+          createdAt: Date.now(),
+        });
+      },
+      [replyMap, commentUser]
+    );
+
+    // Resolving keeps the anchor marks (so "Buka lagi" can bring the
+    // highlight back) — CommentLeaf simply stops highlighting resolved
+    // threads. Deleting removes the marks from the text for good.
+    const resolveComment = React.useCallback(
+      (threadId: string, resolved: boolean) => {
+        const meta = threadMetaMap.get(threadId);
+        if (meta) threadMetaMap.set(threadId, { ...meta, resolved });
+      },
+      [threadMetaMap]
+    );
+
+    const deleteComment = React.useCallback(
+      (threadId: string) => {
+        plateEditor.getTransforms(CommentPlugin).comment.unsetMark({ id: threadId });
+        commentDoc.transact(() => {
+          threadMetaMap.delete(threadId);
+          const replyIds: string[] = [];
+          replyMap.forEach((reply, replyId) => {
+            if (reply.threadId === threadId) replyIds.push(replyId);
+          });
+          replyIds.forEach((replyId) => replyMap.delete(replyId));
+        });
+        setActiveCommentId((current) => (current === threadId ? null : current));
+      },
+      [plateEditor, commentDoc, threadMetaMap, replyMap]
+    );
+
+    const deleteCommentReply = React.useCallback(
+      (_threadId: string, replyId: string) => {
+        replyMap.delete(replyId);
+      },
+      [replyMap]
+    );
+
+    /** Scroll the editor to a thread's anchored text and put the caret there. */
+    const focusComment = React.useCallback(
+      (threadId: string) => {
+        setActiveCommentId(threadId);
+        const key = getCommentKey(threadId);
+        const [entry] = Array.from(plateEditor.api.nodes({ at: [], match: (n: any) => n[key] === true }));
+        if (!entry) return;
+        const [node, path] = entry;
+        plateEditor.tf.select({ path, offset: 0 });
+        try {
+          plateEditor.api.toDOMNode(node)?.scrollIntoView({ block: "center", behavior: "smooth" });
+        } catch {
+          // Node not rendered (yet) — selecting it is enough.
+        }
+      },
+      [plateEditor]
+    );
+
+    const openCommentThread = React.useCallback((threadId: string | null) => {
+      setActiveCommentId(threadId);
+      setCommentsOpen(true);
+    }, []);
+
+    const commentUI = React.useMemo<CommentUIContextValue>(
+      () => ({
+        threads: commentThreads,
+        activeId: commentsOpen ? activeCommentId : null,
+        hoverId: hoverCommentId,
+        setHoverId: setHoverCommentId,
+        openThread: openCommentThread,
+      }),
+      [commentThreads, commentsOpen, activeCommentId, hoverCommentId, openCommentThread]
+    );
+    const openCommentCount = React.useMemo(
+      () => Object.values(commentThreads).filter((t) => !t.resolved).length,
+      [commentThreads]
+    );
+
+    // Broadcast "I'm typing" (awareness `typingAt`) from REAL user input on
+    // the editable — keystrokes that edit, paste, cut, drop, IME
+    // composition. This used to fire from every local Slate operation, but
+    // receiving a collaborator's edit also produces local operations here
+    // (@slate-yjs restoring this user's selection, post-sync normalization),
+    // so whoever was merely READING showed up as typing whenever someone
+    // else typed. Throttled: one awareness update per 400ms is plenty for an
+    // indicator that lingers ~1.5s.
+    const lastTypingBroadcast = React.useRef(0);
+    const broadcastTyping = React.useCallback(() => {
+      if (!collabRoom) return;
+      const now = Date.now();
+      if (now - lastTypingBroadcast.current < 400) return;
+      lastTypingBroadcast.current = now;
+      collabRoom.provider.awareness.setLocalStateField('typingAt', now);
+    }, [collabRoom]);
+    const onEditorKeyDownCapture = React.useCallback(
+      (e: React.KeyboardEvent) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.key.length === 1 || e.key === "Backspace" || e.key === "Delete" || e.key === "Enter") {
+          broadcastTyping();
+        }
+      },
+      [broadcastTyping]
+    );
+
+    // Who's actively typing right now — reads the `typingAt` awareness field
+    // set by broadcastTyping above (plain y-protocols/awareness API).
+    // `data.name`/`data.color` on the same awareness state come from the
+    // `cursors: { data }` config passed into YjsPlugin.
+    const [activeTypers, setActiveTypers] = React.useState<
+      Record<number, { name: string; color: string }>
+    >({});
+    React.useEffect(() => {
+      if (!collabRoom) return;
+      const awareness = collabRoom.provider.awareness;
+      const localClientId = awareness.clientID;
+      const timers = new Map<number, ReturnType<typeof setTimeout>>();
+      const TYPING_TIMEOUT_MS = 1500;
+
+      const refresh = () => {
+        const states = awareness.getStates() as Map<number, any>;
+        const now = Date.now();
+        const next: Record<number, { name: string; color: string }> = {};
+        states.forEach((state, clientId) => {
+          if (clientId === localClientId) return;
+          const typingAt = state?.typingAt;
+          const name = state?.data?.name;
+          if (!name || typeof typingAt !== 'number') return;
+          if (now - typingAt > TYPING_TIMEOUT_MS) return;
+          next[clientId] = { name, color: state?.data?.color || '#4c6ef5' };
+
+          const existing = timers.get(clientId);
+          if (existing) clearTimeout(existing);
+          const remaining = TYPING_TIMEOUT_MS - (now - typingAt);
+          timers.set(
+            clientId,
+            setTimeout(() => {
+              timers.delete(clientId);
+              setActiveTypers((prev) => {
+                if (!(clientId in prev)) return prev;
+                const copy = { ...prev };
+                delete copy[clientId];
+                return copy;
+              });
+            }, Math.max(0, remaining))
+          );
+        });
+        // Bail out unless the set of typers actually changed. Awareness now
+        // also carries every collaborator's cursor/selection (Plate's
+        // YjsPlugin shares the provider's awareness), so 'change' fires on
+        // any caret move — including the ones a re-render of this component
+        // itself sets off. Committing a fresh-but-identical object each time
+        // closed that loop ("Maximum update depth exceeded").
+        setActiveTypers((prev) => {
+          const prevIds = Object.keys(prev);
+          const nextIds = Object.keys(next);
+          const same =
+            prevIds.length === nextIds.length &&
+            nextIds.every((id) => {
+              const a = prev[Number(id)];
+              const b = next[Number(id)];
+              return a && a.name === b.name && a.color === b.color;
+            });
+          return same ? prev : next;
+        });
+      };
+
+      // Deferred: awareness 'change' can fire synchronously from inside a
+      // React render pass (same underlying issue as the contributors sync
+      // above — confirmed via the same "Cannot update a component while
+      // rendering a different component" warning, this time traced through
+      // `setLocalStateField` -> `emit` -> this listener). The initial
+      // `refresh()` call below runs once at effect-setup time (safely in
+      // the passive-effect phase), so it doesn't need deferring itself.
+      const deferredRefresh = () => queueMicrotask(refresh);
+      refresh();
+      awareness.on('change', deferredRefresh);
+
+      return () => {
+        awareness.off('change', deferredRefresh);
+        timers.forEach((t) => clearTimeout(t));
+      };
+    }, [collabRoom]);
 
     // Text formatting shortcuts integration - COMPLETELY DISABLED FOR TESTING
     useTextFormattingShortcuts({
@@ -1787,7 +2486,11 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
               'suggested': '#96ceb4'
             };
             
-            indicator_bar.style.cssText = `
+            // "Needs review" shouts on purpose; the other markers (e.g. accepted
+            // AI text) are a quiet thin line so they don't clutter the page.
+            const loud = indicator.type === 'needs-review';
+            indicator_bar.style.cssText = loud
+              ? `
               position: absolute !important;
               left: -12px !important;
               top: 0 !important;
@@ -1799,6 +2502,16 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
               box-shadow: 0 0 15px ${colors[indicator.type]} !important;
               z-index: 9999 !important;
               animation: revision-pulse 2s ease-in-out infinite !important;
+              pointer-events: none !important;
+            `
+              : `
+              position: absolute !important;
+              left: -8px !important;
+              top: 4px !important;
+              bottom: 4px !important;
+              width: 2px !important;
+              background: ${colors[indicator.type]}99 !important;
+              border-radius: 2px !important;
               pointer-events: none !important;
             `;
             
@@ -1816,9 +2529,10 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
               indicator_bar.style.display = 'block';
               indicator_bar.classList.add('persistent-bar');
             } else {
-              // Standard styling for other indicators
-              htmlElement.style.borderLeft = `4px solid ${colors[indicator.type]}`;
-              htmlElement.style.boxShadow = `inset 4px 0 0 ${colors[indicator.type]}40`;
+              // Quiet markers: just the thin bar, no border/shadow/indent.
+              htmlElement.style.borderLeft = '';
+              htmlElement.style.boxShadow = '';
+              htmlElement.style.paddingLeft = '';
             }
             
             // Add tooltip with revision reason
@@ -1980,7 +2694,7 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
               // Restore previous state
               setTimeout(() => {
                 try {
-                  editor.replaceBlocks(editor.document, previousState);
+                  editor.withAuthorship("system", () => editor.replaceBlocks(editor.document, previousState));
                 } catch (error) {
                   console.error("Error during undo:", error);
                 } finally {
@@ -2023,7 +2737,7 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
               // Restore next state
               setTimeout(() => {
                 try {
-                  editor.replaceBlocks(editor.document, nextState);
+                  editor.withAuthorship("system", () => editor.replaceBlocks(editor.document, nextState));
                 } catch (error) {
                   console.error("Error during redo:", error);
                 } finally {
@@ -2077,7 +2791,9 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
               return block;
             });
 
-            editor.replaceBlocks(editor.document, validatedContent as Block[]);
+            // "system": loading a draft re-inserts existing text — it must not
+            // be credited to whoever happened to open it.
+            editor.withAuthorship("system", () => editor.replaceBlocks(editor.document, validatedContent as Block[]));
             console.log('✅ Editor content updated successfully');
           } catch (error) {
             console.error('❌ Error setting editor content:', error);
@@ -2221,6 +2937,7 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
       canRedo,
       openLatexModal,
       isCollaborative: () => !!collabRoom,
+      runVoiceCommand: (name, args) => runVoiceCommand(name, args),
     }));
 
     // LaTeX Modal handlers
@@ -2599,6 +3316,13 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
     ];
 
     // Enhanced typing animation with progress
+    // The block content `typeText` started from, so revertAIContent can put
+    // it back exactly (including each run's author attribution).
+    const aiOriginalContentRef = React.useRef<{ blockId: string; content: InlineContent[] } | null>(null);
+    // A voice "rewrite_paragraph" types its version as a new paragraph under
+    // the original; accept removes the original, revert removes the new one.
+    const pendingVoiceRewriteRef = React.useRef<{ originalId: string; newId: string } | null>(null);
+
     const typeText = async (text: string, targetBlock: Block, delay: number = 30): Promise<void> => {
       return new Promise(async (resolve) => {
         let currentIndex = 0;
@@ -2622,7 +3346,7 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
               content: "",
             }];
 
-            await editor.insertBlocks(newParagraphBlocks, targetBlock, "after");
+            editor.withAuthorship("ai", () => editor.insertBlocks(newParagraphBlocks, targetBlock, "after"));
 
             const allBlocks = editor.document;
             const targetIndex = allBlocks.findIndex(block => block.id === targetBlock.id);
@@ -2657,40 +3381,60 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
           return;
         }
 
+        // The block's text before the AI starts appending — read from the
+        // block itself rather than `aiStreamingState.originalText`, which in
+        // this closure is still the PREVIOUS render's value (the caller's
+        // setAIStreamingState hasn't re-rendered yet), and which as a plain
+        // string would also lose who wrote each part of it.
+        const originalContent: InlineContent[] =
+          targetBlock.type !== "heading" && Array.isArray(targetBlock.content)
+            ? (targetBlock.content as InlineContent[])
+            : [];
+        const originalText = targetBlock.type !== "heading" ? extractTextFromBlock(targetBlock) : "";
+        aiOriginalContentRef.current = { blockId: insertedBlock.id, content: originalContent };
+
         const typeNextWord = () => {
           if (currentIndex < words.length) {
             const wordsToShow = words.slice(0, currentIndex + 1).join(' ');
             const progress = Math.round((currentIndex / words.length) * 100);
 
             try {
+              // The streamed words go in as their own text run, explicitly
+              // credited to the requesting collaborator's AI; the block's
+              // original runs are kept as-is (with whoever wrote them), so
+              // the update runs in "system" mode and stamps nothing itself.
+              const aiRun: InlineContent = {
+                type: "text",
+                text: wordsToShow,
+                styles: collaboration?.user?.id ? { author: collaboration.user.id, ai: true } : {},
+              };
+
               if (targetBlock.type === "heading") {
-                editor.updateBlock(insertedBlock!, {
+                editor.withAuthorship("system", () => editor.updateBlock(insertedBlock!, {
                   type: "paragraph",
-                  content: wordsToShow,
-                });
+                  content: [aiRun],
+                }));
               } else {
-                let newContent = "";
+                let newContent: InlineContent[] = [aiRun];
 
-                if (aiStreamingState.originalText && aiStreamingState.originalText.trim()) {
-                  const needsSpace = !aiStreamingState.originalText.endsWith(' ') &&
-                    !aiStreamingState.originalText.endsWith('.') &&
-                    !aiStreamingState.originalText.endsWith(',') &&
-                    !aiStreamingState.originalText.endsWith('!') &&
-                    !aiStreamingState.originalText.endsWith('?') &&
-                    !aiStreamingState.originalText.endsWith(':') &&
-                    !aiStreamingState.originalText.endsWith(';') &&
-                    !aiStreamingState.originalText.endsWith('-') &&
-                    !aiStreamingState.originalText.endsWith('—');
+                if (originalText.trim()) {
+                  const needsSpace = !originalText.endsWith(' ') &&
+                    !originalText.endsWith('.') &&
+                    !originalText.endsWith(',') &&
+                    !originalText.endsWith('!') &&
+                    !originalText.endsWith('?') &&
+                    !originalText.endsWith(':') &&
+                    !originalText.endsWith(';') &&
+                    !originalText.endsWith('-') &&
+                    !originalText.endsWith('—');
 
-                  newContent = aiStreamingState.originalText + (needsSpace ? ' ' : '') + wordsToShow;
-                } else {
-                  newContent = wordsToShow;
+                  newContent = [...originalContent, { ...aiRun, text: (needsSpace ? ' ' : '') + wordsToShow }];
                 }
 
-                editor.updateBlock(insertedBlock!, {
+                editor.withAuthorship("system", () => editor.updateBlock(insertedBlock!, {
                   type: insertedBlock!.type as "paragraph" | "heading" | "bulletListItem" | "numberedListItem",
                   content: newContent,
-                });
+                }));
               }
 
               // Update streaming state with progress
@@ -2811,6 +3555,15 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
 
     // Accept AI content
     const acceptAIContent = () => {
+      // A voice rewrite typed its version below the original paragraph;
+      // accepting it means the original goes.
+      const rewrite = pendingVoiceRewriteRef.current;
+      pendingVoiceRewriteRef.current = null;
+      if (rewrite && aiStreamingState.currentBlock?.id === rewrite.newId) {
+        const original = editor.document.find(block => block.id === rewrite.originalId);
+        if (original) editor.withAuthorship("system", () => editor.removeBlocks([original]));
+      }
+
       // Mark accepted AI content with indicator
       if (aiStreamingState.currentBlock) {
         addRevisionIndicator(
@@ -2836,6 +3589,19 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
 
     // Revert AI content
     const revertAIContent = () => {
+      // Rejecting a voice rewrite drops the new paragraph, keeping the original.
+      const rewrite = pendingVoiceRewriteRef.current;
+      pendingVoiceRewriteRef.current = null;
+      if (rewrite && aiStreamingState.currentBlock?.id === rewrite.newId) {
+        const rewritten = editor.document.find(block => block.id === rewrite.newId);
+        if (rewritten) editor.withAuthorship("system", () => editor.removeBlocks([rewritten]));
+        const original = editor.document.find(block => block.id === rewrite.originalId);
+        if (original) editor.setTextCursorPosition(original, "end");
+        setAIStreamingState(IDLE_AI_STREAMING_STATE);
+        setContinueState(prev => ({ ...prev, isVisible: false }));
+        return;
+      }
+
       if (aiStreamingState.currentBlock) {
         try {
           const allBlocks = editor.document;
@@ -2848,10 +3614,16 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
             const judulBlock = allBlocks[currentIndex - 1];
             editor.setTextCursorPosition(judulBlock, "end");
           } else {
-            editor.updateBlock(aiStreamingState.currentBlock, {
-              type: aiStreamingState.currentBlock.type as "paragraph" | "heading" | "bulletListItem" | "numberedListItem",
-              content: aiStreamingState.originalText,
-            });
+            // Restore the exact runs that were there before the AI started
+            // (keeping who wrote them), not a flattened string re-credited
+            // to whoever clicked "revert".
+            const saved = aiOriginalContentRef.current;
+            const restoredContent =
+              saved && saved.blockId === blockId ? saved.content : aiStreamingState.originalText;
+            editor.withAuthorship("system", () => editor.updateBlock(aiStreamingState.currentBlock, {
+              type: aiStreamingState.currentBlock!.type as "paragraph" | "heading" | "bulletListItem" | "numberedListItem",
+              content: restoredContent,
+            }));
             editor.setTextCursorPosition(aiStreamingState.currentBlock, "end");
             
             // Enhanced revision indicator with persistent state
@@ -3390,15 +4162,28 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
       }
     };
 
+    /** The document's headings as a markdown outline ("## Metode\n### ..."). */
+    const headingsOutline = () =>
+      editor.document
+        .filter(block => block.type === "heading")
+        .map(block => {
+          const level = (block.props as { level?: number })?.level || 1;
+          return `${"#".repeat(level)} ${extractTextFromBlock(block)}`;
+        })
+        .filter(line => line.replace(/#/g, "").trim())
+        .join("\n");
+
     // Handle inline AI actions with streaming animation
     const handleInlineAIAction = async (action: string) => {
       const cursorPosition = editor.getTextCursorPosition();
       const currentBlock = cursorPosition?.block;
 
-      if (!aiModel || !currentBlock) {
+      // Text comes from callMCPAPI (mcp-sre), not the client-side `aiModel`,
+      // so a missing Google key must not block this.
+      if (!currentBlock) {
         notifications.show({
           title: 'AI Tidak Tersedia',
-          message: 'Model AI atau blok saat ini tidak tersedia.',
+          message: 'Letakkan kursor di dalam dokumen terlebih dahulu.',
           color: 'red',
           icon: <IconX size={18} />,
         });
@@ -3528,6 +4313,7 @@ ${targetJudul ? `JUDUL TERKAIT: ${targetJudul.text}` : ''}
 
 INSTRUKSI KHUSUS:
 - Lanjutkan langsung dari akhir teks saat ini: "${currentText}"
+- Jika kalimat terakhir belum selesai, SELESAIKAN kalimat itu dulu (output dimulai dengan kata yang melanjutkannya), baru tambah kalimat baru
 - JANGAN mengulang atau menulis ulang teks yang sudah ada
 - Tulis 2-4 kalimat tambahan yang natural dan informatif
 - Pertahankan kohesi dan koherensi dengan teks yang sudah ada
@@ -3623,25 +4409,48 @@ TUGAS: Lanjutkan tulisan dengan kreatif dan natural`;
             return;
         }
 
+        // Search the references by what's being written about (heading +
+        // the text right before the cursor), not by the instruction prompt.
+        const searchContext = analyzeCurrentCursorContext();
+        const retrievalQuery =
+          action === "summarize"
+            ? headingsOutline().slice(0, 300)
+            : [searchContext?.targetJudul?.text, (searchContext?.currentText || searchContext?.precedingContext || "").slice(-300)]
+                .filter(Boolean)
+                .join(" — ");
+        const writerOptions = { mode: action === "summarize" ? "summarize" as const : "continue" as const, retrievalQuery };
+
         let text = '';
         let retryCount = 0;
         const maxRetries = 3;
 
         while (retryCount <= maxRetries) {
           try {
-            // const result = await generateText({
-            //   model: aiModel,
-            //   prompt: systemPrompt,
-            //   maxTokens,
-            //   temperature: 0.7,
-            //   presencePenalty: 0.2,
-            //   frequencyPenalty: 0.1,
-            // });
-            // text = result.text;
-            const text1 = await callMCPAPI(systemPrompt, maxTokens);
+            const text1 = await callMCPAPI(systemPrompt, maxTokens, writerOptions);
             text = removeDaftarPustakaSection(text1!);
             break; // Success, exit retry loop
           } catch (aiError: any) {
+            if (aiError?.noRetry) {
+              notifications.show({
+                title: 'AI Butuh Konteks',
+                message: aiError.message,
+                color: 'yellow',
+                icon: <IconAlertTriangle size={18} />,
+                autoClose: 7000,
+              });
+              setAIStreamingState({
+                isStreaming: false,
+                streamedText: "",
+                currentBlock: null,
+                originalText: "",
+                showControls: false,
+                position: { x: 0, y: 0 },
+                progress: 0,
+                totalChunks: 0,
+                currentChunk: 0,
+              });
+              return;
+            }
             retryCount++;
             console.error(`AI generation attempt ${retryCount} failed:`, aiError);
 
@@ -3704,7 +4513,18 @@ TUGAS: Lanjutkan tulisan dengan kreatif dan natural`;
 
         if (text && text.trim()) {
           // Start typing animation - now handles all block types properly
-          await typeText(text.trim(), targetBlock);
+          const continuation = stripEchoedPrefix(text.trim(), originalText);
+          if (!continuation) {
+            notifications.show({
+              title: 'AI Tidak Menambahkan Teks Baru',
+              message: 'Jawaban AI hanya mengulang teks yang sudah ada. Silakan coba lagi.',
+              color: 'yellow',
+              icon: <IconAlertTriangle size={18} />,
+            });
+            setAIStreamingState(prev => ({ ...prev, isStreaming: false }));
+            return;
+          }
+          await typeText(continuation, targetBlock);
         } else {
           notifications.show({
             title: 'AI Tidak Menghasilkan Konten',
@@ -3748,6 +4568,257 @@ TUGAS: Lanjutkan tulisan dengan kreatif dan natural`;
           totalChunks: 0,
           currentChunk: 0,
         });
+      }
+    };
+
+    // ── Realtime voice commands ─────────────────────────────────────────
+    // Called by the voice assistant (useRealtimeVoice) when the voice model
+    // makes a function call. The voice model only picks the intent; any
+    // writing still goes through the same AI handlers as the toolbar and the
+    // inline menu, so it stays grounded in the project's references (MCP).
+    const scrollBlockIntoView = (blockId: string) => {
+      try {
+        const [entry] = Array.from(plateEditor.api.nodes({ at: [], match: (n: any) => n.id === blockId }));
+        if (entry) plateEditor.api.toDOMNode(entry[0] as any)?.scrollIntoView({ block: "center", behavior: "smooth" });
+      } catch {
+        // Not rendered (yet) — moving the cursor is enough.
+      }
+    };
+
+    const runVoiceCommand = async (name: string, args: Record<string, unknown> = {}): Promise<VoiceCommandResult> => {
+      const str = (key: string) => (typeof args[key] === "string" ? (args[key] as string).trim() : "");
+      const docText = () => editor.document.map(block => extractTextFromBlock(block)).join("\n");
+      const headings = () =>
+        editor.document
+          .filter(block => block.type === "heading")
+          .map(block => ({
+            block,
+            text: extractTextFromBlock(block),
+            level: (block.props as { level?: number })?.level || 1,
+          }))
+          .filter(h => h.text);
+      const busy = aiStreamingState.isStreaming || aiProgressState.isLoading;
+      const BUSY: VoiceCommandResult = { ok: false, message: "AI masih memproses tulisan sebelumnya. Tunggu sampai selesai." };
+      const PENDING: VoiceCommandResult = {
+        ok: false,
+        message: "Masih ada teks AI yang belum diterima atau dibatalkan. Minta user bilang 'terima' atau 'batalkan' dulu.",
+      };
+      const WROTE = "Teks AI sudah muncul di editor. User bisa bilang 'terima' untuk menyimpan atau 'batalkan' untuk membuang.";
+
+      try {
+        switch (name) {
+          case "continue_writing":
+          case "write_freely":
+          case "summarize_document": {
+            if (busy) return BUSY;
+            if (aiStreamingState.showControls) return PENDING;
+            const action = { continue_writing: "continue", write_freely: "write_anything", summarize_document: "summarize" }[name];
+            const before = docText();
+            await handleInlineAIAction(action);
+            if (docText() === before) {
+              return { ok: false, message: "AI tidak menambahkan teks. Lihat notifikasi di layar untuk alasannya." };
+            }
+            return { ok: true, message: WROTE };
+          }
+
+          case "rewrite_paragraph": {
+            if (busy) return BUSY;
+            if (aiStreamingState.showControls) return PENDING;
+            const current = editor.getTextCursorPosition()?.block;
+            const original = current ? extractTextFromBlock(current) : "";
+            if (!current || !original.trim()) {
+              return { ok: false, message: "Kursor tidak berada di paragraf yang berisi teks." };
+            }
+            const instruction = str("instruction") || "Parafrasekan dengan kata-kata yang berbeda tanpa mengubah makna";
+            const rewritten = await callMCPAPI(`Tulis ulang paragraf berikut sesuai instruksi.
+
+INSTRUKSI: ${instruction}
+
+PARAGRAF ASLI:
+${original}
+
+ATURAN:
+- Hanya tulis paragraf hasil, tanpa pengantar, judul, atau penjelasan
+- Pertahankan sitasi yang ada di paragraf asli`, 2000, { mode: "rewrite", retrievalQuery: original.slice(0, 300) });
+            const text = rewritten ? removeDaftarPustakaSection(rewritten).trim() : "";
+            if (!text) return { ok: false, message: "AI tidak menghasilkan versi baru." };
+
+            editor.withAuthorship("ai", () => editor.insertBlocks([{ type: "paragraph", content: "" }], current, "after"));
+            const doc = editor.document;
+            const inserted = doc[doc.findIndex(block => block.id === current.id) + 1];
+            if (!inserted) return { ok: false, message: "Gagal menambahkan paragraf baru." };
+            pendingVoiceRewriteRef.current = { originalId: current.id, newId: inserted.id };
+            setAIStreamingState({ ...IDLE_AI_STREAMING_STATE, isStreaming: true, currentBlock: inserted });
+            await typeText(text, inserted);
+            return {
+              ok: true,
+              message: "Versi baru ditulis di bawah paragraf asli. 'Terima' akan mengganti paragraf asli, 'batalkan' akan membuang versi baru.",
+            };
+          }
+
+          case "accept_ai_text":
+            if (!aiStreamingState.showControls) return { ok: false, message: "Tidak ada teks AI yang menunggu diterima." };
+            acceptAIContent();
+            return { ok: true, message: "Teks AI diterima." };
+
+          case "reject_ai_text":
+            if (!aiStreamingState.showControls) return { ok: false, message: "Tidak ada teks AI yang menunggu dibatalkan." };
+            revertAIContent();
+            return { ok: true, message: "Teks AI dibatalkan." };
+
+          case "generate_with_ai": {
+            if (busy) return BUSY;
+            const mode = ["structure", "content", "sentence"].includes(str("mode")) ? str("mode") : "content";
+            const topic = str("topic");
+            // An outline without a topic is built from the project's articles.
+            if (!topic && mode !== "structure") return { ok: false, message: "Topiknya belum disebutkan. Tanyakan topiknya ke user." };
+            setAIMode("new");
+            setPrompt(topic);
+            setCurrentAIType(mode);
+            setGeneratedContent("");
+            openAIModal();
+            const generated = await handleAIGenerationWithProgress(topic, mode, "rewrite");
+            if (!generated) return { ok: false, message: "AI gagal menghasilkan konten." };
+            setGeneratedContent(generated);
+            return {
+              ok: true,
+              message:
+                mode === "structure"
+                  ? "Kerangka sudah jadi dan tampil di jendela AI. Memasukkannya akan MENGGANTI seluruh isi dokumen."
+                  : "Hasil sudah tampil di jendela AI. User bisa bilang 'masukkan hasilnya' untuk menambahkannya ke dokumen.",
+              data: { preview: generated.slice(0, 600) },
+            };
+          }
+
+          case "insert_generated_content": {
+            if (!generatedContent.trim()) return { ok: false, message: "Belum ada hasil AI di jendela AI." };
+            if (currentAIType === "structure" && args.confirmed !== true) {
+              return {
+                ok: false,
+                message: "Ini akan MENGGANTI seluruh isi dokumen. Tanyakan konfirmasi ke user, lalu panggil lagi dengan confirmed=true.",
+              };
+            }
+            // Same mapping as the modal's insert button.
+            const behaviorMap: Record<string, string> = {
+              structure: "rewrite",
+              content: aiMode === "auto" ? "add" : "content_cursor",
+              sentence: aiMode === "auto" ? "add" : "cursor",
+            };
+            await insertContentToEditor(behaviorMap[currentAIType] || "rewrite");
+            return { ok: true, message: "Hasil AI sudah dimasukkan ke dokumen." };
+          }
+
+          case "close_ai_window":
+            closeModalAndReset();
+            return { ok: true, message: "Jendela AI ditutup." };
+
+          case "undo":
+          case "redo": {
+            const can = name === "undo" ? canUndo() : canRedo();
+            if (!can) return { ok: false, message: name === "undo" ? "Tidak ada yang bisa dibatalkan." : "Tidak ada yang bisa diulang." };
+            if (name === "undo") undo();
+            else redo();
+            return { ok: true, message: name === "undo" ? "Perubahan terakhir dibatalkan." : "Perubahan diulang." };
+          }
+
+          case "go_to": {
+            const target = str("target").toLowerCase();
+            const doc = editor.document;
+            let block: Block | undefined;
+            let placement: "start" | "end" = "end";
+            if (["awal", "start", "atas", "beginning"].includes(target)) {
+              block = doc[0];
+              placement = "start";
+            } else if (["akhir", "end", "bawah", "ending"].includes(target)) {
+              block = doc[doc.length - 1];
+            } else {
+              const all = headings();
+              const match =
+                all.find(h => h.text.toLowerCase() === target) ||
+                all.find(h => h.text.toLowerCase().includes(target)) ||
+                all.find(h => target.includes(h.text.toLowerCase()));
+              block = match?.block;
+            }
+            if (!block) {
+              return {
+                ok: false,
+                message: `Bagian "${str("target")}" tidak ditemukan.`,
+                data: { headings: headings().map(h => h.text) },
+              };
+            }
+            editor.focus();
+            editor.setTextCursorPosition(block, placement);
+            scrollBlockIntoView(block.id);
+            return { ok: true, message: `Kursor dipindah ke "${extractTextFromBlock(block) || str("target")}".` };
+          }
+
+          case "insert_text": {
+            // Dictation: the user's own words, so default (human) authorship.
+            const text = str("text");
+            if (!text) return { ok: false, message: "Tidak ada teks untuk dimasukkan." };
+            editor.focus();
+            editor.insertInlineContent(text);
+            return { ok: true, message: "Teks dimasukkan di posisi kursor." };
+          }
+
+          case "add_block": {
+            const kind = str("kind") === "heading" ? "heading" : "paragraph";
+            const text = str("text");
+            const level = Math.min(Math.max(Number(args.level) || 2, 1), 3);
+            const current = editor.getTextCursorPosition()?.block ?? editor.document[editor.document.length - 1];
+            if (!current) return { ok: false, message: "Dokumen belum siap." };
+            const blocks: PartialBlock[] =
+              kind === "heading"
+                ? [{ type: "heading", props: { level }, content: text }, { type: "paragraph", content: "" }]
+                : [{ type: "paragraph", content: text }];
+            editor.insertBlocks(blocks, current, "after");
+            const doc = editor.document;
+            const idx = doc.findIndex(block => block.id === current.id);
+            const target = doc[idx + blocks.length] ?? doc[idx + 1];
+            if (target) {
+              editor.focus();
+              editor.setTextCursorPosition(target, "end");
+              scrollBlockIntoView(target.id);
+            }
+            return { ok: true, message: kind === "heading" ? `Judul "${text}" ditambahkan.` : "Paragraf baru ditambahkan." };
+          }
+
+          case "get_outline": {
+            const all = headings();
+            return {
+              ok: true,
+              message: all.length ? `Dokumen punya ${all.length} judul.` : "Dokumen belum punya judul.",
+              data: { headings: all.map(h => `${"#".repeat(h.level)} ${h.text}`), wordCount: docText().split(/\s+/).filter(Boolean).length },
+            };
+          }
+
+          case "read_current_paragraph": {
+            const context = analyzeCurrentCursorContext();
+            if (!context) return { ok: false, message: "Posisi kursor tidak diketahui." };
+            return {
+              ok: true,
+              message: "Isi paragraf di posisi kursor.",
+              data: { heading: context.targetJudul?.text ?? null, text: context.currentText, before: context.precedingContext },
+            };
+          }
+
+          case "ask_references": {
+            const question = str("question");
+            if (!question) return { ok: false, message: "Pertanyaannya kosong." };
+            const answer = await callMCPAPI(`${question}
+
+Jawab singkat (maksimal 4 kalimat) dalam bahasa Indonesia lisan, karena jawaban akan dibacakan. Sebutkan judul artikel sumbernya bila ada.`);
+            return answer
+              ? { ok: true, message: "Jawaban dari referensi project.", data: { answer: removeDaftarPustakaSection(answer) } }
+              : { ok: false, message: "Tidak ada jawaban dari referensi." };
+          }
+
+          default:
+            return { ok: false, message: `Perintah "${name}" tidak dikenal.` };
+        }
+      } catch (error: any) {
+        console.error("Voice command failed:", name, error);
+        return { ok: false, message: error?.message || "Terjadi kesalahan saat menjalankan perintah." };
       }
     };
 
@@ -4494,6 +5565,10 @@ Dalam perspective yang lebih luas, ${prompt} telah menjadi focal point berbagai 
 
       try {
         let systemPrompt = "";
+        let writerOptions: { mode: "continue" | "structure" | "content"; retrievalQuery: string } = {
+          mode: "content",
+          retrievalQuery: headingsOutline().slice(0, 300) || prompt,
+        };
 
         if (aiMode === "continue") {
           const editorBlocks = editor.document;
@@ -4534,85 +5609,103 @@ KONTEKS TAMBAHAN: ${prompt}`;
         } else {
           // Handle different behaviors based on type
           switch (type) {
-            case "structure":
-              // Rewrite behavior - creates complete structure
-              systemPrompt = `Buat struktur outline lengkap untuk topik: ${prompt}
+            case "structure": {
+              // Rewrite behavior - creates complete structure, built from the
+              // project's articles (auto mode sends an empty topic).
+              const topic = prompt.trim();
+              const existingOutline = headingsOutline();
+              writerOptions = {
+                mode: "structure",
+                retrievalQuery: topic || existingOutline || "topik utama, metode, temuan, dan celah penelitian",
+              };
+              systemPrompt = `Buat outline artikel ilmiah ${topic ? `dengan topik: "${topic}"` : "dengan topik yang ditentukan dari artikel-artikel referensi project"}.
 
+DASAR OUTLINE:
+-- Susun outline DARI artikel referensi project: angkat tema bersama, metode, temuan, dan celah penelitian (gaps) dari referensi
+-- Setiap bab/sub-bab harus bisa diisi dengan materi dari referensi yang tersedia
+-- Jangan membuat bagian yang tidak didukung referensi (kecuali Pendahuluan dan Kesimpulan)
+${existingOutline ? `
+OUTLINE SAAT INI (perbaiki/lengkapi bila perlu):
+${existingOutline}
+` : ""}
 ATURAN STRUKTUR HEADING:
 -- Gunakan # untuk judul utama (hanya 1)
 -- Gunakan ## untuk bab-bab utama (level 2)
 -- Gunakan ### untuk sub-bab (level 3)
--- Gunakan #### untuk detail bagian (level 4)
 
 INSTRUKSI PENTING:
 -- HANYA tulis heading dan subheading
--- JANGAN tulis konten paragraf apapun
--- TIDAK ada penjelasan atau deskripsi
--- Buat struktur yang komprehensif dan logis
--- Struktur ini akan mengganti semua konten yang ada
+-- JANGAN tulis konten paragraf, penjelasan, atau deskripsi apapun
 
 TUGAS:
-Buat HANYA outline heading untuk "${prompt}" tanpa konten paragraf.`;
+Buat HANYA outline heading berdasarkan referensi, tanpa konten paragraf.`;
               break;
+            }
 
-            case "content":
-              // Content cursor behavior - adds content under current heading
-              const contentEditorBlocks = editor.document;
-              let contentContext = "";
-
-              // Get current cursor position to understand context
+            case "content": {
+              // Content cursor behavior - adds content under current heading,
+              // in line with the outline and the references for that section.
+              const allBlocks = editor.document;
               const cursorPosition = editor.getTextCursorPosition();
-              let currentHeading = "";
+              const currentIndex = cursorPosition ? allBlocks.findIndex(block => block.id === cursorPosition.block.id) : -1;
 
-              if (cursorPosition) {
-                const allBlocks = editor.document;
-                const currentIndex = allBlocks.findIndex(block => block.id === cursorPosition.block.id);
+              // Governing heading: the nearest heading at or above the cursor.
+              let headingIndex = -1;
+              for (let i = currentIndex; i >= 0; i--) {
+                if (allBlocks[i].type === "heading") {
+                  headingIndex = i;
+                  break;
+                }
+              }
+              const currentHeading = headingIndex >= 0 ? extractTextFromBlock(allBlocks[headingIndex]) : "";
+              const headingLevel = headingIndex >= 0 ? ((allBlocks[headingIndex].props as { level?: number })?.level || 1) : 0;
 
-                // Find the governing heading by looking backwards
-                for (let i = currentIndex; i >= 0; i--) {
+              // What this section already says (until the next heading of the same or higher level).
+              let sectionText = "";
+              if (headingIndex >= 0) {
+                for (let i = headingIndex + 1; i < allBlocks.length; i++) {
                   const block = allBlocks[i];
-                  if (block.type === "heading") {
-                    currentHeading = extractTextFromBlock(block);
-                    break;
-                  }
+                  if (block.type === "heading" && ((block.props as { level?: number })?.level || 1) <= headingLevel) break;
+                  const text = extractTextFromBlock(block);
+                  if (text) sectionText += `${text}
+`;
                 }
               }
 
-              contentEditorBlocks.forEach(block => {
-                const text = extractTextFromBlock(block);
-                if (text) {
-                  if (block.type === "heading") {
-                    const level = (block.props as { level?: number })?.level || 1;
-                    const headingPrefix = '#'.repeat(level);
-                    contentContext += `\n${headingPrefix} ${text}\n`;
-                  } else {
-                    contentContext += `${text}\n`;
-                  }
-                }
-              });
+              const sectionName = currentHeading || "Heading Utama";
+              writerOptions = { mode: "content", retrievalQuery: [currentHeading, prompt.trim()].filter(Boolean).join(" — ") || headingsOutline().slice(0, 300) };
+              systemPrompt = `Tulis isi untuk bagian "${sectionName}" dari artikel ini.
 
-              systemPrompt = `Buat konten detail untuk heading yang sedang aktif di cursor:
+OUTLINE DOKUMEN:
+${headingsOutline() || "(belum ada outline)"}
 
-STRUKTUR DOKUMEN SAAT INI:
-${contentContext}
-
-HEADING YANG SEDANG AKTIF: ${currentHeading || "Heading Utama"}
-TOPIK KONTEN: ${prompt}
-
-INSTRUKSI UNTUK KONTEN DI HEADING INI:
--- Fokus pada heading "${currentHeading || "Heading Utama"}" yang sedang aktif
--- Tulis konten detail dan informatif tentang "${prompt}" yang relevan dengan heading tersebut
--- Buat 2-4 paragraf konten yang mendalam
--- JANGAN tulis ulang heading atau struktur
--- HANYA tulis konten paragraf yang akan ditempatkan di bawah heading aktif
--- Pastikan konten sesuai dengan konteks dan level heading
+BAGIAN YANG DITULIS: ${sectionName}
+ISI BAGIAN INI SAAT INI:
+${sectionText.trim() || "(kosong)"}
+${prompt.trim() ? `
+ARAHAN USER: ${prompt.trim()}
+` : ""}
+INSTRUKSI:
+-- Tulis 2-4 paragraf yang HANYA membahas cakupan "${sectionName}" sesuai posisinya di outline; jangan membahas isi bab lain
+-- Jika bagian ini sudah berisi teks, lanjutkan tanpa mengulang isi yang ada
+-- Ambil isi dari artikel referensi yang relevan dengan bagian ini dan cantumkan sumbernya
+-- JANGAN tulis ulang heading atau struktur; HANYA paragraf
 
 TUGAS:
-Buat konten detail tentang "${prompt}" untuk heading "${currentHeading || "Heading Utama"}".`;
+Tulis isi bagian "${sectionName}" berdasarkan referensi.`;
               break;
+            }
 
-            case "sentence":
+            case "sentence": {
               // Cursor behavior - continues from current position with more content
+              const sentenceContext = analyzeCurrentCursorContext();
+              writerOptions = {
+                mode: "continue",
+                retrievalQuery:
+                  [sentenceContext?.targetJudul?.text, (sentenceContext?.currentText || sentenceContext?.precedingContext || "").slice(-300), prompt.trim()]
+                    .filter(Boolean)
+                    .join(" — ") || headingsOutline().slice(0, 300),
+              };
               const cursorBlocks = editor.document;
               let cursorContext = "";
 
@@ -4653,6 +5746,7 @@ CATATAN PENTING:
 
 TUGAS: Lanjutkan dan kembangkan tulisan dengan substansi yang cukup tentang "${prompt}".`;
               break;
+            }
 
             default:
               systemPrompt = `Buat konten untuk topik: ${prompt}
@@ -4672,7 +5766,7 @@ INSTRUKSI:
         //   presencePenalty: 0.1,
         //   frequencyPenalty: 0.1,
         // });
-        const text1 = await callMCPAPI(systemPrompt, type === "structure" ? 1000 : type === "sentence" ? 1500 : 2000);
+        const text1 = await callMCPAPI(systemPrompt, type === "structure" ? 1000 : type === "sentence" ? 1500 : 2000, writerOptions);
         const text = removeDaftarPustakaSection(text1!);
 
         return text;
@@ -4745,7 +5839,7 @@ INSTRUKSI:
 
               if (contentToInsert.length > 0) {
                 const targetBlock = currentBlocks[currentBlockIndex];
-                await editor.insertBlocks(contentToInsert, targetBlock, "after");
+                editor.withAuthorship("ai", () => editor.insertBlocks(contentToInsert, targetBlock, "after"));
                 currentBlockIndex += contentToInsert.length + 1;
               }
             } else {
@@ -4766,7 +5860,7 @@ INSTRUKSI:
 
         if (blocksToInsert.length > 0) {
           const lastBlock = editor.document[editor.document.length - 1];
-          await editor.insertBlocks(blocksToInsert, lastBlock, "after");
+          editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, lastBlock, "after"));
         }
       }
     };
@@ -4847,7 +5941,7 @@ INSTRUKSI:
           switch (behavior) {
             case "rewrite":
               // Replace all content (untuk mode structure)
-              await editor.replaceBlocks(editor.document, blocksToInsert);
+              editor.withAuthorship("ai", () => editor.replaceBlocks(editor.document, blocksToInsert));
 
               // Set cursor to the first block
               setTimeout(() => {
@@ -4898,7 +5992,7 @@ INSTRUKSI:
 
                   console.log("Inserting after heading:", extractTextFromBlock(insertAfterBlock));
 
-                  await editor.insertBlocks(blocksToInsert, insertAfterBlock, "after");
+                  editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, insertAfterBlock, "after"));
 
                   // Set cursor ke block PERTAMA yang baru di-insert
                   setTimeout(() => {
@@ -4921,7 +6015,7 @@ INSTRUKSI:
                 } else {
                   // Fallback: insert di akhir jika tidak ada cursor position
                   const lastBlock = editor.document[editor.document.length - 1];
-                  await editor.insertBlocks(blocksToInsert, lastBlock, "after");
+                  editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, lastBlock, "after"));
 
                   // Set cursor ke block pertama yang di-insert
                   setTimeout(() => {
@@ -4940,7 +6034,7 @@ INSTRUKSI:
                 console.error("Error inserting at content cursor position:", error);
                 // Fallback: insert di akhir
                 const lastBlock = editor.document[editor.document.length - 1];
-                await editor.insertBlocks(blocksToInsert, lastBlock, "after");
+                editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, lastBlock, "after"));
               }
               break;
 
@@ -4967,9 +6061,10 @@ INSTRUKSI:
                   const charBeforeCursor = currentText.charAt(relativeOffset - 1);
 
                   const needsSpace = charBeforeCursor && !/\s/.test(charBeforeCursor);
-                  const finalText = (needsSpace ? ' ' : '') + textToAppend;
+                  const newText = stripEchoedPrefix(textToAppend, currentText.slice(0, relativeOffset));
+                  const finalText = (needsSpace ? ' ' : '') + newText;
 
-                  await editor.insertInlineContent(finalText);
+                  editor.withAuthorship("ai", () => editor.insertInlineContent(finalText));
                   console.log("Successfully inserted text at precise cursor position.");
 
                 } else {
@@ -4979,7 +6074,7 @@ INSTRUKSI:
                     insertionBlock = pos?.block || editor.document[editor.document.length - 1];
                   }
 
-                  await editor.insertBlocks(blocksToInsert, insertionBlock, "after");
+                  editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, insertionBlock, "after"));
 
                   setTimeout(() => {
                     try {
@@ -5000,7 +6095,7 @@ INSTRUKSI:
               } catch (error) {
                 console.error("Error inserting at cursor position:", error);
                 const lastBlock = editor.document[editor.document.length - 1];
-                await editor.insertBlocks(blocksToInsert, lastBlock, "after");
+                editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, lastBlock, "after"));
               }
               break;
 
@@ -5014,7 +6109,7 @@ INSTRUKSI:
                 }
 
                 if (targetBlock) {
-                  await editor.insertBlocks(blocksToInsert, targetBlock, "after");
+                  editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, targetBlock, "after"));
 
                   // Set cursor ke block pertama yang baru di-insert
                   setTimeout(() => {
@@ -5036,7 +6131,7 @@ INSTRUKSI:
                 } else {
                   // Fallback: insert di akhir jika tidak ada cursor position
                   const lastBlock = editor.document[editor.document.length - 1];
-                  await editor.insertBlocks(blocksToInsert, lastBlock, "after");
+                  editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, lastBlock, "after"));
 
                   // Set cursor ke block pertama yang di-insert
                   setTimeout(() => {
@@ -5055,14 +6150,14 @@ INSTRUKSI:
                 console.error("Error inserting at add position:", error);
                 // Fallback: insert di akhir
                 const lastBlock = editor.document[editor.document.length - 1];
-                await editor.insertBlocks(blocksToInsert, lastBlock, "after");
+                editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, lastBlock, "after"));
               }
               break;
 
             default:
               // Default to add behavior
               const defaultLastBlock = editor.document[editor.document.length - 1];
-              await editor.insertBlocks(blocksToInsert, defaultLastBlock, "after");
+              editor.withAuthorship("ai", () => editor.insertBlocks(blocksToInsert, defaultLastBlock, "after"));
           }
         }
 
@@ -5286,43 +6381,33 @@ INSTRUKSI:
       return [...getCustomAISlashMenuItems, ...structuralItems];
     }, [editor, getCustomAISlashMenuItems]);
 
-    // Handle content changes
+    // Handle content changes — local AND remote (collaborators' edits arrive
+    // through the same editor onChange), feeding the page's outline/title.
+    //
+    // Trailing debounce: every change restarts the timer, so the LAST change
+    // of a burst is always the one reported. (This used to drop any change
+    // that arrived during the 50ms window, so the final keystroke — or a
+    // collaborator's edit landing mid-window — could leave the outline
+    // stale.) The callback is read through a ref so a page re-render, which
+    // hands us a fresh `onContentChange` every time, doesn't tear down the
+    // subscription and cancel a pending update along with it.
+    const onContentChangeRef = React.useRef(onContentChange);
+    onContentChangeRef.current = onContentChange;
     React.useEffect(() => {
-      let isProcessingChange = false;
-      let timeoutId: NodeJS.Timeout;
-
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const handleChange = () => {
-        // Prevent race conditions and rapid-fire onChange calls
-        if (isProcessingChange) return;
-
-        isProcessingChange = true;
         clearTimeout(timeoutId);
-
-        // Minimal debounce for outline updates (reduced from 100ms to 50ms for faster response)
         timeoutId = setTimeout(() => {
-          if (onContentChange) {
-            onContentChange(editor.document);
-          }
-          isProcessingChange = false;
-        }, 50); // Faster for real-time outline updates
+          onContentChangeRef.current?.(editor.document);
+        }, 80);
       };
-
-      let unsubscribe: (() => void) | undefined;
-
-      try {
-        unsubscribe = editor.onChange?.(handleChange);
-      } catch (error) {
-        console.error("Error setting up content change listener:", error);
-      }
-
+      const unsubscribe = editor.onChange(handleChange);
+      handleChange();
       return () => {
         clearTimeout(timeoutId);
-        isProcessingChange = false;
-        if (unsubscribe) {
-          unsubscribe();
-        }
+        unsubscribe();
       };
-    }, [editor, onContentChange]);
+    }, [editor]);
 
     // MINIMAL CSS ONLY - NO AUTO STYLING
     useEffect(() => {
@@ -5396,6 +6481,195 @@ INSTRUKSI:
     };
 
 
+    // History/AI-log/revision/autosave indicators. Rendered next to the
+    // page's "Peta Konsep / Editor Teks" toggle when the page provides a
+    // slot for them (frees up the editor toolbar row), else inline.
+    const statusIndicators = (
+    <Group gap="sm">
+      {/* History indicator with progress */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '4px 12px',
+        borderRadius: '20px',
+        background: computedColorScheme === "dark"
+          ? 'rgba(59, 130, 246, 0.1)'
+          : 'rgba(59, 130, 246, 0.05)',
+        border: `1px solid ${computedColorScheme === "dark" ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.1)"}`,
+      }}>
+        <Text size="xs" fw={600} c="blue">
+          {undoRedoState.currentIndex + 1}/{undoRedoState.history.length}
+        </Text>
+        <div style={{
+          width: '40px',
+          height: '4px',
+          borderRadius: '2px',
+          background: computedColorScheme === "dark" ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+          overflow: 'hidden'
+        }}>
+          <div style={{
+            width: `${((undoRedoState.currentIndex + 1) / undoRedoState.history.length) * 100}%`,
+            height: '100%',
+            background: 'linear-gradient(90deg, #3b82f6, #06b6d4)',
+            borderRadius: '2px',
+            transition: 'width 0.3s ease'
+          }} />
+        </div>
+
+      {/* AI Activity Log Indicator */}
+      {aiActivityLog.length > 0 && (
+        <Tooltip
+          label={
+            <Stack gap="xs">
+              <Text size="xs" fw={600}>Log Aktivitas AI:</Text>
+              {aiActivityLog.slice(0, 3).map((log) => (
+                <Group key={log.id} gap="xs">
+                  <div style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: log.success ? '#10b981' : '#ef4444'
+                  }} />
+                  <Text size="xs">
+                    {log.type} • {log.duration}ms • {log.timestamp.toLocaleTimeString()}
+                  </Text>
+                </Group>
+              ))}
+              {aiActivityLog.length > 3 && (
+                <Text size="xs" c="dimmed">+{aiActivityLog.length - 3} lainnya</Text>
+              )}
+            </Stack>
+          }
+          position="top"
+          withArrow
+        >
+          <div style={{
+            padding: '4px 6px',
+            borderRadius: '4px',
+            background: computedColorScheme === "dark" 
+              ? 'rgba(16, 185, 129, 0.1)' 
+              : 'rgba(16, 185, 129, 0.05)',
+            border: `1px solid ${computedColorScheme === "dark" ? "rgba(16, 185, 129, 0.2)" : "rgba(16, 185, 129, 0.1)"}`,
+            cursor: 'pointer'
+          }}>
+            <Text size="xs" fw={600} c="green">
+              AI: {aiActivityLog.length}
+            </Text>
+          </div>
+        </Tooltip>
+      )}
+
+      {/* Revision Indicators Panel */}
+      {revisionIndicators.length > 0 && (
+        <Tooltip
+          label={
+            <Stack gap="xs">
+              <Text size="xs" fw={600}>Indikator Revisi:</Text>
+              {revisionIndicators.slice(0, 4).map((indicator) => (
+                <Group key={indicator.blockId} gap="xs">
+                  <div style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: indicator.color
+                  }} />
+                  <Text size="xs">
+                    {indicator.type === 'needs-review' ? 'Perlu Review' : 
+                     indicator.type === 'ai-generated' ? 'Hasil AI' :
+                     indicator.type === 'modified' ? 'Dimodifikasi' : 'Disarankan'} 
+                    • {indicator.timestamp.toLocaleTimeString()}
+                  </Text>
+                </Group>
+              ))}
+              {revisionIndicators.length > 4 && (
+                <Text size="xs" c="dimmed">+{revisionIndicators.length - 4} lainnya</Text>
+              )}
+              <Text size="xs" c="dimmed" style={{ fontStyle: 'italic' }}>
+                Klik blok dengan indikator warna untuk info detail
+              </Text>
+            </Stack>
+          }
+          position="top"
+          withArrow
+        >
+          <div style={{
+            padding: '4px 6px',
+            borderRadius: '4px',
+            background: computedColorScheme === "dark" 
+              ? 'rgba(255, 107, 107, 0.1)' 
+              : 'rgba(255, 107, 107, 0.05)',
+            border: `1px solid ${computedColorScheme === "dark" ? "rgba(255, 107, 107, 0.2)" : "rgba(255, 107, 107, 0.1)"}`,
+            cursor: 'pointer',
+            marginLeft: '8px'
+          }}>
+            <Text size="xs" fw={600} style={{ color: '#ff6b6b' }}>
+              Revisi: {revisionIndicators.length}
+            </Text>
+          </div>
+        </Tooltip>
+      )}
+      </div>
+
+      {/* Collaboration connection status — only shown when NOT in sync */}
+      {collaboration && collabStatus !== "synced" && (
+        <Tooltip
+          label={
+            collabStatus === "offline"
+              ? "Server kolaborasi tidak terhubung — perubahan tidak terlihat oleh kolaborator lain"
+              : "Menyambungkan ke server kolaborasi…"
+          }
+          position="bottom"
+          withArrow
+          multiline
+          w={260}
+        >
+          <Badge
+            variant="light"
+            color={collabStatus === "offline" ? "red" : "orange"}
+            size="sm"
+            leftSection={collabStatus === "offline" ? <IconWifiOff size={12} /> : <Loader size={10} color="orange" />}
+          >
+            {collabStatus === "offline" ? "Offline" : "Menyambung…"}
+          </Badge>
+        </Tooltip>
+      )}
+
+      {/* Open comment threads — opens the comments panel */}
+      {openCommentCount > 0 && (
+        <Tooltip label="Lihat semua komentar" position="bottom" withArrow>
+          <Button
+            variant="light"
+            color="yellow"
+            size="compact-xs"
+            radius="xl"
+            leftSection={<IconMessage size={12} />}
+            onClick={() => openCommentThread(null)}
+          >
+            {openCommentCount}
+          </Button>
+        </Tooltip>
+      )}
+
+      {/* Quick save indicator */}
+      {lastSavedContent.current && (
+        <Tooltip label="Tersimpan otomatis" position="bottom">
+          <ThemeIcon
+            size="sm"
+            variant="light"
+            color="green"
+            radius="xl"
+            style={{
+              animation: 'fade-in 0.3s ease-out'
+            }}
+          >
+            <IconCheck size={12} />
+          </ThemeIcon>
+        </Tooltip>
+      )}
+    </Group>
+    );
+
     return (
       <>
 
@@ -5404,6 +6678,8 @@ INSTRUKSI:
           height: '100%', 
           minWidth: '280px',
           overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
           width: '100%',
           maxWidth: '100%',
           ...style 
@@ -5415,10 +6691,7 @@ INSTRUKSI:
             mb="md"
             withBorder={false}
             style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
+              position: 'relative',
               zIndex: 10,
               background: computedColorScheme === "dark"
                 ? 'linear-gradient(135deg, rgba(26, 27, 30, 0.8), rgba(30, 32, 36, 0.8))'
@@ -5482,77 +6755,7 @@ INSTRUKSI:
                     <IconArrowForwardUp size={18} />
                   </ActionIcon>
                 </Tooltip>
-                
-                {/* AI Tools Dropdown Menu */}
-                <Menu shadow="lg" width={280} position="bottom-end">
-                  <Menu.Target>
-                    <Tooltip label="AI Tools - Klik untuk membuka semua fitur AI">
-                      <ActionIcon
-                        variant="gradient"
-                        gradient={{ from: 'blue', to: 'cyan' }}
-                        size="lg"
-                        radius="xl"
-                        style={{
-                          transition: 'all 0.3s ease',
-                          '&:hover': { transform: 'scale(1.05)' }
-                        }}
-                      >
-                        <IconSparkles size={18} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Menu.Target>
 
-                  <Menu.Dropdown>
-                    <Menu.Label>
-                      <Group gap="xs">
-                        <IconSparkles size={16} />
-                        <Text fw={600} c="blue">AI TOOLS</Text>
-                        <Badge variant="dot" color="green" size="xs">Aktif</Badge>
-                      </Group>
-                    </Menu.Label>
-
-                    {aiTemplates.map((template, index) => (
-                      <Menu.Item
-                        key={index}
-                        leftSection={<template.icon size={16} color={template.color} />}
-                        onClick={() => {
-                          setCurrentAIType(template.type);
-                          setAIMode("new");
-                          setGeneratedContent("");
-                          openAIModal();
-                        }}
-                      >
-                        <div>
-                          <Text size="sm" fw={500}>{template.title}</Text>
-                          <Text size="xs" c="dimmed">{template.description}</Text>
-                        </div>
-                      </Menu.Item>
-                    ))}
-
-                    <Menu.Divider />
-
-                    <Menu.Item
-                      leftSection={<IconWand size={16} color="violet" />}
-                      onClick={() => handleInlineAIAction('continue')}
-                    >
-                      <div>
-                        <Text size="sm" fw={500}>🪄 Lanjutkan Menulis</Text>
-                        <Text size="xs" c="dimmed">AI akan meneruskan tulisan dari posisi cursor</Text>
-                      </div>
-                    </Menu.Item>
-
-                    <Menu.Item
-                      leftSection={<IconFileText size={16} color="teal" />}
-                      onClick={() => handleInlineAIAction('summarize')}
-                    >
-                      <div>
-                        <Text size="sm" fw={500}>📋 Ringkas Artikel</Text>
-                        <Text size="xs" c="dimmed">Buat ringkasan dari konten yang sudah ditulis</Text>
-                      </div>
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
-                
                 <Tooltip label="Hapus semua konten artikel (tidak bisa dibatalkan)">
                   <Button
                     variant="outline"
@@ -5564,153 +6767,101 @@ INSTRUKSI:
                   </Button>
                 </Tooltip>
 
-              </Group>
-
-              <Group gap="sm">
-                {/* History indicator with progress */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '4px 12px',
-                  borderRadius: '20px',
-                  background: computedColorScheme === "dark"
-                    ? 'rgba(59, 130, 246, 0.1)'
-                    : 'rgba(59, 130, 246, 0.05)',
-                  border: `1px solid ${computedColorScheme === "dark" ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.1)"}`,
-                }}>
-                  <Text size="xs" fw={600} c="blue">
-                    {undoRedoState.currentIndex + 1}/{undoRedoState.history.length}
-                  </Text>
-                  <div style={{
-                    width: '40px',
-                    height: '4px',
-                    borderRadius: '2px',
-                    background: computedColorScheme === "dark" ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      width: `${((undoRedoState.currentIndex + 1) / undoRedoState.history.length) * 100}%`,
-                      height: '100%',
-                      background: 'linear-gradient(90deg, #3b82f6, #06b6d4)',
-                      borderRadius: '2px',
-                      transition: 'width 0.3s ease'
-                    }} />
-                  </div>
-
-                {/* AI Activity Log Indicator */}
-                {aiActivityLog.length > 0 && (
-                  <Tooltip
-                    label={
-                      <Stack gap="xs">
-                        <Text size="xs" fw={600}>Log Aktivitas AI:</Text>
-                        {aiActivityLog.slice(0, 3).map((log) => (
-                          <Group key={log.id} gap="xs">
-                            <div style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              background: log.success ? '#10b981' : '#ef4444'
-                            }} />
-                            <Text size="xs">
-                              {log.type} • {log.duration}ms • {log.timestamp.toLocaleTimeString()}
-                            </Text>
-                          </Group>
-                        ))}
-                        {aiActivityLog.length > 3 && (
-                          <Text size="xs" c="dimmed">+{aiActivityLog.length - 3} lainnya</Text>
-                        )}
-                      </Stack>
-                    }
-                    position="top"
-                    withArrow
-                  >
-                    <div style={{
-                      padding: '4px 6px',
-                      borderRadius: '4px',
-                      background: computedColorScheme === "dark" 
-                        ? 'rgba(16, 185, 129, 0.1)' 
-                        : 'rgba(16, 185, 129, 0.05)',
-                      border: `1px solid ${computedColorScheme === "dark" ? "rgba(16, 185, 129, 0.2)" : "rgba(16, 185, 129, 0.1)"}`,
-                      cursor: 'pointer'
-                    }}>
-                      <Text size="xs" fw={600} c="green">
-                        AI: {aiActivityLog.length}
-                      </Text>
-                    </div>
-                  </Tooltip>
-                )}
-
-                {/* Revision Indicators Panel */}
-                {revisionIndicators.length > 0 && (
-                  <Tooltip
-                    label={
-                      <Stack gap="xs">
-                        <Text size="xs" fw={600}>Indikator Revisi:</Text>
-                        {revisionIndicators.slice(0, 4).map((indicator) => (
-                          <Group key={indicator.blockId} gap="xs">
-                            <div style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              background: indicator.color
-                            }} />
-                            <Text size="xs">
-                              {indicator.type === 'needs-review' ? 'Perlu Review' : 
-                               indicator.type === 'ai-generated' ? 'Hasil AI' :
-                               indicator.type === 'modified' ? 'Dimodifikasi' : 'Disarankan'} 
-                              • {indicator.timestamp.toLocaleTimeString()}
-                            </Text>
-                          </Group>
-                        ))}
-                        {revisionIndicators.length > 4 && (
-                          <Text size="xs" c="dimmed">+{revisionIndicators.length - 4} lainnya</Text>
-                        )}
-                        <Text size="xs" c="dimmed" style={{ fontStyle: 'italic' }}>
-                          Klik blok dengan indikator warna untuk info detail
-                        </Text>
-                      </Stack>
-                    }
-                    position="top"
-                    withArrow
-                  >
-                    <div style={{
-                      padding: '4px 6px',
-                      borderRadius: '4px',
-                      background: computedColorScheme === "dark" 
-                        ? 'rgba(255, 107, 107, 0.1)' 
-                        : 'rgba(255, 107, 107, 0.05)',
-                      border: `1px solid ${computedColorScheme === "dark" ? "rgba(255, 107, 107, 0.2)" : "rgba(255, 107, 107, 0.1)"}`,
-                      cursor: 'pointer',
-                      marginLeft: '8px'
-                    }}>
-                      <Text size="xs" fw={600} style={{ color: '#ff6b6b' }}>
-                        Revisi: {revisionIndicators.length}
-                      </Text>
-                    </div>
-                  </Tooltip>
-                )}
-                </div>
-
-                {/* Quick save indicator */}
-                {lastSavedContent.current && (
-                  <Tooltip label="Tersimpan otomatis" position="bottom">
-                    <ThemeIcon
-                      size="sm"
-                      variant="light"
-                      color="green"
-                      radius="xl"
-                      style={{
-                        animation: 'fade-in 0.3s ease-out'
-                      }}
+                <Divider orientation="vertical" />
+                <Tooltip label="Bold"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ bold: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}><b>B</b></ActionIcon></Tooltip>
+                <Tooltip label="Italic"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ italic: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}><i>I</i></ActionIcon></Tooltip>
+                <Tooltip label="Underline"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ underline: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}><u>U</u></ActionIcon></Tooltip>
+                <Tooltip label="Strikethrough"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ strike: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}><s>S</s></ActionIcon></Tooltip>
+                <Tooltip label="Code"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ code: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}>{'</>'}</ActionIcon></Tooltip>
+                <Divider orientation="vertical" />
+                <Menu shadow="md" position="bottom-start">
+                  <Menu.Target>
+                    <Button
+                      variant="gradient"
+                      gradient={{ from: 'blue', to: 'cyan' }}
+                      size="xs"
+                      leftSection={<IconWand size={14} />}
+                      style={{ transition: 'all 0.2s ease' }}
+                      styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
                     >
-                      <IconCheck size={12} />
-                    </ThemeIcon>
-                  </Tooltip>
+                      Sisipkan
+                    </Button>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    {getCustomSlashMenuItems.map((item: any) => (
+                      <Menu.Item key={item.title} leftSection={item.icon} onClick={item.onItemClick}>
+                        {item.title}
+                      </Menu.Item>
+                    ))}
+                  </Menu.Dropdown>
+                </Menu>
+                {!collaboration && (
+                  <>
+                    <Divider orientation="vertical" />
+                    <VoiceAssistant onCommand={runVoiceCommand} />
+                  </>
+                )}
+                {collaboration && (
+                  <>
+                    <Divider orientation="vertical" />
+                    <Menu shadow="md" position="bottom-start">
+                      <Menu.Target>
+                        <Button
+                          variant="light"
+                          color="grape"
+                          size="xs"
+                          leftSection={<IconPencil size={14} />}
+                          style={{ transition: 'all 0.2s ease' }}
+                          styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
+                        >
+                          Kontribusi
+                        </Button>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        {contributionRows.length === 0 ? (
+                          <Menu.Item disabled>Belum ada yang mengetik</Menu.Item>
+                        ) : (
+                          contributionRows.map((row) => (
+                            <Menu.Item key={row.id} disabled>
+                              <Group justify="space-between" gap="xl" wrap="nowrap">
+                                <Stack gap={0}>
+                                  <Text size="sm">{row.name}</Text>
+                                  <Text size="xs" c="dimmed">
+                                    {row.typed} diketik · {row.ai} dari AI
+                                  </Text>
+                                </Stack>
+                                <Badge variant="light" size="sm">{row.total} kata</Badge>
+                              </Group>
+                            </Menu.Item>
+                          ))
+                        )}
+                      </Menu.Dropdown>
+                    </Menu>
+                    <VoiceAssistant onCommand={runVoiceCommand} />
+                    {Object.entries(activeTypers).length > 0 && (
+                      <Group gap={6} wrap="nowrap">
+                        {Object.entries(activeTypers).map(([clientId, typer]) => (
+                          <Tooltip key={clientId} label={`${typer.name} sedang mengetik`}>
+                            <Badge
+                              variant="dot"
+                              size="sm"
+                              color={typer.color}
+                              styles={{ root: { animation: 'pulse-glow-strong 1.2s ease-in-out infinite' } }}
+                            >
+                              {typer.name}
+                            </Badge>
+                          </Tooltip>
+                        ))}
+                      </Group>
+                    )}
+                  </>
                 )}
               </Group>
+
+              {!statusSlot && statusIndicators}
             </Group>
           </Paper>
+          {statusSlot && createPortal(statusIndicators, statusSlot)}
 
           {/* AI Streaming Progress Overlay */}
           {aiStreamingState.isStreaming && (
@@ -5754,7 +6905,7 @@ INSTRUKSI:
             </Box>
           )}
 
-          <div style={{ height: '100%', overflow: 'auto', position: 'relative', paddingTop: '60px' }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}>
             <style>{`
               /* GLOBAL AGGRESSIVE RESPONSIVE FIXES */
               
@@ -6589,63 +7740,51 @@ INSTRUKSI:
                 padding-left: 40px !important;
               }
             `}</style>
+            <CommentUIContext.Provider value={commentUI}>
             <Plate
               key={collaboration ? (collabRoom ? `collab-${collaboration.roomId}` : "collab-loading") : "local"}
               editor={editor.raw}
               onChange={() => editor.notifyChange()}
             >
-              <Group gap={4} p={8} style={{ borderBottom: "1px solid rgba(0,0,0,0.08)" }} className="editor-toolbar">
-                <Tooltip label="Bold"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ bold: true })}><b>B</b></ActionIcon></Tooltip>
-                <Tooltip label="Italic"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ italic: true })}><i>I</i></ActionIcon></Tooltip>
-                <Tooltip label="Underline"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ underline: true })}><u>U</u></ActionIcon></Tooltip>
-                <Tooltip label="Strikethrough"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ strike: true })}><s>S</s></ActionIcon></Tooltip>
-                <Tooltip label="Code"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ code: true })}>{'</>'}</ActionIcon></Tooltip>
-                <Divider orientation="vertical" />
-                <Menu shadow="md" position="bottom-start">
-                  <Menu.Target>
-                    <Button variant="light" size="xs" leftSection={<IconWand size={14} />}>Sisipkan</Button>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    {getCustomSlashMenuItems.map((item: any) => (
-                      <Menu.Item key={item.title} leftSection={item.icon} onClick={item.onItemClick}>
-                        {item.title}
-                      </Menu.Item>
-                    ))}
-                  </Menu.Dropdown>
-                </Menu>
-                {collaboration && (
-                  <>
-                    <Divider orientation="vertical" />
-                    <Menu shadow="md" position="bottom-start">
-                      <Menu.Target>
-                        <Button variant="subtle" size="xs" leftSection={<IconPencil size={14} />}>Kontribusi</Button>
-                      </Menu.Target>
-                      <Menu.Dropdown>
-                        {Object.keys(wordStats).length === 0 ? (
-                          <Menu.Item disabled>Belum ada yang mengetik</Menu.Item>
-                        ) : (
-                          Object.entries(wordStats)
-                            .sort(([, a], [, b]) => b.count - a.count)
-                            .map(([userId, stat]) => (
-                              <Menu.Item key={userId} disabled>
-                                <Group justify="space-between" gap="xl" wrap="nowrap">
-                                  <Text size="sm">{stat.name}</Text>
-                                  <Badge variant="light" size="sm">{stat.count} kata</Badge>
-                                </Group>
-                              </Menu.Item>
-                            ))
-                        )}
-                      </Menu.Dropdown>
-                    </Menu>
-                  </>
-                )}
-              </Group>
-              <PlateContent
-                className="bn-editor"
-                style={{ minHeight: "100%", padding: "16px 40px", outline: "none" }}
-                placeholder="Tulis sesuatu atau klik 'Sisipkan'..."
-              />
+              <div
+                style={{ display: "contents" }}
+                onKeyDownCapture={onEditorKeyDownCapture}
+                onPasteCapture={broadcastTyping}
+                onCutCapture={broadcastTyping}
+                onDropCapture={broadcastTyping}
+                onCompositionUpdateCapture={broadcastTyping}
+              >
+                <PlateContent
+                  className="bn-editor"
+                  // Browser spell-check uses an English dictionary and paints
+                  // every Indonesian word red.
+                  spellCheck={false}
+                  lang="id"
+                  style={{ minHeight: "100%", padding: "16px 40px", outline: "none" }}
+                  placeholder="Tulis sesuatu atau klik 'Sisipkan'..."
+                />
+              </div>
+              <FloatingCommentButton hidden={pendingCommentQuote !== null} onComment={startComment} />
             </Plate>
+            </CommentUIContext.Provider>
+            <CommentsPanel
+              opened={commentsOpen}
+              onClose={() => {
+                setCommentsOpen(false);
+                clearPendingComment();
+              }}
+              threads={commentThreads}
+              activeId={activeCommentId}
+              currentUser={commentUser}
+              pendingQuote={pendingCommentQuote}
+              onCreate={createComment}
+              onCancelCreate={clearPendingComment}
+              onReply={replyToComment}
+              onResolve={resolveComment}
+              onDelete={deleteComment}
+              onDeleteReply={deleteCommentReply}
+              onFocusThread={focusComment}
+            />
           </div>
 
           {/* Inline AI Suggestions Popup */}
@@ -6804,72 +7943,52 @@ INSTRUKSI:
                 pointerEvents: 'auto'
               }}
             >
-              <Paper
-                p="md"
-                radius="lg"
+              {/* One slim row: what happened + accept / redo / revert. */}
+              <div
                 className="ai-streaming-overlay"
                 style={{
-                  background: computedColorScheme === "dark"
-                    ? "linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(147, 197, 253, 0.15))"
-                    : "linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(147, 197, 253, 0.1))",
-                  border: `2px solid ${computedColorScheme === "dark" ? "rgba(59, 130, 246, 0.4)" : "rgba(59, 130, 246, 0.3)"}`,
-                  backdropFilter: 'blur(10px)',
-                  boxShadow: '0 8px 25px rgba(0, 0, 0, 0.15)'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 6px 6px 14px',
+                  borderRadius: 999,
+                  background: computedColorScheme === "dark" ? 'rgba(30, 32, 36, 0.92)' : 'rgba(255, 255, 255, 0.92)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                  border: '1px solid var(--mantine-color-default-border)',
+                  boxShadow: '0 8px 28px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06)',
                 }}
               >
-                <Stack gap="sm" align="center">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <IconSparkles size={18} color="#3b82f6" />
-                    <Text size="sm" fw={500} c="blue">
-                      AI telah selesai menulis
-                    </Text>
-                  </div>
-
-                  <Group gap="sm">
-                    <Tooltip label="Terima dan gunakan konten yang dihasilkan AI">
-                      <Button
-                        size="sm"
-                        variant="gradient"
-                        gradient={{ from: 'green', to: 'teal' }}
-                        leftSection={<IconCheck size={16} />}
-                        onClick={acceptAIContent}
-                        style={{ fontWeight: 600 }}
-                      >
-                        Setuju
-                      </Button>
-                    </Tooltip>
-
-                    <Tooltip label="Tolak dan kembalikan ke konten sebelumnya">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        color="red"
-                        leftSection={<IconX size={16} />}
-                        onClick={revertAIContent}
-                        style={{ fontWeight: 600 }}
-                      >
-                        kembalikan
-                      </Button>
-                    </Tooltip>
-
-                    <Tooltip label="Hapus konten AI dan mulai ulang dari awal">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        color="blue"
-                        leftSection={<IconRefresh size={16} />}
-                        onClick={() => {
-                          revertAIContent();
-                          setTimeout(() => handleInlineAIAction('continue'), 100);
-                        }}
-                        style={{ fontWeight: 600 }}
-                      >
-                        Mulai Ulang
-                      </Button>
-                    </Tooltip>
-                  </Group>
-                </Stack>
-              </Paper>
+                <IconSparkles size={15} color="var(--mantine-color-blue-6)" />
+                <Text size="sm" fw={500} mr={6} style={{ whiteSpace: 'nowrap' }}>
+                  AI selesai menulis
+                </Text>
+                <Tooltip label="Simpan teks dari AI">
+                  <Button size="xs" radius="xl" color="teal" leftSection={<IconCheck size={14} />} onClick={acceptAIContent}>
+                    Terima
+                  </Button>
+                </Tooltip>
+                <Tooltip label="Buang dan tulis ulang dengan AI">
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    radius="xl"
+                    size="md"
+                    aria-label="Tulis ulang"
+                    onClick={() => {
+                      revertAIContent();
+                      setTimeout(() => handleInlineAIAction('continue'), 100);
+                    }}
+                  >
+                    <IconRefresh size={16} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Buang teks dari AI">
+                  <ActionIcon variant="subtle" color="red" radius="xl" size="md" aria-label="Batalkan" onClick={revertAIContent}>
+                    <IconX size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              </div>
             </div>
           )}
 

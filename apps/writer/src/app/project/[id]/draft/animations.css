@@ -1,0 +1,42 @@
+/* Plain (non-module) CSS — keyframe names here are NOT hashed/scoped, unlike
+   container.module.css, so `animation: 'pulse-glow-strong ...'` inline styles
+   in page.tsx / PlateEditor.tsx resolve correctly. */
+@keyframes pulse-glow-strong {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.65);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 14px rgba(59, 130, 246, 0);
+  }
+}
+
+/* Gentle bob for empty-state icons (Outline Artikel, Referensi Pustaka). */
+@keyframes gentle-float {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(-4deg);
+  }
+}
+
+/* Slow hue drift for accent gradients — applied to primary CTA backgrounds
+   to keep the whole button feeling alive, not just its glow ring. */
+@keyframes gradient-drift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Soft breathing ring for the active tab-pill icon (right-panel selector:
+   Referensi Pustaka / Daftar Pustaka / Riwayat / Catatan / Tulis Draft). */
+@keyframes tab-active-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(0, 123, 255, 0);
+  }
+}
