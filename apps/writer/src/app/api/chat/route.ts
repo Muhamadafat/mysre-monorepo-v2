@@ -1,6 +1,9 @@
 // apps/brain/src/app/api/chat/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@sre-monorepo/lib/server";
+
+const WRITER_MODES = ["continue", "rewrite", "structure", "content", "summarize"];
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +18,9 @@ export async function POST(request: NextRequest) {
       mode = "general",
       nodeId,
       nodeIds,
+      // Set by the editor's writing actions: routes to mcp-sre's
+      // writer_generate (follows the task) instead of pral_chat (Q&A).
+      writer,
     } = body;
 
     // Validate required fields
@@ -25,8 +31,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Limit the vector search to the project's own articles (the nodes the
+    // editor sends), otherwise chunks from unrelated articles leak in.
+    let contextArticleIds: string[] = [];
+    if (Array.isArray(contextNodeIds) && contextNodeIds.length > 0) {
+      const nodes = await prisma.node.findMany({
+        where: { id: { in: contextNodeIds } },
+        select: { articleId: true },
+      });
+      contextArticleIds = [...new Set(nodes.map((n) => n.articleId).filter(Boolean))];
+    }
+
+    const writerMode = writer && WRITER_MODES.includes(writer.mode) ? writer.mode : null;
+
     // Prepare MCP request payload
-    const mcpPayload = {
+    const mcpPayload = writerMode
+      ? {
+          jsonrpc: "2.0",
+          method: "tools/call",
+          params: {
+            name: "writer_generate",
+            arguments: {
+              task: question,
+              retrieval_query: String(writer.retrievalQuery || "").slice(0, 500),
+              session_id: sessionId,
+              mode: writerMode,
+              context_node_ids: contextNodeIds,
+              context_article_ids: contextArticleIds,
+            },
+          },
+          id: 1,
+        }
+      : {
       jsonrpc: "2.0",
       method: "tools/call",
       params: {
@@ -39,7 +75,7 @@ export async function POST(request: NextRequest) {
           node_id: nodeId,
           node_ids: nodeIds,
           context_node_ids: contextNodeIds,
-          context_article_ids: [], // Add if needed
+          context_article_ids: contextArticleIds,
           context_edge_ids: contextEdgeIds,
           force_web: forceWeb
         }
