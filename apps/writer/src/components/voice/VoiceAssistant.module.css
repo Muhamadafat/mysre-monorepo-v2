@@ -1,22 +1,396 @@
-/* Floating voice pill, bottom-center: small enough not to cover the editor or the AI window. */
-.pill {
+/* Floating voice dock: power bubble (+ mode list) + record/stop, plus a status part while
+   recording. Sits at the editor's right edge next to the cursor's paragraph
+   (.dockAnchored), or bottom-center (.dockBottom). */
+.dock {
   position: fixed;
-  left: 50%;
-  bottom: 20px;
-  transform: translateX(-50%);
   z-index: 400; /* above Mantine modals (200) so it stays reachable */
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  /* Frosted glass with a faint lavender tint, like the mic halo. */
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #bfdbfe 16%, transparent), color-mix(in srgb, #bae6fd 10%, transparent)),
+    color-mix(in srgb, var(--mantine-color-body) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, #ffffff 55%, var(--mantine-color-default-border));
+  box-shadow:
+    0 10px 30px rgba(59, 130, 246, 0.16),
+    0 1px 3px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition:
+    opacity 0.15s ease-out,
+    visibility 0.15s;
+}
+
+/* Power bubble: grey when off, a glossy blue orb once a mode is on. It
+   opens the mode list below (or above, when the dock sits at the bottom). */
+.powerWrap {
+  position: relative;
+  display: flex;
+}
+
+.power {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--mantine-color-dimmed);
+  background: color-mix(in srgb, var(--mantine-color-body) 75%, transparent);
+  border: 1px solid color-mix(in srgb, #93c5fd 40%, var(--mantine-color-default-border));
+  transition:
+    transform 0.15s ease-out,
+    color 0.15s ease-out;
+}
+
+.power:hover {
+  color: var(--mantine-color-blue-6);
+  transform: scale(1.05);
+}
+
+.power:focus-visible,
+.option:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-5);
+  outline-offset: 2px;
+}
+
+.powerOn {
+  color: #fff;
+  border-color: transparent;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(140deg, #7dd3fc 0%, #3b82f6 55%, #1d4ed8 100%);
+  box-shadow:
+    0 4px 12px rgba(59, 130, 246, 0.38),
+    inset 0 1px 1px rgba(255, 255, 255, 0.45);
+}
+
+.powerOn:hover {
+  color: #fff;
+}
+
+/* Mode on: the bubble becomes a glossy pill "icon · Menulis · ●". Colors
+   follow the mode (sky for menulis, indigo for perintah). */
+.dock {
+  --accent-a: #7dd3fc;
+  --accent-b: #3b82f6;
+  --accent-c: #1d4ed8;
+  --accent-glow: rgba(59, 130, 246, 0.38);
+}
+
+.modeWrite {
+  --accent-a: #67e8f9;
+  --accent-b: #0ea5e9;
+  --accent-c: #0369a1;
+  --accent-glow: rgba(14, 165, 233, 0.4);
+}
+
+.modeCommand {
+  --accent-a: #a5b4fc;
+  --accent-b: #6366f1;
+  --accent-c: #3730a3;
+  --accent-glow: rgba(99, 102, 241, 0.42);
+}
+
+.powerOn {
+  width: auto;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 4px;
+  border-radius: 999px;
+  /* Quiet frosted chip: it only says which mode is on — the mic next to it
+     is what the eye should go to. */
+  color: var(--accent-c);
+  border: 1px solid color-mix(in srgb, var(--accent-b) 28%, transparent);
+  background: color-mix(in srgb, var(--mantine-color-body) 78%, var(--accent-a) 22%);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.powerOn:hover {
+  color: var(--accent-c);
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-b) 45%, transparent);
+  box-shadow:
+    0 3px 8px color-mix(in srgb, var(--accent-b) 18%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.powerIcon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent-b);
+  background: color-mix(in srgb, var(--accent-b) 14%, transparent);
+}
+
+.powerLabel {
+  white-space: nowrap;
+}
+
+/* Small status dot: white when ready, pulsing green while recording. */
+.liveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent-b) 45%, transparent);
+}
+
+.liveDotOn {
+  background: #4ade80;
+  animation: live-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes live-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(74, 222, 128, 0);
+  }
+}
+
+/* The whole dock picks up the mode's tint and a soft glow while a mode is on. */
+.dockActive {
+  border-color: color-mix(in srgb, var(--accent-b) 35%, #ffffff);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent-a) 20%, transparent),
+      color-mix(in srgb, var(--accent-b) 10%, transparent)
+    ),
+    color-mix(in srgb, var(--mantine-color-body) 82%, transparent);
+  box-shadow:
+    0 12px 32px color-mix(in srgb, var(--accent-b) 24%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent-b) 10%, transparent),
+    0 1px 3px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* Mic and stop follow the mode's colors too. */
+.dockActive .mic {
+  --mic-halo: color-mix(in srgb, var(--accent-b) 24%, transparent);
+  --mic-halo-outer: color-mix(in srgb, var(--accent-b) 11%, transparent);
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(140deg, var(--accent-a) 0%, var(--accent-b) 55%, var(--accent-c) 100%);
+}
+
+.dockActive .glassButton {
+  color: var(--accent-c);
+}
+
+/* Hidden while the cursor isn't in the editor (kept mounted so it can be measured). */
+.dockHidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Mode list: a small card of rounded, tinted rows (blue tones). */
+.menu {
+  position: absolute;
+  left: 50%;
+  z-index: 1;
+  width: 228px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 16px;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--mantine-color-body) 96%, #dbeafe);
+  border: 1px solid color-mix(in srgb, #93c5fd 35%, var(--mantine-color-default-border));
+  box-shadow:
+    0 12px 32px rgba(37, 99, 235, 0.16),
+    0 2px 6px rgba(0, 0, 0, 0.06);
+  animation: menu-in 0.16s ease-out;
+}
+
+.menuDown {
+  top: calc(100% + 8px);
+  transform-origin: top center;
+}
+
+.menuUp {
+  bottom: calc(100% + 8px);
+  transform-origin: bottom center;
+}
+
+/* Anchored at the editor's right edge: keep the list inside the editor. */
+.dockAnchored .menu {
+  left: auto;
+  right: -6px;
+  transform: none;
+  animation-name: menu-in-right;
+}
+
+.option {
+  --opt: #3b82f6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px 6px 6px;
+  border: 1px solid color-mix(in srgb, var(--opt) 22%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--opt) 10%, var(--mantine-color-body));
+  color: var(--mantine-color-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.12s ease-out,
+    border-color 0.12s ease-out;
+}
+
+.option:hover {
+  background: color-mix(in srgb, var(--opt) 17%, var(--mantine-color-body));
+}
+
+.option[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--opt) 55%, transparent);
+}
+
+.optWrite {
+  --opt: #0ea5e9;
+}
+
+.optCommand {
+  --opt: #2563eb;
+}
+
+.optOff {
+  --opt: #64748b;
+}
+
+.optionIcon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--opt);
+  background: color-mix(in srgb, var(--mantine-color-body) 85%, transparent);
+}
+
+.optionText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.optionTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.optionHint {
+  font-size: 11px;
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.optionEnd {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--opt);
+  background: color-mix(in srgb, var(--mantine-color-body) 85%, transparent);
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@keyframes menu-in-right {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Stop button: a plain frosted circle, like the side buttons in the mockup. */
+.glassButton {
+  background: color-mix(in srgb, var(--mantine-color-body) 70%, transparent);
+  border-color: color-mix(in srgb, #93c5fd 40%, var(--mantine-color-default-border));
+  color: var(--mantine-color-blue-7);
+}
+
+.controls {
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: min(520px, calc(100vw - 32px));
-  padding: 6px 6px 6px 8px;
+}
+
+/* Fallback: one row at the bottom-center, status grows it to the right. */
+.dockBottom {
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  align-items: center;
+  max-width: min(640px, calc(100vw - 32px));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--mantine-color-body) 88%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--mantine-color-default-border);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
   animation: pill-in 0.25s ease-out;
+}
+
+/* At the editor's right edge, level with the cursor's paragraph: controls
+   only, one row. Glides between paragraphs. */
+.dockAnchored {
+  align-items: center;
+  border-radius: 999px;
+  transition:
+    top 0.18s ease-out,
+    left 0.18s ease-out,
+    opacity 0.15s ease-out,
+    visibility 0.15s;
+  animation: fade-in 0.2s ease-out;
+}
+
+/* Status shown on its own at the bottom-center (while the dock is anchored). */
+.statusAlone .status {
+  padding-left: 2px;
+  border-left: none;
+}
+
+/* Status part (waveform, caption, mute). */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  padding-left: 8px;
+  border-left: 1px solid var(--mantine-color-default-border);
 }
 
 .orb {
@@ -24,7 +398,7 @@
   height: 26px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: radial-gradient(circle at 30% 30%, var(--mantine-color-cyan-3), var(--mantine-color-blue-6) 55%, var(--mantine-color-violet-7));
+  background: radial-gradient(circle at 30% 30%, var(--mantine-color-cyan-3), var(--mantine-color-blue-6) 55%, var(--mantine-color-blue-7));
 }
 
 .orbActive {
@@ -65,6 +439,19 @@
   color: var(--mantine-color-red-7);
 }
 
+.ok {
+  color: var(--mantine-color-teal-7);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes pill-in {
   from {
     opacity: 0;
@@ -86,9 +473,476 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .pill,
-  .orbActive {
-    animation: none;
+/* Record button: a glossy blue mic orb inside a soft frosted halo. */
+.mic {
+  --mic-halo: color-mix(in srgb, #60a5fa 26%, transparent);
+  --mic-halo-outer: color-mix(in srgb, #60a5fa 12%, transparent);
+  position: relative;
+  width: 34px;
+  height: 34px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(140deg, #7dd3fc 0%, #3b82f6 55%, #1d4ed8 100%);
+  box-shadow:
+    0 0 0 4px var(--mic-halo),
+    0 0 0 8px var(--mic-halo-outer),
+    0 6px 14px rgba(59, 130, 246, 0.4),
+    inset 0 1px 1px rgba(255, 255, 255, 0.45);
+  transition:
+    transform 0.15s ease-out,
+    filter 0.15s ease-out;
+}
+
+.mic:hover {
+  transform: scale(1.06);
+  filter: saturate(1.15);
+}
+
+.mic:active {
+  transform: scale(0.95);
+}
+
+.mic:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-5);
+  outline-offset: 10px;
+}
+
+/* While a session runs the halo breathes outward. */
+.mic.micLive {
+  animation: mic-halo 1.6s ease-in-out infinite;
+}
+
+@keyframes mic-halo {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 4px var(--mic-halo),
+      0 0 0 8px var(--mic-halo-outer),
+      0 6px 14px rgba(59, 130, 246, 0.4),
+      inset 0 1px 1px rgba(255, 255, 255, 0.45);
   }
+  50% {
+    box-shadow:
+      0 0 0 6px var(--mic-halo),
+      0 0 0 12px var(--mic-halo-outer),
+      0 6px 18px rgba(37, 99, 235, 0.45),
+      inset 0 1px 1px rgba(255, 255, 255, 0.45);
+  }
+}
+
+/* ---------- Motion ---------- */
+
+/* Angle animated by the rotating ring around the active pill. */
+@property --ring-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.power {
+  position: relative;
+  isolation: isolate;
+}
+
+.power:active {
+  transform: scale(0.92);
+}
+
+/* Off: a mic button that softly "breathes" and sends out a faint sound
+   wave every few seconds, an invitation to click. On hover the mic wiggles
+   and the sound wave grows. */
+.power:not(.powerOn) {
+  color: var(--mantine-color-blue-6);
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(140deg, color-mix(in srgb, #bfdbfe 60%, var(--mantine-color-body)), color-mix(in srgb, #93c5fd 35%, var(--mantine-color-body)));
+  border-color: color-mix(in srgb, #60a5fa 45%, transparent);
+  box-shadow: 0 3px 10px rgba(59, 130, 246, 0.18);
+  animation: idle-breathe 3s ease-in-out infinite;
+}
+
+.power:not(.powerOn)::before,
+.power:not(.powerOn)::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: 50%;
+  border: 1.5px solid #60a5fa;
+  pointer-events: none;
+  opacity: 0;
+  animation: idle-wave 3s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.power:not(.powerOn)::after {
+  animation-delay: 0.35s;
+}
+
+.power:not(.powerOn):hover {
+  color: #fff;
+  border-color: transparent;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(140deg, #7dd3fc 0%, #3b82f6 55%, #1d4ed8 100%);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+  transform: scale(1.08);
+  animation: none;
+}
+
+.power:not(.powerOn):hover svg {
+  animation: mic-wiggle 0.5s ease-in-out;
+}
+
+.power:not(.powerOn):hover::before,
+.power:not(.powerOn):hover::after {
+  animation-duration: 1.4s;
+}
+
+/* Mode turned on / switched: the circle springs into the chip. */
+.powerOn {
+  animation: pill-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.powerOn .powerIcon svg {
+  animation: icon-spin-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.powerOn .powerLabel {
+  animation: label-in 0.35s ease-out 0.08s both;
+}
+
+/* Mode list rows slide in one after another. */
+.menu .option {
+  animation: option-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.menu .option:nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.menu .option:nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.option .optionEnd {
+  transition: transform 0.2s ease-out;
+}
+
+.option:hover .optionEnd {
+  transform: translateX(3px);
+}
+
+/* Mic pops in when a mode is picked. Ready: a light ring orbits it, a soft
+   ping goes out every couple of seconds and the mic gives a small nod, so it
+   is clearly the thing to press. While recording, ripples spread out. */
+.mic {
+  isolation: isolate;
+  animation: pill-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 0.06s backwards;
+}
+
+.mic:not(.micLive):not(:disabled)::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  z-index: -1;
+  padding: 2px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--ring-angle),
+    transparent 0deg,
+    var(--accent-a, #7dd3fc) 70deg,
+    #ffffff 110deg,
+    var(--accent-b, #3b82f6) 150deg,
+    transparent 220deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  animation: ring-spin 2.6s linear infinite;
+}
+
+.mic:not(.micLive):not(:disabled)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  pointer-events: none;
+  background: var(--accent-b, #3b82f6);
+  animation: mic-ping 2.4s cubic-bezier(0, 0, 0.2, 1) 0.6s infinite;
+}
+
+.mic:not(.micLive):not(:disabled) svg {
+  animation: mic-nod 2.4s ease-in-out 0.6s infinite;
+}
+
+.mic:not(.micLive):not(:disabled):hover svg {
+  animation: mic-wiggle 0.5s ease-in-out;
+}
+
+.micLive::before,
+.micLive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent-b, #3b82f6);
+  pointer-events: none;
+  animation: ripple 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.micLive::after {
+  animation-delay: 0.9s;
+}
+
+@keyframes idle-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes idle-wave {
+  0% {
+    transform: scale(1);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.55;
+  }
+  60%,
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+@keyframes mic-wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-14deg);
+  }
+  50% {
+    transform: rotate(10deg);
+  }
+  75% {
+    transform: rotate(-5deg);
+  }
+}
+
+@keyframes mic-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  70%,
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes mic-nod {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  70% {
+    transform: translateY(-2px) scale(1.12);
+  }
+  80% {
+    transform: translateY(0) scale(0.96);
+  }
+  90% {
+    transform: translateY(-1px) scale(1.03);
+  }
+}
+
+@keyframes pill-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes icon-spin-in {
+  from {
+    transform: rotate(-180deg) scale(0.3);
+  }
+  to {
+    transform: rotate(0) scale(1);
+  }
+}
+
+@keyframes label-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes ring-spin {
+  to {
+    --ring-angle: 360deg;
+  }
+}
+
+@keyframes option-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ripple {
+  from {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dockBottom,
+  .dockAnchored,
+  .orbActive,
+  .menu,
+  .menu .option,
+  .liveDotOn,
+  .mic,
+  .mic.micLive,
+  .micLive::before,
+  .micLive::after,
+  .powerOn,
+  .power:not(.powerOn),
+  .power:not(.powerOn)::before,
+  .power:not(.powerOn)::after,
+  .power:not(.powerOn):hover svg,
+  .mic::before,
+  .mic::after,
+  .mic svg,
+  .powerOn .powerIcon svg,
+  .powerOn .powerLabel {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Recording: the same mic orb is the stop button (■). */
+.mic.micStop {
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(140deg, #60a5fa 0%, #2563eb 55%, #1e3a8a 100%);
+}
+
+.mic:disabled {
+  cursor: progress;
+  filter: saturate(0.7);
+  transform: none;
+}
+
+/* "?" usage guide: same card as the mode list, wider, plain text. */
+.helpPanel {
+  width: 300px;
+  padding: 12px 14px;
+  cursor: default;
+}
+
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.guideTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mantine-color-blue-7);
+}
+
+.guideList {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.guideList li + li {
+  margin-top: 2px;
+}
+
+.guideHead {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.guideText {
+  color: var(--mantine-color-dimmed);
+}
+
+/* Step dots before "Langkah n/N · …". */
+.steps {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.stepDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mantine-color-default-border);
+  transition: background 0.2s ease-out;
+}
+
+.stepDone {
+  background: var(--mantine-color-teal-5);
+}
+
+.stepNow {
+  background: var(--mantine-color-blue-5);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mantine-color-blue-5) 30%, transparent);
 }

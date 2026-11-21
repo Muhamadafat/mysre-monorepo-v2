@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
       writerSessionId, 
       title, 
       contentBlocks, 
-      wordCount 
+      wordCount,
+      bibliography,
     } = await req.json();
 
     if (!writerSessionId || !contentBlocks) {
@@ -39,6 +40,9 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         writerId: writerSessionId,
         title: title || `Draft ${new Date().toISOString()}`,
+        // The reference list (Daftar Pustaka) of this version. Stored in the
+        // free JSON column so no schema change is needed.
+        ...(Array.isArray(bibliography) ? { conceptMapData: { bibliography } } : {}),
       },
     });
 
@@ -67,8 +71,10 @@ export async function POST(req: NextRequest) {
       const block = contentBlocks[i];
       const blockText = extractText(block.content);
       
-      // Skip empty blocks
-      if (!blockText.trim()) continue;
+      // Skip empty text blocks only: images, tables, dividers and code have
+      // no inline text but must survive the save.
+      const isTextBlock = ['paragraph', 'heading', 'bulletListItem', 'numberedListItem', 'checkListItem', 'quote'].includes(block?.type);
+      if (isTextBlock && !blockText.trim()) continue;
 
       // Simpan setiap block sebagai section terpisah dengan metadata lengkap
       sectionsData.push({

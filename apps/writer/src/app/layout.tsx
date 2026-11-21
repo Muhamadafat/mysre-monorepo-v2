@@ -1,5 +1,6 @@
 // src/app/layout.tsx
 import '@mantine/core/styles.css';
+import '@gfazioli/mantine-audio/styles.css';
 import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { ModalsProvider } from '@mantine/modals';

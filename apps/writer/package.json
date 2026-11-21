@@ -5,15 +5,23 @@
   "scripts": {
     "dev": "next dev -p 3003",
     "build": "next build",
-    "lint": "next lint",
-    "start:writer": "next start -p 6003"
+    "lint": "eslint .",
+    "start:writer": "next start -p 6003",
+    "test": "vitest run",
+    "test:ai": "vitest run --config vitest.ai.config.mts",
+    "test:collab": "vitest run --config vitest.collab.config.mts",
+    "s3:check": "node scripts/s3-check.mjs",
+    "voice:db-sync": "vitest run --config vitest.voicedb.config.mts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.45",
     "@ai-sdk/react": "^4.0.157",
+    "@aws-sdk/client-s3": "3.1155.0",
     "@blocknote/core": "^0.54.0",
     "@blocknote/mantine": "^0.54.0",
     "@blocknote/react": "^0.54.0",
+    "@breezystack/lamejs": "^1.2.7",
+    "@gfazioli/mantine-audio": "1.1.8",
     "@platejs/ai": "~53.3.12",
     "@platejs/basic-nodes": "^53.0.0",
     "@platejs/basic-styles": "^53.0.0",
@@ -51,6 +59,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.5"
   }
 }

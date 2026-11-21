@@ -18,11 +18,16 @@ import {
 } from "@/components/plate/comments";
 import { CommentsPanel, type CommentUser } from "@/components/plate/CommentsPanel";
 import { FloatingCommentButton } from "@/components/plate/FloatingCommentButton";
-import { WriterEditorKit } from "@/components/plate/kit";
+import { WriterEditorKit, pickAndInsertImage } from "@/components/plate/kit";
+import { FormatToolbar } from "@/components/plate/FormatToolbar";
+import { WritingStatusBar } from "@/components/plate/WritingStatusBar";
 import { BlockNoteCompatEditor } from "@/lib/plateCompat/editor";
 import type { Block, InlineContent, PartialBlock } from "@/lib/plateCompat/types";
 import { blockNoteBlocksToPlateValue } from "@/lib/plateCompat/convert";
 import { PartyKitUnifiedProvider } from "@/lib/plateCompat/yjsProvider";
+import { cleanAIText, dropRepeatedLines, lineKey, stripEchoedPrefix } from "@/lib/aiText";
+import { pushTestLog } from "@/lib/testLog";
+import { TestLogPanel } from "@/components/TestLogPanel";
 import {
   ActionIcon,
   Badge,
@@ -78,11 +83,13 @@ import {
   IconWifiOff,
   IconMessage,
   IconX,
+  IconPhoto,
 } from "@tabler/icons-react";
 import { generateText } from "ai";
 import "katex/dist/katex.min.css";
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle } from "react";
 import VoiceAssistant from "@/components/voice/VoiceAssistant";
+import { computeContributions, type Contribution } from "@/lib/contributions";
 // import Katex from "react-katex";
 const LaTeXModal = React.lazy(() => import("./LaTeXModal"));
 const SearchModal = React.lazy(() => import("./SearchModal"));
@@ -698,40 +705,6 @@ function extractMcpText(data: any): string {
   return "";
 }
 
-/**
- * Strips what mcp-sre's chat answers append for its own chat UI but must
- * not land in an article: reference markers (`[G-8f04]`, `[1] [2] …`) and
- * LangChain metadata leaking as ` additional_kwargs=…`. Line breaks are
- * kept (structure generation returns multi-line markdown).
- */
-function cleanAIText(text: string): string {
-  let out = text;
-  const metadataStart = out.indexOf(" additional_kwargs=");
-  if (metadataStart !== -1) out = out.slice(0, metadataStart);
-  out = out.replace(/[ \t]*\[(?:G-[^\]]+|\d+)\]/g, "");
-  out = out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n");
-  return out.trim();
-}
-
-/**
- * When asked to continue a text, the model often repeats it (or its last
- * sentence) before writing the continuation — appended after the original,
- * that would show the same sentence twice. Drops such an echoed prefix.
- */
-function stripEchoedPrefix(aiText: string, existing: string): string {
-  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
-  const ai = norm(aiText);
-  const before = norm(existing);
-  if (!before) return ai;
-  if (ai.toLowerCase().startsWith(before.toLowerCase())) return ai.slice(before.length).trim();
-  const sentences = before.split(/(?<=[.!?])\s+/);
-  const last = sentences[sentences.length - 1];
-  if (last && last.length >= 15 && ai.toLowerCase().startsWith(last.toLowerCase())) {
-    return ai.slice(last.length).trim();
-  }
-  return ai;
-}
-
 // ---- "Kontribusi" (per-collaborator word count) ---------------------------
 //
 // Every text leaf carries who wrote it: `author` (collaboration user id) and
@@ -742,8 +715,7 @@ function stripEchoedPrefix(aiText: string, existing: string): string {
 // deltas — so they're always exactly "how many words in the document right
 // now each person (and each person's AI) wrote", and deleting words lowers
 // the count of whoever wrote them, whoever does the deleting.
-
-type Contribution = { typed: number; ai: number };
+// The counting itself lives in lib/contributions.ts (shared with /admin).
 
 /** Leaf props marking who wrote a piece of text. */
 function authorProps(author: string, ai: boolean): { author: string; ai?: true } {
@@ -764,82 +736,6 @@ function stampAuthorship(node: any, author: string, ai: boolean): any {
     return stamped;
   });
   return changed ? { ...node, children } : node;
-}
-
-/**
- * Counts words per author over the whole Slate tree. A word is a maximal
- * run of non-whitespace inside one text block; a word whose characters were
- * written by several people (e.g. someone appended "s" to another person's
- * word) is credited to whoever wrote most of its characters, so every word
- * in the document is counted exactly once. Unattributed text (drafts saved
- * before attribution existed) is counted for nobody.
- */
-function computeContributions(nodes: any[]): Record<string, Contribution> {
-  const result: Record<string, Contribution> = {};
-  let owners: (string | null)[] = [];
-  let chars: string[] = [];
-
-  const creditWord = (start: number, end: number) => {
-    const tally = new Map<string, number>();
-    let best: string | null = null;
-    let bestCount = 0;
-    for (let i = start; i < end; i++) {
-      const owner = owners[i];
-      if (owner === null) continue;
-      const count = (tally.get(owner) || 0) + 1;
-      tally.set(owner, count);
-      if (count > bestCount) {
-        best = owner;
-        bestCount = count;
-      }
-    }
-    // Majority must also beat the unattributed characters, otherwise a
-    // one-letter edit to legacy text would claim the whole word.
-    if (best === null || bestCount * 2 < end - start) return;
-    const isAI = best.startsWith("ai:");
-    const author = best.slice(3);
-    const entry = (result[author] ||= { typed: 0, ai: 0 });
-    if (isAI) entry.ai += 1;
-    else entry.typed += 1;
-  };
-
-  const flushBlock = () => {
-    let wordStart = -1;
-    for (let i = 0; i <= chars.length; i++) {
-      const isSpace = i === chars.length || /\s/.test(chars[i]);
-      if (isSpace) {
-        if (wordStart !== -1) creditWord(wordStart, i);
-        wordStart = -1;
-      } else if (wordStart === -1) {
-        wordStart = i;
-      }
-    }
-    owners = [];
-    chars = [];
-  };
-
-  const walk = (node: any) => {
-    if (!node || typeof node !== "object") return;
-    if (typeof node.text === "string") {
-      const owner = typeof node.author === "string" ? `${node.ai === true ? "ai" : "me"}:${node.author}` : null;
-      for (const ch of node.text) {
-        chars.push(ch);
-        owners.push(owner);
-      }
-      return;
-    }
-    if (!Array.isArray(node.children)) return;
-    // Links are inline — their text continues the surrounding words.
-    // Every other element is a block boundary.
-    const isInline = node.type === "a";
-    if (!isInline) flushBlock();
-    node.children.forEach(walk);
-    if (!isInline) flushBlock();
-  };
-
-  nodes.forEach(walk);
-  flushBlock();
-  return result;
 }
 
 // Main component
@@ -1288,12 +1184,28 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
     // server every tab silently edits its own private copy (nothing syncs —
     // collaborators see different documents), so this is surfaced in the
     // status bar instead of failing quietly.
+    const [showTestLog, setShowTestLog] = React.useState(false);
+    React.useEffect(() => {
+      setShowTestLog(
+        process.env.NODE_ENV !== "production" || new URLSearchParams(window.location.search).has("log"),
+      );
+    }, []);
+
     const [collabStatus, setCollabStatus] = React.useState<"connecting" | "synced" | "offline">("connecting");
     React.useEffect(() => {
       if (!collabRoom) return;
       const provider = collabRoom.provider as any;
+      let lastLogged: string | null = null;
       const update = () => {
         const next = provider.wsconnected ? (provider.synced ? "synced" : "connecting") : provider.wsconnecting ? "connecting" : "offline";
+        if (next !== lastLogged) {
+          lastLogged = next;
+          pushTestLog({
+            feature: "Kolaborasi",
+            status: next === "offline" ? "gagal" : "info",
+            detail: { synced: "tersinkron dengan server", connecting: "menyambung…", offline: "server kolaborasi tidak terhubung" }[next],
+          });
+        }
         queueMicrotask(() => setCollabStatus(next));
       };
       update();
@@ -1933,39 +1845,8 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
         }
       },
       onInsertImage: () => {
-        // Insert image placeholder that actually works with BlockNote
-        try {
-          // Create a paragraph with image placeholder text and file input trigger
-          const imageBlock: PartialBlock = {
-            type: "paragraph",
-            content: [
-              {
-                type: "text",
-                text: "📷 [Gambar]",
-                styles: {
-                  backgroundColor: "blue",
-                  textColor: "white"
-                }
-              },
-              { type: "text", text: " - Klik untuk upload gambar atau drag & drop file ke sini", styles: {} }
-            ]
-          };
-
-          editor.insertBlocks([imageBlock], editor.getTextCursorPosition().block, "after");
-
-          notifications.show({
-            message: 'Placeholder gambar disisipkan. Upload gambar dengan drag & drop',
-            color: 'green',
-            autoClose: 3000,
-          });
-        } catch (error) {
-          console.error('Error inserting image:', error);
-          notifications.show({
-            message: 'Gagal menyisipkan placeholder gambar',
-            color: 'red',
-            autoClose: 3000,
-          });
-        }
+        // Real image: file picker → /api/upload (S3) → image block below the cursor.
+        pickAndInsertImage(editor.raw);
       },
       onInsertCode: () => {
         // Insert code block with proper BlockNote structure
@@ -4670,8 +4551,12 @@ ATURAN:
             if (busy) return BUSY;
             const mode = ["structure", "content", "sentence"].includes(str("mode")) ? str("mode") : "content";
             const topic = str("topic");
-            // An outline without a topic is built from the project's articles.
-            if (!topic && mode !== "structure") return { ok: false, message: "Topiknya belum disebutkan. Tanyakan topiknya ke user." };
+            // No topic is fine: an outline is built from the project's articles, content is written
+            // for the heading at the cursor ("isi konten artikel" = this section). Only "sentence" needs one.
+            if (!topic && mode === "sentence") return { ok: false, message: "Topiknya belum disebutkan. Tanyakan topiknya ke user." };
+            if (mode === "content" && !topic && !editor.getTextCursorPosition()?.block) {
+              return { ok: false, message: "Taruh kursor di bagian (judul) yang mau diisi dulu, lalu ulangi 'isi konten artikel'." };
+            }
             setAIMode("new");
             setPrompt(topic);
             setCurrentAIType(mode);
@@ -5794,7 +5679,12 @@ INSTRUKSI:
         }
 
         const currentBlocks = editor.document;
-        const generatedLines = generatedContent.split('\n').filter((line: string) => line.trim());
+        // Headings stay (they locate where to insert); repeated paragraphs go.
+        const existingKeys = new Set(currentBlocks.map(block => lineKey(extractTextFromBlock(block))));
+        const generatedLines = generatedContent
+          .split('\n')
+          .filter((line: string) => line.trim())
+          .filter((line: string) => /^#+\s+/.test(line.trim()) || !existingKeys.has(lineKey(line)));
 
         let currentBlockIndex = 0;
         let i = 0;
@@ -5887,9 +5777,23 @@ INSTRUKSI:
           return;
         }
 
-        const lines = generatedContent.split('\n').filter((line: string) => line.trim());
+        const generatedLines = generatedContent.split('\n').filter((line: string) => line.trim());
+        // "rewrite" replaces the whole document, so only repeats inside the
+        // output itself count; every other behavior adds to what is there.
+        const lines = dropRepeatedLines(
+          generatedLines,
+          behavior === "rewrite" ? [] : editor.document.map(block => extractTextFromBlock(block)),
+        );
 
         if (lines.length === 0) {
+          if (generatedLines.length > 0) {
+            notifications.show({
+              title: 'AI Tidak Menambahkan Teks Baru',
+              message: 'Hasil AI hanya mengulang isi yang sudah ada di dokumen. Silakan generate ulang.',
+              color: 'yellow',
+              icon: <IconAlertTriangle size={18} />,
+            });
+          }
           console.warn("No valid lines to insert");
           return;
         }
@@ -6365,6 +6269,14 @@ INSTRUKSI:
           icon: <IconFileText size={18} />,
         },
         {
+          title: "Gambar",
+          onItemClick: () => pickAndInsertImage(editor.raw),
+          aliases: ["gambar", "image", "foto", "upload"],
+          group: "Formatting",
+          subtext: "Unggah gambar (PNG/JPG/GIF/WEBP, maks 5 MB) — bisa juga paste / drag & drop",
+          icon: <IconPhoto size={18} />,
+        },
+        {
           title: "Divider",
           onItemClick: () => {
             const pos = editor.getTextCursorPosition();
@@ -6611,6 +6523,9 @@ INSTRUKSI:
       )}
       </div>
 
+      {/* Manual-test log (dev, or any build opened with ?log=1) */}
+      {showTestLog && <TestLogPanel />}
+
       {/* Collaboration connection status — only shown when NOT in sync */}
       {collaboration && collabStatus !== "synced" && (
         <Tooltip
@@ -6768,11 +6683,7 @@ INSTRUKSI:
                 </Tooltip>
 
                 <Divider orientation="vertical" />
-                <Tooltip label="Bold"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ bold: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}><b>B</b></ActionIcon></Tooltip>
-                <Tooltip label="Italic"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ italic: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}><i>I</i></ActionIcon></Tooltip>
-                <Tooltip label="Underline"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ underline: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}><u>U</u></ActionIcon></Tooltip>
-                <Tooltip label="Strikethrough"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ strike: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}><s>S</s></ActionIcon></Tooltip>
-                <Tooltip label="Code"><ActionIcon variant="subtle" onClick={() => editor.toggleStyles({ code: true })} style={{ transition: 'all 0.15s ease' }} styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}>{'</>'}</ActionIcon></Tooltip>
+                <FormatToolbar editor={editor} />
                 <Divider orientation="vertical" />
                 <Menu shadow="md" position="bottom-start">
                   <Menu.Target>
@@ -6795,12 +6706,8 @@ INSTRUKSI:
                     ))}
                   </Menu.Dropdown>
                 </Menu>
-                {!collaboration && (
-                  <>
-                    <Divider orientation="vertical" />
-                    <VoiceAssistant onCommand={runVoiceCommand} />
-                  </>
-                )}
+                {/* Floating dock (portal), so it takes no toolbar space. */}
+                {!collaboration && <VoiceAssistant onCommand={runVoiceCommand} />}
                 {collaboration && (
                   <>
                     <Divider orientation="vertical" />
@@ -7739,6 +7646,47 @@ INSTRUKSI:
               .bn-editor {
                 padding-left: 40px !important;
               }
+
+              /* ── Writing surface: full panel width (user prefers it wide) ── */
+              .bn-editor {
+                width: 100%;
+                box-sizing: border-box;
+                font-size: 16.5px;
+                line-height: 1.8;
+                letter-spacing: 0.003em;
+                caret-color: #2563eb;
+                text-rendering: optimizeLegibility;
+                -webkit-font-smoothing: antialiased;
+                padding-bottom: 35vh !important; /* room to keep writing mid-screen */
+              }
+              .bn-editor p { margin: 0 0 0.65em; }
+              .bn-editor h1, .bn-editor h2, .bn-editor h3 { line-height: 1.3; letter-spacing: -0.01em; }
+              .bn-editor ::selection { background: rgba(59, 130, 246, 0.22); }
+              .bn-editor a { color: #2563eb; text-decoration: underline; text-underline-offset: 2px; }
+              .bn-editor code {
+                background: rgba(127, 127, 127, 0.13);
+                border-radius: 4px;
+                padding: 0.1em 0.35em;
+                font-size: 0.88em;
+              }
+              .bn-editor table { border-collapse: collapse; width: 100%; margin: 0.8em 0; }
+              .bn-editor td, .bn-editor th {
+                border: 1px solid rgba(127, 127, 127, 0.3);
+                padding: 6px 10px;
+                vertical-align: top;
+              }
+              .bn-editor th { background: rgba(127, 127, 127, 0.08); font-weight: 600; }
+              .bn-editor hr { border: none; border-top: 1px solid rgba(127, 127, 127, 0.3); margin: 1.5em 0; }
+              .bn-editor [data-slate-placeholder="true"] { opacity: 0.4 !important; font-style: italic; }
+              .writer-format-toolbar .writer-tool { transition: background-color .12s ease, color .12s ease; }
+              .writer-status-bar {
+                flex-shrink: 0;
+                border-top: 1px solid rgba(127, 127, 127, 0.15);
+                backdrop-filter: blur(8px);
+              }
+              @media (max-width: 768px) {
+                .bn-editor { font-size: 16px; padding-left: 20px !important; padding-right: 16px !important; }
+              }
             `}</style>
             <CommentUIContext.Provider value={commentUI}>
             <Plate
@@ -7786,6 +7734,9 @@ INSTRUKSI:
               onFocusThread={focusComment}
             />
           </div>
+
+          {/* Words · characters · paragraphs · citations · reading time */}
+          <WritingStatusBar editor={editor} />
 
           {/* Inline AI Suggestions Popup */}
           {inlineAIState.isVisible && (

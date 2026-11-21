@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { getServerSession, prisma } from "@sre-monorepo/lib/server";
-import { VOICE_INSTRUCTIONS, VOICE_TOOLS } from "@/lib/voice/tools";
+import { COMMAND_SAVE_INSTRUCTIONS, DICTATION_INSTRUCTIONS } from "@/lib/voice/tools";
 import { VOICE_LIMITS, getVoiceUsage, reservedCostUsd } from "@/lib/voice/limits";
 
 /**
@@ -15,16 +15,26 @@ import { VOICE_LIMITS, getVoiceUsage, reservedCostUsd } from "@/lib/voice/limits
  * was really used — if the browser never reports (crash, tampering), the
  * reservation stands, so mistakes round up, never down.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  // Both modes only listen: the model never answers and has no tools
+  // (create_response false), it just transcribes.
+  //   "write"   = dictation: each sentence is typed at the cursor.
+  //   "command" = commands are saved (recording + transcript) and run later
+  //               from the history (Rekaman Mode Perintah → "Jalankan"), not now.
+  const body = await request.json().catch(() => ({}));
+  const dictation = body?.mode === "write";
+
   const authSession = await getServerSession();
   const user = authSession?.user;
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  // Voice runs on the lecturer's (dosbim) key when VOICE_OPENAI_API_KEY is set;
+  // OPENAI_API_KEY (the user's own key) is only a fallback.
+  const apiKey = process.env.VOICE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: "OPENAI_API_KEY belum diatur di server writer." }, { status: 500 });
+    return NextResponse.json({ error: "VOICE_OPENAI_API_KEY belum diatur di server writer." }, { status: 500 });
   }
 
   const { usedSecondsToday, spentUsdThisMonth } = await getVoiceUsage(user.id);
@@ -57,14 +67,14 @@ export async function POST() {
       session: {
         type: "realtime",
         model,
-        instructions: VOICE_INSTRUCTIONS,
-        tools: VOICE_TOOLS,
-        tool_choice: "auto",
+        instructions: dictation ? DICTATION_INSTRUCTIONS : COMMAND_SAVE_INSTRUCTIONS,
+        tools: [],
+        tool_choice: "none",
         audio: {
           input: {
             transcription: { model: "gpt-4o-mini-transcribe", language: "id" },
             noise_reduction: { type: "near_field" },
-            turn_detection: { type: "semantic_vad" },
+            turn_detection: { type: "semantic_vad", create_response: false, interrupt_response: false },
           },
           output: { voice: process.env.OPENAI_REALTIME_VOICE || "marin" },
         },

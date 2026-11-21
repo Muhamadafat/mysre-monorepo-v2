@@ -29,6 +29,7 @@ import {
   useMantineTheme,
 } from '@mantine/core';
 import 'react-pdf-highlighter/dist/style.css';
+import { viewablePdfUrl } from '@/lib/pdfUrl';
 import { useHighlightZoomSync } from '@/hooks/useHighlightZoomSync';
 
 interface WebViewerProps {
@@ -335,7 +336,7 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics }) => {
           Download PDF
         </Button>
       </Group>
-      <div style={{ display: 'flex', height: '100%', overflow: 'auto' }}>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'auto' }}>
         {/* Kiri: PDF Viewer */}
         <div
           ref={pdfViewerRef}
@@ -348,16 +349,26 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics }) => {
             overflow: 'auto',
           }}
         >
+          {/* PdfHighlighter is position:absolute + 100% size, so this wrapper
+              must have a real size — an inline-block here collapsed to 0×0
+              and the PDF loaded but was invisible. */}
           <div
             style={{
-              display: 'inline-block',
+              position: 'relative',
+              width: '100%',
+              height: '100%',
               transform: `scale(${zoom})`,
               transformOrigin: 'top left',
               transition: zoom === 1 ? 'none' : 'transform 0.1s ease-out',
             }}
           >
             <PdfLoader
-              url={fileUrl}
+              url={viewablePdfUrl(fileUrl)}
+              errorMessage={
+                <div style={{ padding: 32, textAlign: 'center', color: isDark ? theme.colors.gray[3] : theme.colors.dark[5] }}>
+                  PDF tidak bisa dibuka. Pastikan aplikasi brain sedang berjalan, lalu coba lagi.
+                </div>
+              }
               beforeLoad={
                 <div
                   style={{

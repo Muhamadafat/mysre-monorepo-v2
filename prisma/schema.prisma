@@ -116,6 +116,7 @@ model User {
   submissions          AssignmentSubmission[]
   analytics            Analytics[]
   xapiStatements       XapiStatement[]
+  voiceRecordings      VoiceRecording[]
 }
 
 model Draft {
@@ -334,4 +335,141 @@ model GazeEvent {
   session     BrainstormingSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
+}
+// ---- Writer voice assistant (apps/writer) ----
+// The audio stays in S3 (Cloudeka); these rows mirror each recording's .json
+// so intents, actions and results can be queried in SQL. Written by
+// apps/writer/src/lib/voice/voiceDb.ts; old recordings via
+// `npm run voice:db-sync` (apps/writer).
+
+// ---- Command list (docs/daftar-perintah-suara.xlsx) ----
+// Copied from apps/writer/src/lib/voice/commandCatalog.ts by
+// `npm run voice:db-sync`; read by GET /api/voice/commands (help pop-up).
+
+/// Sheet "Perintah Suara": one row per spoken command (intent).
+model VoiceCommand {
+  /// Intent id, e.g. "buat_outline_artikel" (same as VoiceCommandCall.intent).
+  intent    String              @id
+  /// "No" column; null for switched-off commands.
+  no        Int?
+  /// "utama" | "pendukung" | "nonaktif"
+  group     String
+  /// Order in the catalog / Excel.
+  sortOrder Int
+  /// "Perintah"
+  command   String
+  /// "Contoh Kalimat"
+  example   String
+  /// "Kata Lain yang Dikenali"
+  keywords  String
+  /// "Aksi di SRE"
+  action    String
+  /// "Tujuan Hasil" → VoiceCommandTarget.
+  targetId  String
+  /// "Tool" (tools.ts) and "Function" (inside runVoiceCommand).
+  tool      String
+  function  String
+  updatedAt DateTime            @updatedAt
+  target    VoiceCommandTarget  @relation(fields: [targetId], references: [id])
+  flow      VoiceCommandFlow?
+
+  @@index([group, sortOrder])
+}
+
+/// Sheet "Tujuan Hasil": where a command's result ends up.
+model VoiceCommandTarget {
+  /// e.g. "jendela_ai" (field `target` in the recordings API).
+  id        String         @id
+  label     String
+  sortOrder Int
+  commands  VoiceCommand[]
+}
+
+/// Sheet "Alur Pakai": the steps of a main command.
+model VoiceCommandFlow {
+  intent    String       @id
+  sortOrder Int
+  /// "1. Ucapkan"
+  say       String
+  /// "2. Hasil"
+  result    String
+  /// "3. Lalu ucapkan"
+  thenSay   String
+  /// "4. Akhirnya"
+  outcome   String
+  command   VoiceCommand @relation(fields: [intent], references: [intent], onDelete: Cascade)
+}
+
+/// One voice session recording (Mode Menulis or Mode Perintah).
+model VoiceRecording {
+  /// Same UUID as the recording's `id` / `key` in the recordings API.
+  id           String            @id
+  userId       String
+  /// Project id from the draft URL (/project/<id>/draft); no FK on purpose.
+  projectId    String?
+  /// "menulis" | "perintah"
+  mode         String
+  /// S3 key of the main audio (MP3) and of the WAV original.
+  audioKey     String            @unique
+  wavKey       String?
+  mimeType     String?
+  sizeBytes    Int               @default(0)
+  wavSizeBytes Int?
+  startedAt    DateTime?
+  endedAt      DateTime?
+  /// Live transcript lines [{ at, role, text }].
+  transcript   Json              @default("[]")
+  /// "Transkrip AI" of the audio, once requested.
+  aiTranscript String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commandRuns  VoiceCommandRun[]
+
+  @@index([userId, projectId, mode])
+}
+
+/// One run of a spoken command (Mode Perintah): stop in the dock ("langsung") or "Jalankan" in the history ("riwayat").
+model VoiceCommandRun {
+  id          String             @id @default(uuid())
+  recordingId String
+  /// "langsung" | "riwayat"
+  source      String
+  /// The spoken text that was interpreted.
+  text        String
+  /// Intent of the first call (commandCatalog.ts / Excel), null = not recognised.
+  intent      String?
+  /// "berhasil" | "gagal" | "tidak_dikenali"
+  status      String
+  /// Interpreter's reply when no command was found.
+  reply       String?
+  createdAt   DateTime           @default(now())
+  recording   VoiceRecording     @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  calls       VoiceCommandCall[]
+
+  @@index([recordingId])
+  @@index([intent])
+}
+
+/// One tool call of a run, in order.
+model VoiceCommandCall {
+  id       String          @id @default(uuid())
+  runId    String
+  /// 0-based position in the run.
+  position Int
+  /// Tool the interpreter called (tools.ts), e.g. "generate_with_ai".
+  tool     String
+  args     Json            @default("{}")
+  /// Intent from the catalog, e.g. "buat_outline_artikel".
+  intent   String?
+  /// Editor function that ran it inside runVoiceCommand, e.g. handleAIGenerationWithProgress(topic, "structure").
+  function String?
+  /// Where the result goes (catalog target), e.g. "jendela_ai".
+  target   String?
+  ok       Boolean
+  message  String
+  run      VoiceCommandRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([tool])
 }

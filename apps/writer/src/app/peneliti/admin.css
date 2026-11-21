@@ -1,0 +1,199 @@
+/* Admin page (/admin). Colors follow Mantine's light/dark scheme. */
+.adm-shell {
+  min-height: 100vh;
+  background: light-dark(#f6f8fb, #141517);
+  display: flex;
+  flex-direction: column;
+}
+
+.adm-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 10px 20px;
+  background: light-dark(rgba(255, 255, 255, 0.85), rgba(26, 27, 30, 0.85));
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid light-dark(#e9ecef, #2c2e33);
+}
+
+.adm-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #06b6d4);
+  flex-shrink: 0;
+}
+
+.adm-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px;
+  max-width: 1500px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.adm-sidebar {
+  position: sticky;
+  top: 76px;
+  align-self: start;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.adm-main {
+  min-width: 0;
+  background: light-dark(#fff, #1a1b1e);
+  border: 1px solid light-dark(#e9ecef, #2c2e33);
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.adm-student {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid light-dark(#e9ecef, #2c2e33);
+  background: light-dark(#fff, #1a1b1e);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+.adm-student:hover {
+  border-color: light-dark(#a5c8ff, #3b5bdb);
+}
+.adm-student[data-active] {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+.adm-stat {
+  background: light-dark(#fff, #1a1b1e);
+}
+.adm-stat-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--mantine-color-blue-6);
+  background: var(--mantine-color-blue-light);
+}
+.adm-stat-icon[data-color="cyan"] { color: var(--mantine-color-cyan-6); background: var(--mantine-color-cyan-light); }
+.adm-stat-icon[data-color="teal"] { color: var(--mantine-color-teal-6); background: var(--mantine-color-teal-light); }
+.adm-stat-icon[data-color="grape"] { color: var(--mantine-color-grape-6); background: var(--mantine-color-grape-light); }
+.adm-stat-icon[data-color="orange"] { color: var(--mantine-color-orange-6); background: var(--mantine-color-orange-light); }
+.adm-stat-icon[data-color="pink"] { color: var(--mantine-color-pink-6); background: var(--mantine-color-pink-light); }
+
+.adm-project {
+  border-left-width: 4px !important;
+}
+
+.adm-rec .adm-audio {
+  width: 100%;
+  height: 36px;
+  margin-top: 8px;
+}
+.adm-quote {
+  font-style: italic;
+}
+
+.adm-cite {
+  display: inline-block;
+  padding: 0 5px;
+  margin: 0 1px;
+  border-radius: 5px;
+  font-size: 0.82em;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #1d4ed8;
+  background: rgba(59, 130, 246, 0.12);
+  white-space: nowrap;
+}
+
+/* The student's document */
+.adm-paper {
+  background: light-dark(#fff, #1f2023);
+}
+.adm-doc {
+  max-width: 760px;
+  margin: 0 auto;
+  font-size: 16px;
+  line-height: 1.8;
+}
+.adm-doc p { margin: 0 0 0.7em; }
+.adm-doc h1, .adm-doc h2, .adm-doc h3, .adm-doc h4 { line-height: 1.3; margin: 1.2em 0 0.4em; }
+.adm-doc h1 { font-size: 1.8em; margin-top: 0.4em; }
+.adm-doc h2 { font-size: 1.42em; }
+.adm-doc h3 { font-size: 1.18em; }
+.adm-doc a { color: #2563eb; }
+.adm-doc code { background: rgba(127, 127, 127, 0.13); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.88em; }
+.adm-doc pre { background: rgba(127, 127, 127, 0.1); padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 0.88em; }
+.adm-doc blockquote { margin: 0.8em 0; padding-left: 14px; border-left: 3px solid rgba(127, 127, 127, 0.35); opacity: 0.85; }
+.adm-doc hr { border: none; border-top: 1px solid rgba(127, 127, 127, 0.3); margin: 1.4em 0; }
+.adm-li { display: flex; gap: 8px; margin: 0 0 0.35em; }
+.adm-li-mark { opacity: 0.7; user-select: none; min-width: 1.1em; }
+.adm-figure { margin: 1em 0; text-align: center; }
+.adm-figure img { max-width: 100%; max-height: 480px; border-radius: 8px; }
+.adm-figure figcaption { font-size: 0.85em; opacity: 0.7; font-style: italic; }
+.adm-table-wrap { overflow-x: auto; margin: 0.8em 0; }
+.adm-table-wrap table { border-collapse: collapse; width: 100%; }
+.adm-table-wrap td, .adm-table-wrap th { border: 1px solid rgba(127, 127, 127, 0.3); padding: 6px 10px; vertical-align: top; }
+.adm-doc-empty { opacity: 0.6; font-style: italic; text-align: center; padding: 24px 0; }
+
+.adm-login-bg {
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(37, 99, 235, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, rgba(6, 182, 212, 0.16), transparent 60%),
+    light-dark(#f6f8fb, #141517);
+}
+
+/* Phone / tablet: list OR detail, one at a time. */
+@media (max-width: 991px) {
+  .adm-body {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 16px;
+  }
+  .adm-sidebar {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .adm-sidebar[data-hidden-mobile="true"],
+  .adm-main[data-hidden-mobile="true"] {
+    display: none;
+  }
+  .adm-main {
+    padding: 14px;
+  }
+  .adm-header {
+    padding: 10px 16px;
+  }
+}
+
+/* Clickable count bubbles under a project (each opens a pop-up). */
+.adm-bubble {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.adm-bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* A collaborator's passage; AI-written text gets a violet edge. */
+.adm-passage {
+  padding-left: 10px;
+  border-left: 3px solid var(--mantine-color-blue-filled);
+  white-space: pre-wrap;
+}
+.adm-passage[data-ai] {
+  border-left-color: var(--mantine-color-violet-filled);
+}

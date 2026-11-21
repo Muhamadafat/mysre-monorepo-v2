@@ -123,7 +123,9 @@ export async function GET(req: NextRequest) {
         createdAt: draft.createdAt,
         sections: draft.sections
       },
-      editorContent: editorBlocks
+      editorContent: editorBlocks,
+      // Daftar Pustaka saved with this version (null for older versions).
+      bibliography: Array.isArray((draft.conceptMapData as any)?.bibliography) ? (draft.conceptMapData as any).bibliography : null,
     });
 
   } catch (error) {
