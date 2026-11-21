@@ -5148,7 +5148,9 @@ const handleSubmitToTeacher = async () => {
                           marginBottom: "12px",
                         }}
                       />
-                      <ScrollArea style={{ flex: 1 }}>
+                      {/* offsetScrollbars: keep the scrollbar beside the content
+                          instead of on top of it (it used to cover the "+" button) */}
+                      <ScrollArea style={{ flex: 1 }} offsetScrollbars="y">
                         {activeTab === "annotation" && (
                           <Box style={{ flex: 1, overflow: 'auto' }}>
                             <AnnotationPanel sessionId={sessionIdN} />
@@ -5430,8 +5432,20 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                         )}
                         {activeTab === "chat" && (
                           <>
+                            {/* Header + search stay pinned while the list scrolls,
+                                so the "+" (upload) is never scrolled away or covered */}
+                            <Box
+                              style={{
+                                position: "sticky",
+                                top: 0,
+                                zIndex: 5,
+                                backgroundColor: computedColorScheme === "dark" ? "#2a2a2a" : "#f9f9f9",
+                                paddingTop: 4,
+                                paddingRight: 12,
+                              }}
+                            >
                             {/* Header section dengan informasi */}
-                            <Group align="center" justify="space-between" mb="md">
+                            <Group align="center" justify="space-between" mb="md" wrap="nowrap">
                               <Group align="center" gap="sm">
                                 <Paper
                                   style={{
@@ -5520,6 +5534,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                   Ditemukan {filteredArticles.length} artikel
                                 </Text>
                               )}
+                            </Box>
                             </Box>
 
                             {/* Area daftar artikel dengan scroll */}
@@ -6491,7 +6506,9 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                       marginBottom: "12px",
                     }}
                   />
-                  <ScrollArea style={{ flex: 1 }}>
+                  {/* offsetScrollbars: keep the scrollbar beside the content
+                      instead of on top of it (it used to cover the "+" button) */}
+                  <ScrollArea style={{ flex: 1 }} offsetScrollbars="y">
                     {activeTab === "annotation" && (
                       <Box style={{ flex: 1, overflow: 'auto' }}>
                         <AnnotationPanel sessionId={sessionIdN} />
@@ -7026,8 +7043,20 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                     )}
                     {activeTab === "chat" && (
                       <>
+                        {/* Header + search stay pinned while the list scrolls,
+                            so the "+" (upload) is never scrolled away or covered */}
+                        <Box
+                          style={{
+                            position: "sticky",
+                            top: 0,
+                            zIndex: 5,
+                            backgroundColor: computedColorScheme === "dark" ? "#2a2a2a" : "#f9f9f9",
+                            paddingTop: 4,
+                            paddingRight: 12,
+                          }}
+                        >
                         {/* Header section dengan informasi */}
-                        <Group align="center" justify="space-between" mb="md">
+                        <Group align="center" justify="space-between" mb="md" wrap="nowrap">
                           <Group align="center" gap="sm">
                             <Paper
                               style={{
@@ -7116,6 +7145,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                               Ditemukan {filteredArticles.length} artikel
                             </Text>
                           )}
+                        </Box>
                         </Box>
 
                         {/* Area daftar artikel dengan scroll */}
