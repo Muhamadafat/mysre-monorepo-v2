@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Alert, Box, Button, Group, Modal, SimpleGrid, Stack, Text, TextInput, Textarea, UnstyledButton } from "@mantine/core";
+import { ActionIcon, Alert, Box, Button, Divider, Group, Modal, Progress, SimpleGrid, Stack, Text, TextInput, Textarea, ThemeIcon, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertCircle, IconFileTypePdf, IconUpload, IconX } from "@tabler/icons-react";
+import { IconAlertCircle, IconCloudUpload, IconFileTypePdf, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 
 /**
  * Pop-up behind the "+" on "Referensi Pustaka": pick a PDF (click or drag),
@@ -103,51 +103,89 @@ export default function ReferenceUploadModal({
             e.currentTarget.value = "";
           }}
         />
-        <UnstyledButton
-          onClick={() => !busy && inputRef.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            if (!busy) pick(e.dataTransfer.files?.[0]);
-          }}
-          style={{
-            border: `2px dashed ${dragging ? "#007BFF" : "var(--mantine-color-default-border)"}`,
-            borderRadius: 12,
-            padding: "28px 16px",
-            textAlign: "center",
-            background: dragging ? "rgba(0,123,255,0.06)" : undefined,
-            transition: "all 0.15s ease",
-          }}
-        >
-          {file ? (
-            <Group justify="center" gap="sm" wrap="nowrap">
-              <IconFileTypePdf size={32} color="#e03131" />
-              <Box style={{ minWidth: 0, textAlign: "left" }}>
-                <Text fw={600} size="sm" truncate>
-                  {file.name}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {(file.size / 1024 / 1024).toFixed(1)} MB · klik untuk ganti
-                </Text>
-              </Box>
-            </Group>
-          ) : (
-            <Stack gap={4} align="center">
-              <IconUpload size={30} color="#007BFF" />
-              <Text fw={600} size="sm">
-                Klik atau seret file PDF ke sini
+        {file ? (
+          <Group
+            gap="sm"
+            wrap="nowrap"
+            p="sm"
+            style={{
+              border: "1px solid var(--mantine-color-default-border)",
+              borderRadius: 12,
+              background: "var(--mantine-color-default-hover)",
+            }}
+          >
+            <ThemeIcon size={44} radius="md" color="red" variant="light">
+              <IconFileTypePdf size={26} />
+            </ThemeIcon>
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <Text fw={600} size="sm" truncate title={file.name}>
+                {file.name}
               </Text>
               <Text size="xs" c="dimmed">
-                Maks {MAX_MB} MB
+                PDF · {(file.size / 1024 / 1024).toFixed(1)} MB
+              </Text>
+            </Box>
+            <Button variant="subtle" size="xs" onClick={() => inputRef.current?.click()} disabled={busy}>
+              Ganti
+            </Button>
+            <Tooltip label="Hapus file" withArrow>
+              <ActionIcon variant="subtle" color="gray" onClick={() => setFile(null)} disabled={busy} aria-label="Hapus file">
+                <IconTrash size={16} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        ) : (
+          <Box
+            role="button"
+            tabIndex={0}
+            onClick={() => !busy && inputRef.current?.click()}
+            onKeyDown={(e) => {
+              if ((e.key === "Enter" || e.key === " ") && !busy) {
+                e.preventDefault();
+                inputRef.current?.click();
+              }
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              if (!busy) pick(e.dataTransfer.files?.[0]);
+            }}
+            style={{
+              border: `2px dashed ${dragging ? "#007BFF" : "var(--mantine-color-default-border)"}`,
+              borderRadius: 14,
+              padding: "28px 20px",
+              textAlign: "center",
+              cursor: busy ? "not-allowed" : "pointer",
+              background: dragging ? "rgba(0,123,255,0.08)" : "rgba(0,123,255,0.025)",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <Stack gap={8} align="center">
+              <ThemeIcon size={56} radius="xl" variant="light" color="blue">
+                <IconCloudUpload size={30} />
+              </ThemeIcon>
+              <Text fw={600} size="sm">
+                {dragging ? "Lepaskan file di sini" : "Seret & lepas file PDF di sini"}
+              </Text>
+              <Text size="xs" c="dimmed">
+                atau
+              </Text>
+              <Button size="xs" variant="light" radius="xl" leftSection={<IconFileTypePdf size={14} />} style={{ pointerEvents: "none" }}>
+                Pilih file PDF
+              </Button>
+              <Text size="xs" c="dimmed">
+                Hanya PDF · maks {MAX_MB} MB
               </Text>
             </Stack>
-          )}
-        </UnstyledButton>
+          </Box>
+        )}
+
+        <Divider label="Detail artikel" labelPosition="left" />
 
         <TextInput label="Judul" placeholder="Judul artikel" value={meta.title} onChange={set("title")} disabled={busy} />
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
@@ -155,7 +193,7 @@ export default function ReferenceUploadModal({
           <TextInput label="Tahun" placeholder="2024" value={meta.year} onChange={set("year")} disabled={busy} />
           <TextInput label="DOI" placeholder="10.xxxx/xxxx" value={meta.doi} onChange={set("doi")} disabled={busy} />
         </SimpleGrid>
-        <Textarea label="Abstrak (opsional)" autosize minRows={2} maxRows={5} value={meta.abstract} onChange={set("abstract")} disabled={busy} />
+        <Textarea label="Abstrak (opsional)" placeholder="Ringkasan singkat artikel" autosize minRows={2} maxRows={5} value={meta.abstract} onChange={set("abstract")} disabled={busy} />
 
         {error && (
           <Alert color="red" variant="light" icon={<IconAlertCircle size={16} />}>
@@ -163,9 +201,12 @@ export default function ReferenceUploadModal({
           </Alert>
         )}
         {busy && (
-          <Text size="xs" c="dimmed">
-            Mengunggah dan menganalisis PDF dengan AI… biasanya 30 detik – 2 menit. Jangan tutup halaman ini.
-          </Text>
+          <Stack gap={6}>
+            <Progress value={100} animated striped size="sm" radius="xl" />
+            <Text size="xs" c="dimmed">
+              Mengunggah dan menganalisis PDF dengan AI… biasanya 30 detik – 2 menit. Jangan tutup halaman ini.
+            </Text>
+          </Stack>
         )}
 
         <Group justify="flex-end" gap="sm">
