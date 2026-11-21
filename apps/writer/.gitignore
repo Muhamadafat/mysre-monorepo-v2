@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AI latency logs (reliability testing)
+/logs/
+
+# Voice session recordings (saved locally for now)
+/recordings/

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "@sre-monorepo/lib/server";
+import { isTimeout, logAiLatency, since } from "@/lib/aiLatencyLog";
+import { createCopilotLimiter } from "@/lib/copilotLimit";
 
 /**
  * Ghost-text autocomplete for the draft editor (components/plate/copilot.tsx).
@@ -8,9 +10,8 @@ import { getServerSession } from "@sre-monorepo/lib/server";
  * CopilotPlugin expects.
  *
  * The completion itself runs in mcp-sre (writer_autocomplete) on the
- * lecturer's key, so every user gets a per-minute and per-day cap. The
- * counters live in memory: they reset when the server restarts, which is
- * fine for a guard against runaway usage (a stuck key, a script).
+ * lecturer's key, so every user gets a per-minute and per-day cap
+ * (lib/copilotLimit.ts).
  */
 const num = (value: string | undefined, fallback: number) => {
   const parsed = Number(value);
@@ -24,30 +25,10 @@ const LIMITS = {
 
 const MAX_PROMPT_CHARS = 2000;
 
-const usage = new Map<string, { minuteStart: number; minuteCount: number; day: string; dayCount: number }>();
-
-/** Counts one request for the user; false when a cap is already reached. */
-function allowRequest(userId: string): boolean {
-  const now = Date.now();
-  const day = new Date().toDateString();
-  const entry = usage.get(userId);
-
-  if (!entry || entry.day !== day) {
-    usage.set(userId, { minuteStart: now, minuteCount: 1, day, dayCount: 1 });
-    return true;
-  }
-  if (now - entry.minuteStart >= 60_000) {
-    entry.minuteStart = now;
-    entry.minuteCount = 0;
-  }
-  if (entry.minuteCount >= LIMITS.perMinute || entry.dayCount >= LIMITS.perDay) return false;
-
-  entry.minuteCount++;
-  entry.dayCount++;
-  return true;
-}
+const allowRequest = createCopilotLimiter(LIMITS);
 
 export async function POST(request: NextRequest) {
+  const start = performance.now();
   const authSession = await getServerSession();
   const user = authSession?.user;
   if (!user) {
@@ -59,11 +40,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
 
-  if (!allowRequest(String(user.id))) {
+  const userId = String(user.id);
+  if (!allowRequest(userId)) {
+    logAiLatency({ route: "copilot", feature: "copilot", userId, status: "rate_limited", totalMs: since(start) });
     return NextResponse.json({ error: "Batas saran otomatis tercapai. Coba lagi nanti." }, { status: 429 });
   }
 
+  let mcpMs: number | undefined;
   try {
+    const mcpStart = performance.now();
     const mcpResponse = await fetch(`${process.env.PY_URL}/mcp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -85,11 +70,26 @@ export async function POST(request: NextRequest) {
     }
 
     const mcpData = await mcpResponse.json();
+    mcpMs = since(mcpStart);
     if (mcpData.error) {
       throw new Error(`MCP error: ${mcpData.error.message || "Unknown error"}`);
     }
     const content = JSON.parse(mcpData.result?.content?.[0]?.text || "{}");
     const text = typeof content.completion === "string" ? content.completion : "";
+
+    logAiLatency({
+      route: "copilot",
+      feature: "copilot",
+      userId,
+      status: text.trim() ? "ok" : "empty",
+      totalMs: since(start),
+      mcpMs,
+      promptChars: Math.min(prompt.length, MAX_PROMPT_CHARS),
+      outputChars: text.length,
+      inputTokens: content.usage_metadata?.input_tokens,
+      outputTokens: content.usage_metadata?.output_tokens,
+      timings: content.timings,
+    });
 
     // CopilotPlugin treats an empty `text` as an error; a single space
     // means "no suggestion" without logging one (the editor ignores
@@ -97,6 +97,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ text: text || " " });
   } catch (error) {
     console.error("API Copilot Route Error:", error);
+    logAiLatency({
+      route: "copilot",
+      feature: "copilot",
+      userId,
+      status: isTimeout(error) ? "timeout" : "error",
+      totalMs: since(start),
+      mcpMs,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json({ error: "Saran otomatis tidak tersedia." }, { status: 502 });
   }
 }

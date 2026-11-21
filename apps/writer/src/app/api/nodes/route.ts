@@ -73,8 +73,10 @@ export async function GET(req: NextRequest) {
 
     const nodes = await prisma.node.findMany({
       where: {
+        // Every article in the project's brainstorming session, whoever
+        // uploaded it — collaborators can add references from the writer's
+        // "+" (see /api/references/upload), not only the owner.
         article: {
-          userId: ownerId,
           sessionId: brainstormingSessionId, // Article.sessionId = brainstormingSessionId
         },
       },
@@ -83,6 +85,9 @@ export async function GET(req: NextRequest) {
           select: {
             id: true,
             title: true,
+            author: true,
+            year: true,
+            doi: true,
             userId: true,
             sessionId: true,
             session: { select: { id: true, title: true } },

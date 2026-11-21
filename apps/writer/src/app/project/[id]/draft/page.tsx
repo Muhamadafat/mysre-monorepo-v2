@@ -2,6 +2,7 @@
 
 'use client'
 
+import { pickAndInsertImage } from "@/components/plate/kit";
 import './animations.css';
 import ConceptMap from '@/components/ConceptMap';
 import dynamic from 'next/dynamic';
@@ -12,6 +13,7 @@ import { ExtendedEdge, ExtendedNode } from '@/types'
 import type { PlateEditorRef } from '@/components/PlateEditor';
 import AnnotationPanel from '@/components/AnnotationPanel';
 import ShareDraftModal from '@/components/ShareDraftModal';
+import ReferenceUploadModal from '@/components/ReferenceUploadModal';
 const PlateEditorComponent = dynamic(() => import("@/components/PlateEditor"), {
   ssr: false
 });
@@ -151,6 +153,14 @@ interface Article {
     title: string,
     att_background: string,
     att_url: string,
+    /** Source article of this node (from /api/nodes) — real author/year/DOI. */
+    article?: {
+      id: string,
+      title: string,
+      author?: string | null,
+      year?: string | null,
+      doi?: string | null,
+    },
 }
 
 interface ValidAssignment {
@@ -583,6 +593,8 @@ export default function Home() {
   }, [headings]);
   // State untuk daftar artikel dari API
   const [article, setArticle] = useState<Article[]>([]);
+  // "+" on "Referensi Pustaka": upload a PDF reference (see ReferenceUploadModal).
+  const [referenceUploadOpen, setReferenceUploadOpen] = useState(false);
 
   const sendMessage = () => {
     if (chatInput.trim() === '') return;
@@ -672,7 +684,36 @@ export default function Home() {
 
   useEffect(() => {
     bibliographyListRef.current = bibliographyList;
+    // The next citation number always follows the highest one in use (the
+    // manual form used to reuse [1] for every new entry).
+    setNextNumber(bibliographyList.reduce((max, item) => Math.max(max, item.number), 0) + 1);
   }, [bibliographyList]);
+
+  // ── Daftar Pustaka persistence ─────────────────────────────────────────
+  // Kept per project in localStorage (survives reloads) and saved with every
+  // "Simpan Versi". When the browser has nothing yet, the list of the newest
+  // saved version is restored (see loadDrafts).
+  const bibStorageKey = writerSession?.id ? `sre-writer-bibliography:${writerSession.id}` : null;
+  const bibRestoredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!bibStorageKey || bibRestoredRef.current === bibStorageKey) return;
+    bibRestoredRef.current = bibStorageKey;
+    try {
+      const raw = localStorage.getItem(bibStorageKey);
+      const stored = raw ? (JSON.parse(raw) as Bibliography[]) : null;
+      if (Array.isArray(stored) && stored.length) setBibliographyList(stored);
+    } catch {
+      /* private mode / bad JSON: start empty */
+    }
+  }, [bibStorageKey]);
+  useEffect(() => {
+    if (!bibStorageKey || bibRestoredRef.current !== bibStorageKey) return;
+    try {
+      localStorage.setItem(bibStorageKey, JSON.stringify(bibliographyList));
+    } catch {
+      /* storage full / blocked */
+    }
+  }, [bibStorageKey, bibliographyList]);
 
   // Initialize client-side state to prevent hydration errors
   useEffect(() => {
@@ -784,6 +825,13 @@ export default function Home() {
 
         setHistory(historyItems);
         setDraftCounter(result.drafts.length + 1);
+
+        // Nothing cited yet in this browser: bring back the reference list
+        // saved with the newest version.
+        const savedBib = result.drafts.find((d: any) => Array.isArray(d.conceptMapData?.bibliography))?.conceptMapData?.bibliography;
+        if (bibliographyListRef.current.length === 0 && Array.isArray(savedBib) && savedBib.length) {
+          setBibliographyList(savedBib);
+        }
         console.log('Drafts loaded successfully:', historyItems);
       }
     } catch (error) {
@@ -808,6 +856,9 @@ export default function Home() {
 
         // Sync to concept map
         syncEditorToConceptMap(result.editorContent);
+
+        // The version's own Daftar Pustaka, so its [n] citations match again.
+        if (Array.isArray(result.bibliography)) setBibliographyList(result.bibliography);
 
         // Switch to editor view
         setActiveCentralView('editor');
@@ -1988,6 +2039,7 @@ const handleSubmitToTeacher = async () => {
           title: draftTitle,
           contentBlocks,
           wordCount,
+          bibliography: bibliographyListRef.current,
         }),
       });
 
@@ -2044,9 +2096,10 @@ const handleSubmitToTeacher = async () => {
     onInsertCitation: () => {
       // Open bibliography modal to select citation
       if (bibliographyList.length > 0) {
-        // Insert the next available citation number
-        const nextNumber = bibliographyList.length + 1;
-        insertCitationNumber(nextNumber);
+        // Re-cite the most recently added reference (the old code inserted a
+        // number that had no entry in the list).
+        const latest = bibliographyList.reduce((a, b) => (b.number > a.number ? b : a));
+        insertCitationNumber(latest.number);
       } else {
         notifications.show({
           title: "No Bibliography Available",
@@ -2129,18 +2182,9 @@ const handleSubmitToTeacher = async () => {
       }
     },
     onInsertImage: () => {
+      // Real upload (file picker → /api/upload) instead of a dead placeholder image.
       const editor = editorRef.current?.getEditor();
-      if (editor) {
-        editor.insertBlocks([
-          {
-            type: "image",
-            props: {
-              url: "https://via.placeholder.com/400x200/cccccc/969696?text=Image+Placeholder",
-              caption: "Image caption here",
-            }
-          }
-        ], editor.getTextCursorPosition().block, "after");
-      }
+      if (editor?.raw) pickAndInsertImage(editor.raw);
     },
     onInsertCode: () => {
       const editor = editorRef.current?.getEditor();
@@ -3130,8 +3174,10 @@ const handleSubmitToTeacher = async () => {
    */
   const addArticleToBibliography = (articleItem: Article) => {
     // Cek apakah artikel sudah ada dalam daftar pustaka
+    // One entry per source ARTICLE (several concept nodes come from the same paper).
+    const sourceId = articleItem.article?.id ?? articleItem.id;
     const existingBibliography = bibliographyListRef.current.find(
-      (b) => b.sourceId === articleItem.id
+      (b) => b.sourceId === sourceId || b.sourceId === articleItem.id
     );
 
     if (existingBibliography) {
@@ -3146,15 +3192,20 @@ const handleSubmitToTeacher = async () => {
     }
 
     // Buat bibliography baru dari artikel
+    // Real metadata of the source article (author/year/DOI from ingestion);
+    // the old code put the node's "background" text in author and journal
+    // and always used the current year.
+    const source = articleItem.article;
+    const doi = source?.doi?.trim() || undefined;
     const newBibliography: Bibliography = {
       id: Date.now().toString(),
-      sourceId: articleItem.id,
+      sourceId,
       number: nextNumber,
-      author: articleItem.att_background, // Menggunakan background sebagai author
-      title: articleItem.title,
-      year: new Date().getFullYear().toString(), // Menggunakan tahun saat ini
-      url: articleItem.att_url,
-      journal: articleItem.att_background, // Menggunakan background sebagai jurnal
+      author: source?.author?.trim() || "Tanpa nama penulis",
+      title: source?.title?.trim() || articleItem.title,
+      year: source?.year?.trim() || "t.t.",
+      url: articleItem.att_url || (doi ? `https://doi.org/${doi.replace(/^https?:\/\/(dx\.)?doi\.org\//, "")}` : undefined),
+      doi,
       createdAt: new Date(),
     };
 
@@ -3506,7 +3557,8 @@ const handleSubmitToTeacher = async () => {
         writerSessionId: writerSession.id,
         title,
         contentBlocks,
-        wordCount
+        wordCount,
+        bibliography: bibliographyListRef.current,
       }),
     });
 
@@ -5415,6 +5467,18 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                   </Text>
                                 </Box>
                               </Group>
+                              <Tooltip label="Unggah referensi (PDF)" withArrow>
+                                <ActionIcon
+                                  variant="filled"
+                                  color="blue"
+                                  radius="md"
+                                  size="lg"
+                                  aria-label="Unggah referensi"
+                                  onClick={() => setReferenceUploadOpen(true)}
+                                >
+                                  <IconPlus size={18} />
+                                </ActionIcon>
+                              </Tooltip>
                             </Group>
 
                             <div
@@ -6999,6 +7063,18 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                               </Text>
                             </Box>
                           </Group>
+                          <Tooltip label="Unggah referensi (PDF)" withArrow>
+                            <ActionIcon
+                              variant="filled"
+                              color="blue"
+                              radius="md"
+                              size="lg"
+                              aria-label="Unggah referensi"
+                              onClick={() => setReferenceUploadOpen(true)}
+                            >
+                              <IconPlus size={18} />
+                            </ActionIcon>
+                          </Tooltip>
                         </Group>
 
                         <div
@@ -8506,6 +8582,13 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
             logTransform('Log Dibersihkan', 'Semua riwayat aktivitas telah dihapus');
           }}
           onExport={exportLog}
+          onRunVoiceCommand={async (name, args) => {
+            // Close the log so the result is visible in the editor.
+            closeActivityLog();
+            const editor = editorRef.current;
+            if (!editor) return { ok: false, message: 'Editor belum siap.' };
+            return editor.runVoiceCommand(name, args);
+          }}
         />
       )}
 
@@ -8635,6 +8718,13 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
         onClose={() => setShareModalOpened(false)}
         writerSessionId={writerSession?.id ?? ''}
         isOwner={!!writerSession && !!dropdownUser && writerSession.userId === dropdownUser.id}
+      />
+
+      <ReferenceUploadModal
+        opened={referenceUploadOpen}
+        onClose={() => setReferenceUploadOpen(false)}
+        projectId={writerSession?.id ?? projectId}
+        onUploaded={() => void getArticle()}
       />
 
     </AppShell>

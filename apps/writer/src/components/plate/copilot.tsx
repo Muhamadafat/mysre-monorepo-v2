@@ -19,6 +19,7 @@ import { CopilotPlugin } from "@platejs/ai/react";
 import { NodeApi } from "platejs";
 import type { PlateEditor } from "platejs/react";
 import { useElement, usePluginOption } from "platejs/react";
+import { pushTestLog } from "@/lib/testLog";
 
 /** How much of the document before the cursor is sent as context. */
 const MAX_CONTEXT_CHARS = 2000;
@@ -56,6 +57,11 @@ function acceptSuggestion(editor: PlateEditor, wordOnly: boolean): boolean {
   const text = wordOnly ? getNextWord!({ text: suggestionText }).firstWord : suggestionText;
   if (!text) return false;
   editor.tf.insertText(text);
+  pushTestLog({
+    feature: "Autocomplete",
+    status: "info",
+    detail: wordOnly ? `1 kata diterima (Ctrl+→): "${text}"` : `saran diterima (Tab): ${text.length} karakter`,
+  });
   return true;
 }
 
@@ -99,6 +105,13 @@ export const WriterCopilotPlugin = CopilotPlugin.configure(({ api }) => ({
     // whenever there is no suggestion on screen.
     accept: { keys: "tab", handler: ({ editor }) => acceptSuggestion(editor, false) },
     acceptNextWord: { keys: "mod+right", handler: ({ editor }) => acceptSuggestion(editor, true) },
-    reject: { keys: "escape" },
+    reject: {
+      keys: "escape",
+      handler: () => {
+        if (api.copilot.reject() === false) return false;
+        pushTestLog({ feature: "Autocomplete", status: "info", detail: "saran ditolak (Esc)" });
+        return true;
+      },
+    },
   },
 }));

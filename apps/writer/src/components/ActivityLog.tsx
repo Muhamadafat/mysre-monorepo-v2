@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
+import type { VoiceCommandResult } from './PlateEditor';
 import {
   Modal,
   ScrollArea,
@@ -30,7 +32,30 @@ import {
   IconCheck,
   IconX,
   IconRefresh,
+  IconPencil,
+  IconTerminal2,
 } from '@tabler/icons-react';
+
+// Loaded only when a recording filter is picked (pulls in the audio player).
+const RecordingHistory = dynamic(() => import('./voice/RecordingHistory'), {
+  ssr: false,
+});
+
+/** Filters that list voice recordings instead of activities. */
+const RECORDING_FILTERS: Record<string, 'menulis' | 'perintah'> = {
+  'rec-menulis': 'menulis',
+  'rec-perintah': 'perintah',
+};
+
+const FILTERS: { value: string; label: string; icon: React.ReactNode; color?: string }[] = [
+  { value: 'all', label: 'Semua', icon: null },
+  { value: 'formula', label: 'Rumus', icon: <IconMath size={16} /> },
+  { value: 'edit', label: 'Edit', icon: <IconEdit size={16} /> },
+  { value: 'save', label: 'Simpan', icon: <IconDeviceFloppy size={16} /> },
+  { value: 'transform', label: 'Transform', icon: <IconRefresh size={16} /> },
+  { value: 'rec-menulis', label: 'Rekaman Mode Menulis', icon: <IconPencil size={16} />, color: 'cyan' },
+  { value: 'rec-perintah', label: 'Rekaman Mode Perintah', icon: <IconTerminal2 size={16} />, color: 'indigo' },
+];
 
 export interface ActivityLogEntry {
   id: string;
@@ -55,6 +80,8 @@ interface ActivityLogProps {
   activities: ActivityLogEntry[];
   onClearAll?: () => void;
   onExport?: () => void;
+  /** Runs a saved voice command in the editor ("Jalankan" in Rekaman Mode Perintah). */
+  onRunVoiceCommand?: (name: string, args: Record<string, unknown>) => Promise<VoiceCommandResult>;
 }
 
 const getActivityIcon = (type: string) => {
@@ -121,10 +148,12 @@ export const ActivityLog: React.FC<ActivityLogProps> = ({
   activities,
   onClearAll,
   onExport,
+  onRunVoiceCommand,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filteredActivities, setFilteredActivities] = useState(activities);
+  const recordingMode = RECORDING_FILTERS[filterType];
 
   // Filter activities based on search and type
   useEffect(() => {
@@ -231,42 +260,39 @@ export const ActivityLog: React.FC<ActivityLogProps> = ({
         <Divider />
 
         {/* Search and Filter */}
-        <Group justify="space-between">
+        <Stack gap="xs">
           <TextInput
-            placeholder="Cari berdasarkan judul, deskripsi, atau tipe aktivitas..."
+            placeholder={
+              recordingMode
+                ? 'Cari di transkrip rekaman...'
+                : 'Cari berdasarkan judul, deskripsi, atau tipe aktivitas...'
+            }
             leftSection={<IconSearch size={16} />}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            style={{ flex: 1 }}
           />
           <Group gap="xs">
-            {['all', 'formula', 'edit', 'save', 'transform'].map((type) => (
+            {FILTERS.map((filter) => (
               <Button
-                key={type}
-                variant={filterType === type ? 'filled' : 'light'}
+                key={filter.value}
+                variant={filterType === filter.value ? 'filled' : 'light'}
+                color={filter.color}
                 size="xs"
-                onClick={() => setFilterType(type)}
-                leftSection={type !== 'all' ? getActivityIcon(type) : null}
+                radius="xl"
+                onClick={() => setFilterType(filter.value)}
+                leftSection={filter.icon}
               >
-                {type === 'all'
-                  ? 'Semua'
-                  : type === 'formula'
-                    ? 'Rumus'
-                    : type === 'edit'
-                      ? 'Edit'
-                      : type === 'save'
-                        ? 'Simpan'
-                        : type === 'transform'
-                          ? 'Transform'
-                          : type}
+                {filter.label}
               </Button>
             ))}
           </Group>
-        </Group>
+        </Stack>
 
-        {/* Activity Timeline */}
+        {/* Activity Timeline / voice recordings */}
         <ScrollArea h={400}>
-          {Object.keys(groupedActivities).length === 0 ? (
+          {recordingMode ? (
+            <RecordingHistory mode={recordingMode} search={searchQuery} onRunCommand={onRunVoiceCommand} />
+          ) : Object.keys(groupedActivities).length === 0 ? (
             <Box p="xl" style={{ textAlign: 'center' }}>
               <IconHistory size={48} color="#ccc" />
               <Text size="lg" c="dimmed" mt="md">

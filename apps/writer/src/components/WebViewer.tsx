@@ -125,6 +125,7 @@ const applyDOMHighlights = (textLayer: any, highlights: any) => {
 // Removed applyDOMHighlights since we will rely on native react-pdf-highlighter overlays that are zoom-aware.
 
 import 'react-pdf-highlighter/dist/style.css';
+import { viewablePdfUrl } from '@/lib/pdfUrl';
 
 interface WebViewerProps {
   fileUrl: string;
@@ -421,7 +422,7 @@ const WebViewer: React.FC<WebViewerProps> = ({ fileUrl, onAnalytics }) => {
           }}
         >
           <PdfLoader
-            url={fileUrl}
+            url={viewablePdfUrl(fileUrl)}
             beforeLoad={
               <div
                 style={{

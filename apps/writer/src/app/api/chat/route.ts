@@ -2,10 +2,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@sre-monorepo/lib/server";
+import { isTimeout, logAiLatency, since } from "@/lib/aiLatencyLog";
 
 const WRITER_MODES = ["continue", "rewrite", "structure", "content", "summarize"];
 
 export async function POST(request: NextRequest) {
+  const start = performance.now();
+  let feature = "pral_chat";
+  let mcpMs: number | undefined;
   try {
     const body = await request.json();
     
@@ -43,6 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     const writerMode = writer && WRITER_MODES.includes(writer.mode) ? writer.mode : null;
+    if (writerMode) feature = `writer_${writerMode}`;
 
     // Prepare MCP request payload
     const mcpPayload = writerMode
@@ -84,6 +89,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Call MCP endpoint
+    const mcpStart = performance.now();
     const mcpResponse = await fetch(`${process.env.PY_URL}/mcp`, {
       method: "POST",
       headers: { 
@@ -98,16 +104,21 @@ export async function POST(request: NextRequest) {
     }
 
     const mcpData = await mcpResponse.json();
+    mcpMs = since(mcpStart);
     
     // Process MCP response
     let answer = "";
     let references = [];
+    let usage: { input_tokens?: number; output_tokens?: number } | undefined;
+    let timings: Record<string, number> | undefined;
     
     if (mcpData.result?.content?.[0]?.text) {
       try {
         const content = JSON.parse(mcpData.result.content[0].text);
         answer = content.response || content.answer || "";
         references = content.references || [];
+        usage = content.usage_metadata ?? undefined;
+        timings = content.timings;
       } catch (parseError) {
         // If parsing fails, use the text directly
         answer = mcpData.result.content[0].text;
@@ -115,6 +126,19 @@ export async function POST(request: NextRequest) {
     } else if (mcpData.error) {
       throw new Error(`MCP error: ${mcpData.error.message || 'Unknown error'}`);
     }
+
+    logAiLatency({
+      route: "chat",
+      feature,
+      status: answer.trim() ? "ok" : "empty",
+      totalMs: since(start),
+      mcpMs,
+      promptChars: String(question).length,
+      outputChars: answer.length,
+      inputTokens: usage?.input_tokens,
+      outputTokens: usage?.output_tokens,
+      timings,
+    });
 
     // Return processed response
     return NextResponse.json({
@@ -125,6 +149,14 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error("API Chat Route Error:", error);
+    logAiLatency({
+      route: "chat",
+      feature,
+      status: isTimeout(error) ? "timeout" : "error",
+      totalMs: since(start),
+      mcpMs,
+      error: error instanceof Error ? error.message : String(error),
+    });
     
     return NextResponse.json(
       { 

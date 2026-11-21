@@ -32,6 +32,7 @@ import {
 } from "@platejs/table/react";
 import { CodeBlockPlugin, CodeLinePlugin, CodeSyntaxPlugin } from "@platejs/code-block/react";
 import { ImagePlugin } from "@platejs/media/react";
+import { notifications } from "@mantine/notifications";
 import { LinkPlugin } from "@platejs/link/react";
 import { KEYS } from "platejs";
 import { DndPlugin } from "@platejs/dnd";
@@ -63,13 +64,49 @@ import {
   UnderlineLeaf,
 } from "./nodes/Leaf";
 
+/** The project id from the draft URL (/project/<id>/draft), for the S3 folder. */
+const currentProjectId = (): string =>
+  typeof window === "undefined" ? "" : (window.location.pathname.match(/\/project\/([^/]+)/)?.[1] ?? "");
+
+/**
+ * Stores an image through POST /api/upload and returns its URL.
+ * Throws with a readable (Indonesian) message when the upload fails.
+ */
 const uploadFile = async (file: File): Promise<string> => {
   const body = new FormData();
   body.append("file", file);
+  body.append("projectId", currentProjectId());
   const response = await fetch("/api/upload", { method: "POST", body });
-  const json = await response.json();
-  return json.url;
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || !json.url) throw new Error(json.error || `Upload gagal (${response.status})`);
+  return json.url as string;
 };
+
+/** Small images may stay inline when the upload fails; bigger ones are refused. */
+const INLINE_FALLBACK_BYTES = 300 * 1024;
+
+const notifyUpload = (message: string, color: "blue" | "green" | "red") =>
+  notifications.show({ id: "image-upload", message, color, autoClose: color === "blue" ? false : 3000, loading: color === "blue" });
+
+/** Upload used by paste, drag & drop and the "Gambar" button (data URL in, image URL out). */
+async function uploadImageDataUrl(dataUrl: ArrayBuffer | string): Promise<string> {
+  if (typeof dataUrl !== "string") return "";
+  const blob = await (await fetch(dataUrl)).blob();
+  notifyUpload("Mengunggah gambar…", "blue");
+  try {
+    const url = await uploadFile(new File([blob], "image", { type: blob.type }));
+    notifications.update({ id: "image-upload", message: "Gambar berhasil diunggah", color: "green", loading: false, autoClose: 2000 });
+    return url;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "Upload gagal";
+    if (blob.size <= INLINE_FALLBACK_BYTES) {
+      notifications.update({ id: "image-upload", message: `${reason} — gambar disimpan langsung di dokumen.`, color: "yellow", loading: false, autoClose: 4000 });
+      return dataUrl;
+    }
+    notifications.update({ id: "image-upload", message: reason, color: "red", loading: false, autoClose: 5000 });
+    throw err;
+  }
+}
 
 export const WriterEditorKit = [
   ParagraphPlugin.withComponent(ParagraphElement),
@@ -105,12 +142,8 @@ export const WriterEditorKit = [
 
   ImagePlugin.configure({
     options: {
-      uploadImage: async (dataUrl: ArrayBuffer | string) => {
-        if (typeof dataUrl !== "string") return "";
-        const res = await fetch(dataUrl);
-        const blob = await res.blob();
-        return uploadFile(new File([blob], "image", { type: blob.type }));
-      },
+      // Paste, drag & drop and the toolbar "Gambar" button all end up here.
+      uploadImage: uploadImageDataUrl,
     },
   }).withComponent(ImageElement),
 
@@ -135,3 +168,31 @@ export const WriterEditorKit = [
 ];
 
 export { uploadFile };
+
+/**
+ * Opens the file picker and inserts the chosen image(s) below the cursor
+ * block, through the same upload path as paste / drag & drop.
+ */
+export function pickAndInsertImage(editor: { tf: { insertNodes: (...args: any[]) => unknown } }): void {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/png,image/jpeg,image/gif,image/webp";
+  input.multiple = true;
+  input.onchange = () => {
+    for (const file of Array.from(input.files ?? [])) {
+      if (!file.type.startsWith("image/")) continue;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        if (typeof reader.result !== "string") return;
+        try {
+          const url = await uploadImageDataUrl(reader.result);
+          editor.tf.insertNodes({ type: "img", url, children: [{ text: "" }] }, { nextBlock: true });
+        } catch {
+          /* already shown as a notification */
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  input.click();
+}
