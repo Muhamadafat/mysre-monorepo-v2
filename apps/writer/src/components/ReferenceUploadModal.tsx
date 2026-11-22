@@ -87,8 +87,11 @@ export default function ReferenceUploadModal({
     }
   };
 
-  const set = (key: keyof typeof emptyMeta) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setMeta((m) => ({ ...m, [key]: e.currentTarget.value }));
+  // Read the value now: e.currentTarget is null by the time React runs the updater.
+  const set = (key: keyof typeof emptyMeta) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const value = e.currentTarget.value;
+    setMeta((m) => ({ ...m, [key]: value }));
+  };
 
   return (
     <Modal opened={opened} onClose={close} title={<Text fw={700}>Unggah Referensi Pustaka</Text>} radius="lg" size="lg" closeOnClickOutside={!busy} withCloseButton={!busy}>
