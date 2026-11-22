@@ -20,6 +20,7 @@ import { NodeApi } from "platejs";
 import type { PlateEditor } from "platejs/react";
 import { useElement, usePluginOption } from "platejs/react";
 import { pushTestLog } from "@/lib/testLog";
+import { reconcileCompletion } from "@/lib/copilotText";
 
 /** How much of the document before the cursor is sent as context. */
 const MAX_CONTEXT_CHARS = 2000;
@@ -39,6 +40,22 @@ function getTextBeforeCursor(editor: PlateEditor): string {
     if (text.trim()) blocks.push(text);
   }
   return blocks.join("\n\n").slice(-MAX_CONTEXT_CHARS);
+}
+
+/** The prompt each editor's last request was sent with (see reconcileCompletion). */
+const sentPrompts = new WeakMap<PlateEditor, string>();
+
+/**
+ * The plugin starts its debounce on the space but reads the text only when
+ * the timer fires — by then the writer may be mid-word ("…dimana" typed as
+ * far as "diman"), and the model would finish that word ("a data …"). So only
+ * ask when the text really ends in whitespace; the next space retriggers.
+ */
+function getPromptAtWordBoundary(editor: PlateEditor): string {
+  const prompt = getTextBeforeCursor(editor);
+  if (!/\s$/.test(prompt)) return "";
+  sentPrompts.set(editor, prompt);
+  return prompt;
 }
 
 /**
@@ -85,18 +102,23 @@ function GhostTextContent() {
   );
 }
 
-export const WriterCopilotPlugin = CopilotPlugin.configure(({ api }) => ({
+export const WriterCopilotPlugin = CopilotPlugin.configure(({ api, editor }) => ({
   options: {
     debounceDelay: 900,
     renderGhostText: GhostText,
-    getPrompt: ({ editor }) => getTextBeforeCursor(editor),
+    getPrompt: ({ editor }) => getPromptAtWordBoundary(editor),
     completeOptions: {
       api: "/api/copilot",
       // A failed suggestion (quota, server down, offline) should never
       // interrupt writing: there is simply no ghost text this time.
       onError: () => {},
       onFinish: (_, completion) => {
-        if (completion.trim()) api.copilot.setBlockSuggestion({ text: completion });
+        const sent = sentPrompts.get(editor);
+        const text =
+          sent === undefined
+            ? completion
+            : reconcileCompletion(sent, getTextBeforeCursor(editor), completion);
+        if (text?.trim()) api.copilot.setBlockSuggestion({ text });
       },
     },
   },
