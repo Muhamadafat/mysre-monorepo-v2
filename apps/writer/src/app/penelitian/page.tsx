@@ -53,6 +53,8 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { DocView, citedNumbers, countWords } from "./DocView";
+import { ConceptMapView } from "./ConceptMapView";
+import { buildConceptMap, type ConceptMapData } from "@/lib/conceptMap";
 import "./admin.css";
 
 // ── Types (match /api/admin/*) ─────────────────────────────────────────────
@@ -354,9 +356,9 @@ function LoginCard({ onDone }: { onDone: () => void }) {
               <IconSchool size={22} />
             </Box>
             <div>
-              <Title order={3}>Peneliti SRE Writer</Title>
+              <Title order={3}>Penelitian SRE Writer</Title>
               <Text size="sm" c="dimmed">
-                Masuk sebagai peneliti
+                Masuk ke halaman penelitian
               </Text>
             </div>
           </Group>
@@ -988,7 +990,13 @@ function RecordingCard({ r }: { r: Recording }) {
 
 // ── Bubbles under each project + their pop-ups ────────────────────────────
 type PopupKind =
-  "versi" | "artikel" | "pustaka" | "rekaman" | "kolaborator" | "diskusi";
+  | "versi"
+  | "artikel"
+  | "pustaka"
+  | "rekaman"
+  | "kolaborator"
+  | "diskusi"
+  | "peta";
 type Person = {
   id: string;
   name: string | null;
@@ -1057,6 +1065,9 @@ function ProjectBubbles({
   const people = projectPeople(project, live.data);
   const comments = live.data?.comments;
   const open = comments?.filter((t) => !t.resolved).length ?? 0;
+  const mapNodes = live.data?.live
+    ? buildConceptMap(live.data.live as never[]).nodes.length
+    : null;
   return (
     <Group gap="xs" mt="sm">
       <Bubble
@@ -1102,6 +1113,14 @@ function ProjectBubbles({
         {live.loading ? "…" : comments ? comments.length : "?"} diskusi
         {open > 0 ? ` · ${open} terbuka` : ""}
       </Bubble>
+      <Bubble
+        color="lime"
+        onClick={() => onOpen("peta")}
+        title="Lihat peta konsep tulisan (kerangka judul, subjudul, paragraf)"
+      >
+        peta konsep
+        {live.loading ? " · …" : mapNodes !== null ? ` · ${mapNodes} node` : ""}
+      </Bubble>
     </Group>
   );
 }
@@ -1113,6 +1132,7 @@ const POPUP_TITLE: Record<PopupKind, string> = {
   rekaman: "Rekaman suara",
   kolaborator: "Kolaborator",
   diskusi: "Diskusi & komentar",
+  peta: "Peta konsep",
 };
 
 function ProjectPopup({
@@ -1126,7 +1146,10 @@ function ProjectPopup({
   onClose: () => void;
   onRead: (r: Reading) => void;
 }) {
-  const wide = popup?.kind === "kolaborator" || popup?.kind === "rekaman";
+  const wide =
+    popup?.kind === "kolaborator" ||
+    popup?.kind === "rekaman" ||
+    popup?.kind === "peta";
   return (
     <Modal
       opened={!!popup}
@@ -1175,7 +1198,112 @@ function ProjectPopup({
         <CollaboratorsPopup project={popup.project} />
       )}
       {popup?.kind === "diskusi" && <DiscussionPopup project={popup.project} />}
+      {popup?.kind === "peta" && <ConceptMapPopup project={popup.project} />}
     </Modal>
+  );
+}
+
+/**
+ * Peta konsep of the writing as it is now (live doc) or of a saved version —
+ * rebuilt from the text exactly like the editor does (it is never stored).
+ */
+function ConceptMapPopup({ project }: { project: Project }) {
+  const live = useLiveProject(project.id);
+  const dark = useComputedColorScheme("light") === "dark";
+  const [source, setSource] = React.useState<string | null>(null);
+  // Saved versions fetched so far: draftId -> map (or error).
+  const [versions, setVersions] = React.useState<
+    Record<string, { data?: ConceptMapData; error?: string }>
+  >({});
+
+  const hasLive = !!live.data?.live;
+  // Default: the live writing, or the newest saved version when PartyKit is off.
+  const chosen =
+    source ??
+    (live.loading
+      ? null
+      : hasLive
+        ? "live"
+        : project.drafts[0]?.id ?? null);
+  const needsFetch = !!chosen && chosen !== "live" && !versions[chosen];
+
+  React.useEffect(() => {
+    if (!needsFetch || !chosen) return;
+    let cancelled = false;
+    getJson<{ blocks: never[] }>(`/api/admin/drafts/${chosen}`)
+      .then((d) => ({ data: buildConceptMap(d.blocks) }))
+      .catch((err: Error) => ({ error: err.message }))
+      .then(
+        (entry) =>
+          !cancelled && setVersions((all) => ({ ...all, [chosen]: entry })),
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [chosen, needsFetch]);
+
+  const liveMap = React.useMemo(
+    () => (live.data?.live ? buildConceptMap(live.data.live as never[]) : null),
+    [live.data],
+  );
+
+  const options = [
+    ...(hasLive ? [{ value: "live", label: "Tulisan sekarang (live)" }] : []),
+    ...project.drafts.map((d, i) => ({
+      value: d.id,
+      label: `v${project.drafts.length - i} · ${d.title} · ${new Date(d.createdAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}`,
+    })),
+  ];
+
+  if (live.loading) return <Center py="xl"><Loader size="sm" /></Center>;
+  if (!options.length)
+    return (
+      <Empty text="Tulisan ini belum bisa dibaca (server kolaborasi mati) dan belum punya versi tersimpan." />
+    );
+
+  const data = chosen === "live" ? liveMap : chosen ? versions[chosen]?.data : undefined;
+  const error = chosen && chosen !== "live" ? versions[chosen]?.error : undefined;
+
+  return (
+    <Stack gap="sm">
+      <Select
+        label="Sumber"
+        data={options}
+        value={chosen}
+        onChange={(v) => v && setSource(v)}
+        allowDeselect={false}
+        comboboxProps={{ withinPortal: true }}
+      />
+      {!hasLive && (
+        <Text size="xs" c="dimmed">
+          Server kolaborasi sedang mati, jadi yang bisa dilihat hanya versi tersimpan.
+        </Text>
+      )}
+      {error ? (
+        <Alert color="red" icon={<IconAlertCircle size={16} />}>
+          {error}
+        </Alert>
+      ) : !data ? (
+        <Center py="xl"><Loader size="sm" /></Center>
+      ) : !data.nodes.length ? (
+        <Empty text="Peta konsep kosong — belum ada judul atau paragraf di tulisan ini." />
+      ) : (
+        <>
+          <Group gap="xs">
+            <Badge variant="light" color="green">
+              {data.nodes.filter((n) => n.type === "H1").length} judul
+            </Badge>
+            <Badge variant="light" color="yellow">
+              {data.nodes.filter((n) => /^H[2-4]$/.test(n.type)).length} subjudul
+            </Badge>
+            <Badge variant="light" color="gray">
+              {data.nodes.filter((n) => n.type === "Paragraph").length} paragraf
+            </Badge>
+          </Group>
+          <ConceptMapView key={chosen} data={data} dark={dark} />
+        </>
+      )}
+    </Stack>
   );
 }
 
@@ -1815,7 +1943,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
             </Box>
             <div>
               <Text fw={700} lh={1.1}>
-                Peneliti SRE Writer
+                Penelitian SRE Writer
               </Text>
               <Text size="xs" c="dimmed" visibleFrom="sm">
                 Tulisan, sitasi, dan rekaman suara semua penulis
@@ -1999,11 +2127,11 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
   );
 }
 
-export default function PenelitiPage() {
+export default function PenelitianPage() {
   const [loggedIn, setLoggedIn] = React.useState<boolean | null>(null);
 
   React.useEffect(() => {
-    document.title = "Peneliti · SRE Writer";
+    document.title = "Penelitian · SRE Writer";
     getJson<{ loggedIn: boolean }>("/api/admin/me")
       .then((data) => setLoggedIn(data.loggedIn))
       .catch(() => setLoggedIn(false));

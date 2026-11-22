@@ -11,7 +11,7 @@ import { s3, s3Bucket, s3Configured } from "@/lib/storage/s3";
  * player can seek). Download name: <Nama>_<mode>_<timestamp>.mp3|wav.
  */
 export async function GET(request: Request) {
-  if (!(await isAdmin())) return NextResponse.json({ error: "Login peneliti dulu." }, { status: 401 });
+  if (!(await isAdmin())) return NextResponse.json({ error: "Login halaman penelitian dulu." }, { status: 401 });
   if (!s3Configured()) return NextResponse.json({ error: "Penyimpanan S3 belum diatur." }, { status: 500 });
 
   const params = new URL(request.url).searchParams;

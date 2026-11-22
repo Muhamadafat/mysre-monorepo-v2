@@ -197,3 +197,11 @@
 .adm-passage[data-ai] {
   border-left-color: var(--mantine-color-violet-filled);
 }
+
+/* Read-only peta konsep in its pop-up. */
+.adm-conceptmap {
+  height: min(480px, 60vh);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-body);
+}

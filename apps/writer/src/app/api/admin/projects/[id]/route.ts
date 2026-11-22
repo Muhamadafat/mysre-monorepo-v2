@@ -11,7 +11,7 @@ import { authoredPassages, computeContributions } from "@/lib/contributions";
  * editor's "Kontribusi" menu) and the comment threads ("Komentar").
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await isAdmin())) return NextResponse.json({ error: "Login peneliti dulu." }, { status: 401 });
+  if (!(await isAdmin())) return NextResponse.json({ error: "Login halaman penelitian dulu." }, { status: 401 });
   const id = (await params).id;
   if (!/^[a-zA-Z0-9-]{1,64}$/.test(id)) return NextResponse.json({ error: "Id tidak valid." }, { status: 400 });
   const doc = await readLiveDocument(id);
