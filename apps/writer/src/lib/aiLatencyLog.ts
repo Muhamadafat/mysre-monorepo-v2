@@ -7,7 +7,8 @@ import path from "node:path";
  * and appends the same record as JSON to logs/ai-latency.jsonl (relative to
  * the writer app), which scripts/ai-latency-report.mjs summarises.
  *
- * Set AI_LATENCY_LOG=off to turn it off.
+ * On by default in dev (AI_LATENCY_LOG=off turns it off); OFF in production
+ * unless the deploy sets AI_LATENCY_LOG=on.
  */
 export type AiLatencyRecord = {
   route: "copilot" | "chat";
@@ -31,7 +32,8 @@ export type AiLatencyRecord = {
 const LOG_FILE = path.join(process.cwd(), "logs", "ai-latency.jsonl");
 
 export function logAiLatency(record: AiLatencyRecord) {
-  if (process.env.AI_LATENCY_LOG === "off") return;
+  const setting = process.env.AI_LATENCY_LOG;
+  if (setting === "off" || (process.env.NODE_ENV === "production" && setting !== "on")) return;
 
   const entry = { ts: new Date().toISOString(), ...record };
   console.log(

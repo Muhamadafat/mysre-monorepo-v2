@@ -26,7 +26,7 @@ import type { Block, InlineContent, PartialBlock } from "@/lib/plateCompat/types
 import { blockNoteBlocksToPlateValue } from "@/lib/plateCompat/convert";
 import { PartyKitUnifiedProvider } from "@/lib/plateCompat/yjsProvider";
 import { cleanAIText, dropRepeatedLines, lineKey, stripEchoedPrefix } from "@/lib/aiText";
-import { pushTestLog } from "@/lib/testLog";
+import { pushTestLog, testLogEnabled } from "@/lib/testLog";
 import { TestLogPanel } from "@/components/TestLogPanel";
 import {
   ActionIcon,
@@ -1186,9 +1186,7 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
     // status bar instead of failing quietly.
     const [showTestLog, setShowTestLog] = React.useState(false);
     React.useEffect(() => {
-      setShowTestLog(
-        process.env.NODE_ENV !== "production" || new URLSearchParams(window.location.search).has("log"),
-      );
+      setShowTestLog(testLogEnabled());
     }, []);
 
     const [collabStatus, setCollabStatus] = React.useState<"connecting" | "synced" | "offline">("connecting");

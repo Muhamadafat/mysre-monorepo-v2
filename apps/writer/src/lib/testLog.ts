@@ -57,7 +57,19 @@ function emit() {
   listeners.forEach((listener) => listener());
 }
 
+/**
+ * The "Log Uji" panel is for testing only: always on in dev; in production
+ * only when the deploy sets NEXT_PUBLIC_TEST_LOG=on AND the URL has ?log.
+ * When off, nothing is recorded (not even to localStorage).
+ */
+export function testLogEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  if (process.env.NODE_ENV !== "production") return true;
+  return process.env.NEXT_PUBLIC_TEST_LOG === "on" && new URLSearchParams(window.location.search).has("log");
+}
+
 export function pushTestLog(entry: Omit<TestLogEntry, "id" | "ts"> & { ts?: string }) {
+  if (!testLogEnabled()) return;
   entries = [...entries, { id: nextId++, ts: entry.ts ?? new Date().toISOString(), ...entry }].slice(-MAX_ENTRIES);
   emit();
 }
