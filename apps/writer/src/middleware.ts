@@ -8,8 +8,9 @@ export async function middleware(request: NextRequest) {
   // FIXED: Skip API routes sama seperti brain middleware
   if (
     pathname.startsWith('/api/') ||        // <-- TAMBAHKAN INI!
-    pathname === '/admin' || pathname.startsWith('/admin/') || // old URL, redirects to /peneliti
-    pathname === '/peneliti' || pathname.startsWith('/peneliti/') || // peneliti page has its own login
+    pathname === '/admin' || pathname.startsWith('/admin/') || // old URL, redirects to /penelitian
+    pathname === '/peneliti' || pathname.startsWith('/peneliti/') || // old URL, redirects to /penelitian
+    pathname === '/penelitian' || pathname.startsWith('/penelitian/') || // penelitian page has its own login
     pathname.startsWith("/_next/") || 
     pathname.startsWith("/static/") || 
     pathname.includes(".")

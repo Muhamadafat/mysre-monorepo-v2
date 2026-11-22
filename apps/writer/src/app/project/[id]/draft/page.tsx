@@ -5,6 +5,7 @@
 import { pickAndInsertImage } from "@/components/plate/kit";
 import './animations.css';
 import ConceptMap from '@/components/ConceptMap';
+import { buildConceptMap } from '@/lib/conceptMap';
 import dynamic from 'next/dynamic';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -2453,152 +2454,8 @@ const handleSubmitToTeacher = async () => {
 
   // Function to sync editor content to concept map
   const syncEditorToConceptMap = (content: any[]) => {
-    console.log("🔄 Syncing editor to concept map...", content.length, "blocks");
-
-    const nodes: any[] = [];
-    const edges: any[] = [];
-
-    const lastHeadingIds: { [key: number]: string | null } = {
-      1: null,
-      2: null,
-      3: null,
-      4: null,
-    };
-
-    // Gunakan 'for' loop agar kita bisa melompati indeks (i++)
-    for (let i = 0; i < content.length; i++) {
-      const currentBlock = content[i];
-      const nodeId = currentBlock.id || `node-${uuidv4()}`;
-      let nodeData: any = null;
-      let parentId: string | null = null;
-      const currentText = getTextFromBlock(currentBlock);
-
-      // Skip blok kosong
-      if (currentText.trim() === "") {
-        continue;
-      }
-
-      // LOGIKA UTAMA: Cek heading H2/H3/H4 dan lihat blok selanjutnya
-      if (currentBlock.type === 'heading') {
-        const level = currentBlock.props?.level || 1;
-
-        // JIKA blok selanjutnya adalah paragraf berisi teks -> GABUNGKAN
-        if (level <= 4) {
-          nodeData = {
-            id: nodeId,
-            label: truncateByWords(currentText, 5),
-            title: currentText,
-            type: `H${level}`,
-            shape: 'box',
-            margin: { top: 10, right: 15, bottom: 10, left: 15 },
-            font: { size: 18 - (level * 2), bold: true },
-            color: { background: level === 1 ? '#40c057' : '#fcc419', border: level === 1 ? '#2f9e44' : '#f59f00' },
-          };
-
-          // Tentukan induknya
-          if (level > 1) {
-            // Cari induk dari level di atasnya
-            for (let p = level - 1; p >= 1; p--) {
-              if (lastHeadingIds[p]) {
-                parentId = lastHeadingIds[p];
-                break;
-              }
-            }
-          }
-
-          // Simpan ID heading saat ini
-          lastHeadingIds[level] = nodeId;
-          // Reset ID heading di bawahnya
-          for (let j = level + 1; j <= 4; j++) {
-            lastHeadingIds[j] = null;
-          }
-          
-          // const label = `${truncateByWords(currentText, 3)}\n${truncateByWords(nextText, 3)}`;
-          // nodeData = {
-          //   id: nodeId, label, title: `${currentText}\n\n${nextText}`, content: nextText,
-          //   type: 'H2_H4', shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
-          //   font: { multi: true, size: 14, bold: { size: 16 } },
-          //   color: { background: '#fcc419', border: '#f59f00' },
-          // };
-          // i++; // 👈 PENTING: Lompati blok paragraf berikutnya karena sudah digabung
-        } 
-        
-        // else {
-        //   // JIKA TIDAK -> Buat sebagai node heading biasa (tanpa konten)
-        //   nodeData = {
-        //     id: nodeId, label: truncateByWords(currentText, 3), title: currentText, content: '',
-        //     type: 'H2_H4', shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
-        //     font: { size: 16, bold: true },
-        //     color: { background: '#fcc419', border: '#f59f00' },
-        //   };
-        // }
-        
-        // // Logika untuk menentukan parent & edge
-        // if (level > 1) parentId = lastHeadingIds[level - 1];
-        // if (!parentId) { for (let p = level - 2; p >= 1; p--) { if (lastHeadingIds[p]) { parentId = lastHeadingIds[p]; break; } } }
-        // lastHeadingIds[level] = nodeId;
-        // for (let j = level + 1; j <= 4; j++) { lastHeadingIds[j] = null; }
-
-      } 
-      
-      else {
-        nodeData = {
-          id: nodeId,
-          label: truncateByWords(currentText, 5),
-          title: currentText,
-          type: 'Paragraph',
-          shape: 'box',
-          margin: { top: 10, right: 15, bottom: 10, left: 15 },
-          font: { size: 14 },
-          color: { background: '#adb5bd', border: '#868e96' },
-        };
-        // Cari induk terakhir yang tersedia, dari level terendah ke tertinggi
-        for (let p = 4; p >= 1; p--) {
-          if (lastHeadingIds[p]) {
-            parentId = lastHeadingIds[p];
-            break;
-          }
-        }
-
-        // Logika untuk blok lainnya (H1 atau paragraf yang tidak digabung)
-        // if (currentBlock.type === 'heading') { // Ini pasti H1
-        //   const level = 1;
-        //   nodeData = {
-        //     id: nodeId, label: truncateByWords(currentText, 3), title: currentText, type: 'H1',
-        //     shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
-        //     font: { size: 18, bold: true },
-        //     color: { background: '#40c057', border: '#2f9e44' },
-        //   };
-        //   lastHeadingIds[level] = nodeId;
-        //   for (let j = level + 1; j <= 4; j++) { lastHeadingIds[j] = null; }
-        // } else if (currentBlock.type === 'paragraph') {
-        //   nodeData = {
-        //     id: nodeId, label: truncateByWords(currentText, 3), title: currentText, type: 'Paragraph',
-        //     shape: 'box', margin: { top: 10, right: 15, bottom: 10, left: 15 },
-        //     font: { size: 14 },
-        //     color: { background: '#adb5bd', border: '#868e96' },
-        //   };
-        //   for (let p = 4; p >= 1; p--) { if (lastHeadingIds[p]) { parentId = lastHeadingIds[p]; break; } }
-        // }
-      }
-
-      if (nodeData) {
-        nodes.push(nodeData);
-        if (parentId) {
-          edges.push({ id: `edge-${parentId}-${nodeId}`, from: parentId, to: nodeId, arrows: 'to' });
-        }
-      }
-    }
-    console.log("✅ Synced to concept map:", nodes.length, "nodes,", edges.length, "edges");
-    setConceptMapData({ nodes, edges });
-  };
-
-  const truncateByWords = (text: string, limit: number) => {
-    const words = text.split(' ');
-    if (words.length > limit) {
-      return words.slice(0, limit).join(' ') + '...';
-    }
-    return text;
+    // Same builder the penelitian page uses (src/lib/conceptMap.ts).
+    setConceptMapData(buildConceptMap(content));
   };
 
   // Function untuk concept map
