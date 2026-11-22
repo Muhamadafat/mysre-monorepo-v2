@@ -39,3 +39,5 @@ yarn-error.log*
 
 # PartyKit local durable-object state (runtime only)
 party/.partykit/
+
+*.tsbuildinfo
