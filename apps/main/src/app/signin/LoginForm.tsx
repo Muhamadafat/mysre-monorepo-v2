@@ -67,10 +67,9 @@ export default function LoginForm() {
         await new Promise(resolve => setTimeout(resolve, 200));
         
         // Dynamic profile URL untuk production
-        const profileUrl = process.env.NEXT_PUBLIC_PROFILE_APP_URL || 
-                          (typeof window !== 'undefined' && window.location.hostname.includes('riset.web.id')
-                            ? 'https://profile.riset.web.id/dashboard'
-                            : 'http://profile.lvh.me:3002/dashboard');
+        // Always land on /dashboard: the profile root page has no sidebar, and
+        // NEXT_PUBLIC_PROFILE_APP_URL may or may not already end in /dashboard.
+        const profileUrl = new URL('/dashboard', process.env.NEXT_PUBLIC_PROFILE_APP_URL || 'http://profile.lvh.me:3002').toString();
         
         console.log('Redirecting to:', profileUrl);
         
