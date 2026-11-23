@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState, type ComponentType, type RefObject } from "react";
 import { ActionIcon, Loader, Portal, Tooltip } from "@mantine/core";
 import {
+  IconBolt,
   IconCheck,
   IconChevronRight,
+  IconCloudUpload,
   IconMicrophone,
   IconMicrophoneOff,
   IconPencil,
@@ -15,7 +17,8 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import type { VoiceCommandResult } from "@/components/PlateEditor";
-import { useRealtimeVoice, type VoiceMode } from "@/hooks/useRealtimeVoice";
+import { useBatchVoice } from "@/hooks/useBatchVoice";
+import { useRealtimeVoice, type SavedRecording, type VoiceMode } from "@/hooks/useRealtimeVoice";
 import { pushTestLog } from "@/lib/testLog";
 import CommandHelpModal from "./CommandHelpModal";
 import { logCommandRun, runSpokenCommand, type CommandProgress } from "./runSpokenCommand";
@@ -57,10 +60,30 @@ const MODE_OPTIONS: { value: VoiceMode; title: string; hint: string; icon: Compo
   { value: "command", title: "Mode Perintah", hint: "Perintah dijalankan saat Anda berhenti", icon: IconTerminal2, className: classes.optCommand },
 ];
 
+/**
+ * How speech becomes text. "realtime": live while speaking (OpenAI Realtime).
+ * "batch" ("Rekam dulu"): record until stop, save the recording to S3, then a
+ * speech-to-text service turns the saved file into text — for services
+ * without a realtime API. "batch" is the default (lecturer's decision,
+ * 2026-11-23); a user's own choice is remembered per browser.
+ */
+type VoiceEngine = "realtime" | "batch";
+const ENGINE_KEY = "sre.voice.engine";
+const ENGINE_OPTIONS: { value: VoiceEngine; title: string; hint: string; icon: ComponentType<{ size?: number }> }[] = [
+  { value: "batch", title: "Rekam dulu", hint: "Rekaman disimpan dulu, lalu diubah jadi teks (default)", icon: IconCloudUpload },
+  { value: "realtime", title: "Realtime", hint: "Teks muncul saat Anda bicara", icon: IconBolt },
+];
+
 /** The steps shown while a session runs and after it ends ("Langkah n/N"). */
-const STEPS: Record<VoiceMode, string[]> = {
-  write: ["Mendengarkan & mengetik", "Menyimpan kalimat terakhir", "Menyimpan rekaman"],
-  command: ["Mendengarkan perintah", "Menyimpan kalimat terakhir", "Memahami perintah", "Menjalankan perintah"],
+const STEPS: Record<VoiceEngine, Record<VoiceMode, string[]>> = {
+  realtime: {
+    write: ["Mendengarkan & mengetik", "Menyimpan kalimat terakhir", "Menyimpan rekaman"],
+    command: ["Mendengarkan perintah", "Menyimpan kalimat terakhir", "Memahami perintah", "Menjalankan perintah"],
+  },
+  batch: {
+    write: ["Merekam", "Menyimpan rekaman ke S3", "Mengubah suara jadi teks", "Mengetik ke draft"],
+    command: ["Merekam", "Menyimpan rekaman ke S3", "Mengubah suara jadi teks", "Memahami perintah", "Menjalankan perintah"],
+  },
 };
 
 /**
@@ -113,10 +136,16 @@ export default function VoiceAssistant({ onCommand }: VoiceAssistantProps) {
   const [progress, setProgress] = useState<CommandProgress | null>(null);
   const cancelRunRef = useRef(false);
   const [heard, setHeard] = useState("");
-  const voice = useRealtimeVoice({
-    onCommand: run,
-    // Stop pressed (or time limit): run what was said in Mode Perintah right away.
-    onSessionEnd: (endedMode, userLines, saved) => {
+  // The dock renders in a Portal (client only), so reading storage here can't mismatch the server render.
+  const [engine, setEngine] = useState<VoiceEngine>(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem(ENGINE_KEY) === "realtime" ? "realtime" : "batch";
+    } catch {
+      return "batch"; // storage blocked: the default
+    }
+  });
+  // Stop pressed (or time limit): run what was said in Mode Perintah right away.
+  const onSessionEnd = (endedMode: VoiceMode, userLines: string[], saved: Promise<SavedRecording | null>) => {
       // Switching mode / turning voice off mid-session cancels instead of running.
       if (endedMode !== "command" || cancelRunRef.current) {
         cancelRunRef.current = false;
@@ -132,8 +161,12 @@ export default function VoiceAssistant({ onCommand }: VoiceAssistantProps) {
       void Promise.all([runSpokenCommand(text, run, setProgress), saved]).then(([result, recording]) => {
         if (recording) void logCommandRun(recording.uuid, result, "langsung");
       });
-    },
-  });
+  };
+  const realtime = useRealtimeVoice({ onCommand: run, onSessionEnd });
+  const batch = useBatchVoice({ onCommand: run, onSessionEnd });
+  const voice = engine === "batch" ? batch : realtime;
+  /** "Rekam dulu" after stop: saving, transcribing or typing. */
+  const batchWorking = engine === "batch" && batch.phase !== null && batch.phase !== "recording";
   const [dismissed, setDismissed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [toggle, setToggle] = useState<ToggleValue>("off");
@@ -170,18 +203,27 @@ export default function VoiceAssistant({ onCommand }: VoiceAssistantProps) {
   const lastLine = voice.transcript[voice.transcript.length - 1];
   const runningStep = [...voice.transcript].reverse().find(line => line.toolState === "running");
   const busy = voice.active || voice.status === "connecting";
-  // Commands from the last session are being interpreted / run.
-  const processing = progress?.stage === "interpreting" || progress?.stage === "running";
+  // Commands from the last session are being interpreted / run (or, in "Rekam dulu", the recording is being processed).
+  const processing = progress?.stage === "interpreting" || progress?.stage === "running" || batchWorking;
+  const steps = mode ? STEPS[engine][mode] : [];
 
   // Which step the dock is on (null: connecting, idle, or finished).
   let step: { index: number; label: string } | null = null;
+  // "Rekam dulu" in Mode Perintah has one more step (transcribe) before the commands.
+  const commandOffset = engine === "batch" ? 1 : 0;
   if (mode && voice.status !== "connecting") {
-    if (voice.finishing) step = { index: 2, label: STEPS[mode][1] };
-    else if (voice.active) step = { index: 1, label: STEPS[mode][0] };
-    else if (mode === "command" && progress?.stage === "interpreting") step = { index: 3, label: STEPS.command[2] };
+    if (engine === "batch" && batch.phase) {
+      const index = { recording: 1, uploading: 2, transcribing: 3, typing: 4 }[batch.phase];
+      step = { index, label: steps[index - 1] };
+    } else if (voice.finishing) step = { index: 2, label: steps[1] };
+    else if (voice.active) step = { index: 1, label: steps[0] };
+    else if (mode === "command" && progress?.stage === "interpreting") step = { index: 3 + commandOffset, label: steps[2 + commandOffset] };
     else if (mode === "command" && progress?.stage === "running")
-      step = { index: 4, label: progress.total > 1 ? `${STEPS.command[3]} ${progress.index}/${progress.total}` : STEPS.command[3] };
-    else if (mode === "write" && voice.saving) step = { index: 3, label: STEPS.write[2] };
+      step = {
+        index: 4 + commandOffset,
+        label: progress.total > 1 ? `${steps[3 + commandOffset]} ${progress.index}/${progress.total}` : steps[3 + commandOffset],
+      };
+    else if (mode === "write" && voice.saving) step = { index: 3, label: steps[2] };
   }
 
   // One line that says what is happening right now.
@@ -190,6 +232,14 @@ export default function VoiceAssistant({ onCommand }: VoiceAssistantProps) {
   if (voice.error) {
     caption = voice.error;
     tone = "error";
+  } else if (engine === "batch" && batch.phase === "uploading") {
+    caption = "Menyimpan rekaman ke S3…";
+  } else if (engine === "batch" && batch.phase === "transcribing") {
+    caption = "Mengubah suara jadi teks…";
+  } else if (engine === "batch" && batch.phase === "typing") {
+    caption = "Mengetik teks ke draft…";
+  } else if (engine === "batch" && batch.phase === "recording" && !voice.muted) {
+    caption = "Merekam… tekan ■ kalau sudah selesai bicara";
   } else if (!busy && progress?.stage === "interpreting") {
     caption = heard ? `\u201c${heard}\u201d` : "Memahami perintah…";
   } else if (!busy && progress?.stage === "running") {
@@ -224,7 +274,7 @@ export default function VoiceAssistant({ onCommand }: VoiceAssistantProps) {
   }
 
   const meta = step
-    ? `Langkah ${step.index}/${STEPS[mode!].length} · ${step.label}`
+    ? `Langkah ${step.index}/${steps.length} · ${step.label}`
     : voice.status === "speaking"
       ? "AI berbicara"
       : voice.status === "working"
@@ -273,7 +323,22 @@ export default function VoiceAssistant({ onCommand }: VoiceAssistantProps) {
     void voice.start(mode);
   };
 
-  const stopLabel = mode === "command" ? "Berhenti & jalankan perintah" : "Berhenti merekam";
+  const stopLabel =
+    engine === "batch"
+      ? "Berhenti & proses rekaman"
+      : mode === "command"
+        ? "Berhenti & jalankan perintah"
+        : "Berhenti merekam";
+
+  const changeEngine = (value: VoiceEngine) => {
+    if (busy || processing || value === engine) return;
+    setEngine(value);
+    try {
+      window.localStorage.setItem(ENGINE_KEY, value);
+    } catch {
+      // Storage blocked: the choice lasts until the page reloads.
+    }
+  };
 
   const anchored = position.kind === "anchored";
   // Only shown while the cursor is in the editor, mid-session or while the
@@ -294,7 +359,7 @@ export default function VoiceAssistant({ onCommand }: VoiceAssistantProps) {
         <span className={classes.captionMeta}>
           {step && mode && (
             <span className={classes.steps} aria-hidden>
-              {STEPS[mode].map((_, i) => (
+              {steps.map((_, i) => (
                 <span
                   key={i}
                   className={`${classes.stepDot} ${i + 1 < step!.index ? classes.stepDone : i + 1 === step!.index ? classes.stepNow : ""}`}
@@ -403,6 +468,27 @@ export default function VoiceAssistant({ onCommand }: VoiceAssistantProps) {
                     </button>
                   );
                 })}
+                <div className={classes.engineLabel}>Cara memproses suara</div>
+                <div className={classes.engineRow} role="group" aria-label="Cara memproses suara">
+                  {ENGINE_OPTIONS.map(option => {
+                    const Icon = option.icon;
+                    return (
+                      <Tooltip key={option.value} label={option.hint} withArrow>
+                        <button
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={engine === option.value}
+                          disabled={busy || processing}
+                          className={classes.engineButton}
+                          onClick={() => changeEngine(option.value)}
+                        >
+                          <Icon size={14} />
+                          <span>{option.title}</span>
+                        </button>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
                 {mode && (
                   <button
                     type="button"
@@ -426,7 +512,7 @@ export default function VoiceAssistant({ onCommand }: VoiceAssistantProps) {
           {mode && (
             <>
               {/* One button: record, then the same button (■) stops. */}
-              <Tooltip label={processing ? "Sedang memproses perintah…" : busy ? stopLabel : `Rekam (${MODE_LABEL[mode].toLowerCase()})`}>
+              <Tooltip label={processing ? "Sedang memproses perintah…" : busy ? stopLabel : `Rekam (${MODE_LABEL[mode].toLowerCase()}, ${engine === "batch" ? "rekam dulu" : "realtime"})`}>
                 <button
                   type="button"
                   className={`${classes.mic} ${voice.active ? `${classes.micLive} ${classes.micStop}` : ""}`}

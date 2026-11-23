@@ -65,6 +65,12 @@ export interface RecordingMeta {
   wavKey?: string;
   wavSizeBytes?: number;
   transcript: { at: string; role: string; text: string }[];
+  /**
+   * How the voice was turned into text: "realtime" (live, while speaking) or
+   * "batch" ("Rekam dulu": recorded, saved here, then transcribed). Missing on
+   * recordings made before 2026-11-23 (all realtime).
+   */
+  pipeline?: "realtime" | "batch";
   /** Full transcript of the audio file made by OpenAI on request ("Transkrip AI"). */
   aiTranscript?: { text: string; model: string; createdAt: string };
   /** Mode Perintah: every time the command was run (newest last). */

@@ -7,11 +7,14 @@ import { saveAiTranscriptToDb } from "@/lib/voice/voiceDb";
 import { isOwnRecordingKey, type RecordingMeta } from "@/lib/storage/recordingKeys";
 import { s3, s3Bucket, s3Configured, s3Prefix } from "@/lib/storage/s3";
 import {
+  BATCH_LIMITS,
   MAX_TRANSCRIBE_BYTES,
   TRANSCRIBE_LIMITS,
   TranscribeError,
   estimateTranscribeUsd,
-  transcribeAudio,
+  speechToText,
+  sttNeedsOpenAiKey,
+  sttProvider,
   transcribeModel,
 } from "@/lib/voice/transcribe";
 
@@ -24,6 +27,13 @@ import {
  * stores the text in the recording's .json next to the audio, and logs the
  * cost as a TokenUsage row (purpose "transcribe"). A recording that already
  * has an AI transcript returns it without calling OpenAI again.
+ *
+ * { uuid, purpose: "batch" } is the "Rekam dulu" voice mode: called right after
+ * the recording is saved, so the text can be typed (Mode Menulis) or run as
+ * commands (Mode Perintah). It has its own allowance (BATCH_LIMITS, TokenUsage
+ * purpose "voice-batch"), uses the speech-to-text service in STT_PROVIDER, and
+ * also fills the recording's transcript so the history and the research page
+ * show what was said.
  */
 export const maxDuration = 120; // a 10-minute recording can take a while
 
@@ -42,13 +52,16 @@ export async function POST(request: Request) {
   if (!s3Configured()) {
     return NextResponse.json({ error: "Penyimpanan S3 belum diatur di server writer." }, { status: 500 });
   }
+  const body = await request.json().catch(() => ({}));
+  const batch = body?.purpose === "batch";
   // Same key as the voice assistant: the lecturer's key, the user's own only as a fallback.
-  const apiKey = process.env.VOICE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  // Another speech-to-text vendor (STT_PROVIDER) brings its own key.
+  const apiKey = process.env.VOICE_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
+  if (!apiKey && (!batch || sttNeedsOpenAiKey())) {
     return NextResponse.json({ error: "VOICE_OPENAI_API_KEY belum diatur di server writer." }, { status: 500 });
   }
-
-  const body = await request.json().catch(() => ({}));
+  const usagePurpose = batch ? "voice-batch" : "transcribe";
+  const limits = batch ? BATCH_LIMITS : TRANSCRIBE_LIMITS;
   // The recording's UUID (or the older S3 audio key).
   const ref = typeof body?.uuid === "string" ? body.uuid : body?.key;
   const found = typeof ref === "string" ? await findRecording(String(user.id), ref).catch(() => null) : null;
@@ -67,12 +80,16 @@ export async function POST(request: Request) {
   const monthStart = startOfToday();
   monthStart.setDate(1);
   const [todayCount, monthRows] = await Promise.all([
-    prisma.tokenUsage.count({ where: { userId: user.id, purpose: "transcribe", createdAt: { gte: startOfToday() } } }),
-    prisma.tokenUsage.findMany({ where: { purpose: "transcribe", createdAt: { gte: monthStart } }, select: { metadata: true } }),
+    prisma.tokenUsage.count({ where: { userId: user.id, purpose: usagePurpose, createdAt: { gte: startOfToday() } } }),
+    prisma.tokenUsage.findMany({ where: { purpose: usagePurpose, createdAt: { gte: monthStart } }, select: { metadata: true } }),
   ]);
-  if (todayCount >= TRANSCRIBE_LIMITS.dailyPerUser) {
+  if (todayCount >= limits.dailyPerUser) {
     return NextResponse.json(
-      { error: `Jatah transkrip AI hari ini (${TRANSCRIBE_LIMITS.dailyPerUser} rekaman) sudah habis. Coba lagi besok.` },
+      {
+        error: batch
+          ? `Jatah rekaman suara hari ini (${limits.dailyPerUser} rekaman) sudah habis. Coba lagi besok.`
+          : `Jatah transkrip AI hari ini (${limits.dailyPerUser} rekaman) sudah habis. Coba lagi besok.`,
+      },
       { status: 429 }
     );
   }
@@ -80,8 +97,11 @@ export async function POST(request: Request) {
     (sum, row) => sum + (Number((row.metadata as { estimatedUsd?: number } | null)?.estimatedUsd) || 0),
     0
   );
-  if (spentThisMonth >= TRANSCRIBE_LIMITS.monthlyBudgetUsd) {
-    return NextResponse.json({ error: "Batas biaya transkrip AI bulan ini sudah tercapai. Hubungi admin." }, { status: 429 });
+  if (spentThisMonth >= limits.monthlyBudgetUsd) {
+    return NextResponse.json(
+      { error: batch ? "Batas biaya asisten suara bulan ini sudah tercapai. Hubungi admin." : "Batas biaya transkrip AI bulan ini sudah tercapai. Hubungi admin." },
+      { status: 429 }
+    );
   }
 
   // The MP3 is the main audio (meta.audioKey); the WAV only when no MP3 could be made.
@@ -100,11 +120,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "File rekaman tidak bisa dibaca dari S3." }, { status: 502 });
   }
 
-  const model = transcribeModel();
+  const model = sttProvider() === "openai" ? transcribeModel() : sttProvider();
   let result;
   const startedAt = Date.now();
   try {
-    result = await transcribeAudio({
+    result = await speechToText({
       audio,
       mimeType,
       apiKey,
@@ -132,7 +152,7 @@ export async function POST(request: Request) {
       data: {
         userId: user.id,
         model,
-        purpose: "transcribe",
+        purpose: usagePurpose,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         tokensUsed: result.inputTokens + result.outputTokens,
@@ -146,13 +166,21 @@ export async function POST(request: Request) {
     })
     .catch(err => console.error("[voice/transcribe] usage log failed:", err));
 
-  const aiTranscript = { text: result.text, model, createdAt: new Date().toISOString() };
+  const aiTranscript = { text: result.text, model: result.model || model, createdAt: new Date().toISOString() };
+  const updated: RecordingMeta = { ...meta, aiTranscript };
+  // "Rekam dulu" recordings arrive without a live transcript: this text is it,
+  // in the same shape the realtime modes use ("Menulis: …" lines are what got typed).
+  if (batch && !(meta.transcript ?? []).length && result.text) {
+    const at = meta.endedAt ?? aiTranscript.createdAt;
+    updated.transcript =
+      meta.mode === "menulis" ? [{ at, role: "tool", text: `Menulis: ${result.text}` }] : [{ at, role: "user", text: result.text }];
+  }
   try {
     await s3().send(
       new PutObjectCommand({
         Bucket: s3Bucket(),
         Key: metaKey,
-        Body: JSON.stringify({ ...meta, aiTranscript }, null, 2),
+        Body: JSON.stringify(updated, null, 2),
         ContentType: "application/json",
       })
     );
@@ -162,6 +190,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ aiTranscript, saved: false });
   }
 
-  await saveAiTranscriptToDb(found.uuid, { ...meta, aiTranscript });
+  await saveAiTranscriptToDb(found.uuid, updated);
   return NextResponse.json({ aiTranscript, saved: true });
 }

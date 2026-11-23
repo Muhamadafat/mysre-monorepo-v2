@@ -115,6 +115,7 @@ export async function POST(request: Request) {
     audioKey,
     ...(wav && { wavKey: wav.key, wavSizeBytes: wav.body.byteLength }),
     transcript: Array.isArray(meta.transcript) ? meta.transcript : [],
+    pipeline: meta.pipeline === "batch" ? "batch" : "realtime",
   };
 
   try {
