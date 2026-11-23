@@ -179,6 +179,8 @@ export async function listRecordings(userId: string, projectId: string | null, m
         mimeType: meta.mimeType,
         transcript: meta.transcript ?? [],
         aiTranscript: meta.aiTranscript ?? null,
+        /** "realtime" (live) or "batch" (Rekam dulu); older recordings are realtime. */
+        pipeline: meta.pipeline ?? "realtime",
         url: audioUrl(uuid),
         /** Same file, saved as an attachment (rekaman-<mode>-<timestamp>.mp3). */
         downloadUrl: audioUrl(uuid, undefined, true),

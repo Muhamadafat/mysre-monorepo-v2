@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { TranscribeError, estimateTranscribeUsd, transcribeAudio } from "./transcribe";
+import { TranscribeError, estimateTranscribeUsd, speechToText, sttNeedsOpenAiKey, sttProvider, transcribeAudio } from "./transcribe";
 
 const audio = new Uint8Array([1, 2, 3, 4]);
 
@@ -65,5 +65,26 @@ describe("estimateTranscribeUsd", () => {
   it("charges per minute of audio", () => {
     expect(estimateTranscribeUsd(60)).toBeCloseTo(0.006);
     expect(estimateTranscribeUsd(0)).toBeGreaterThan(0); // never free
+  });
+});
+
+describe("speechToText (STT_PROVIDER)", () => {
+  it("uses OpenAI by default", async () => {
+    vi.stubEnv("STT_PROVIDER", "");
+    const fetchImpl = vi.fn(async () => jsonResponse(200, { text: "Halo" }));
+    const result = await speechToText({ audio, mimeType: "audio/mpeg", apiKey: "sk-test", model: "gpt-4o-transcribe", fetchImpl });
+    expect(result.text).toBe("Halo");
+    expect(sttNeedsOpenAiKey()).toBe(true);
+    vi.unstubAllEnvs();
+  });
+
+  it("refuses a provider that isn't installed yet, without calling anyone", async () => {
+    vi.stubEnv("STT_PROVIDER", "VendorLain");
+    const fetchImpl = vi.fn();
+    await expect(speechToText({ audio, mimeType: "audio/mpeg", apiKey: "", fetchImpl })).rejects.toMatchObject({ status: 501 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(sttProvider()).toBe("vendorlain");
+    expect(sttNeedsOpenAiKey()).toBe(false);
+    vi.unstubAllEnvs();
   });
 });

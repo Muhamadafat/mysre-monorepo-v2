@@ -20,6 +20,28 @@ export const TRANSCRIBE_LIMITS = {
   usdPerMinute: num(process.env.TRANSCRIBE_USD_PER_MINUTE, 0.006),
 };
 
+/**
+ * "Rekam dulu" (non-realtime) voice: every recording is transcribed right
+ * after it's saved, so it gets its own, larger allowance (TokenUsage purpose
+ * "voice-batch"), separate from the on-request "Transkrip AI" button.
+ *   VOICE_BATCH_DAILY_PER_USER       recordings per user per day (default 100)
+ *   VOICE_BATCH_MONTHLY_BUDGET_USD   estimated spend for all users per month (default 10)
+ */
+export const BATCH_LIMITS = {
+  dailyPerUser: num(process.env.VOICE_BATCH_DAILY_PER_USER, 100),
+  monthlyBudgetUsd: num(process.env.VOICE_BATCH_MONTHLY_BUDGET_USD, 10),
+};
+
+/**
+ * Which speech-to-text service turns a saved recording into text
+ * (STT_PROVIDER, default "openai"). Another vendor is added as one more case
+ * in speechToText below; nothing else has to change.
+ */
+export const sttProvider = () => (process.env.STT_PROVIDER || "openai").trim().toLowerCase();
+
+/** Whether the chosen speech-to-text service needs the OpenAI key. */
+export const sttNeedsOpenAiKey = () => sttProvider() === "openai";
+
 /** OpenAI's upload limit for transcription. */
 export const MAX_TRANSCRIBE_BYTES = 25 * 1024 * 1024;
 
@@ -128,4 +150,20 @@ export async function transcribeAudio(options: {
     inputTokens: Number(data?.usage?.input_tokens) || 0,
     outputTokens: Number(data?.usage?.output_tokens) || 0,
   };
+}
+
+/**
+ * Saved recording → text with the service chosen by STT_PROVIDER. Takes the
+ * same options as transcribeAudio; `apiKey` is the OpenAI key and is only
+ * used by the "openai" provider.
+ */
+export async function speechToText(options: Parameters<typeof transcribeAudio>[0]): Promise<TranscribeResult> {
+  const provider = sttProvider();
+  switch (provider) {
+    case "openai":
+      return transcribeAudio(options);
+    // case "<vendor>": return transcribeWithVendor(options); ← the new speech-to-text vendor goes here.
+    default:
+      throw new TranscribeError(`Layanan speech-to-text "${provider}" belum dipasang di server (STT_PROVIDER).`, 501);
+  }
 }
