@@ -72,7 +72,8 @@ export async function PATCH(request: Request, { params }: Params) {
   // The article's own node carries the title shown in the list. Without a PDF
   // its background/content IS the abstract; with a PDF those come from the AI
   // analysis and are left alone.
-  const nodes = await prisma.node.findMany({ where: { articleId, type: "article" } });
+  // One node per article today; the type comes from the AI for PDFs, so don't filter on it.
+  const nodes = await prisma.node.findMany({ where: { articleId } });
   for (const node of nodes) {
     const updated = await prisma.node.update({
       where: { id: node.id },

@@ -17,6 +17,10 @@ import type { PlateEditorRef } from '@/components/PlateEditor';
 import AnnotationPanel from '@/components/AnnotationPanel';
 import ShareDraftModal from '@/components/ShareDraftModal';
 import ReferenceUploadModal from '@/components/ReferenceUploadModal';
+import { matchReference } from '@/lib/referenceMatch';
+import { applyEditToBibliography, remapBibliographySource, type EditedReference } from '@/lib/bibliographyUpdate';
+import type { VoiceCommandResult } from '@/components/PlateEditor';
+import type * as Y from 'yjs';
 const PlateEditorComponent = dynamic(() => import("@/components/PlateEditor"), {
   ssr: false
 });
@@ -171,6 +175,20 @@ interface Article {
 
 /** True for a reference saved from details only (e.g. RIS without a PDF). */
 const lacksPdf = (item: Article) => Boolean(item.article) && !/\.pdf($|\?)/i.test(item.article?.filePath ?? '');
+
+
+/** One reference change announced to collaborators through the shared doc. */
+interface RefChange {
+  kind: 'add' | 'edit' | 'delete' | 'replace';
+  articleId: string;
+  replacedArticleId?: string;
+  title: string;
+  article?: EditedReference;
+  /** Yjs clientID of the sender. */
+  by: number;
+  byName?: string;
+  at: number;
+}
 
 interface ValidAssignment {
   id: string;
@@ -665,6 +683,30 @@ export default function Home() {
     const timer = setInterval(() => { if (tryAttach()) clearInterval(timer); }, 700);
     return () => { clearInterval(timer); detach?.(); titleMetaRef.current = null; };
   }, [writerSession?.id]);
+  // Listen for reference changes made by collaborators (see broadcastRefChange).
+  useEffect(() => {
+    if (!writerSession?.id) return;
+    let detach: (() => void) | null = null;
+    const tryAttach = () => {
+      const doc = editorRef.current?.getCollabDoc?.();
+      if (!doc) return false;
+      const map = doc.getMap<unknown>('references');
+      refsMapRef.current = map;
+      const onChange = (_event: Y.YMapEvent<unknown>, transaction: Y.Transaction) => {
+        if (transaction.local) return;
+        const change = map.get('last') as RefChange | undefined;
+        // The doc is stored, so joining replays the last change: only act on fresh ones.
+        if (!change || change.by === doc.clientID || Date.now() - change.at > 60_000) return;
+        applyRemoteRefChangeRef.current(change);
+      };
+      map.observe(onChange);
+      detach = () => map.unobserve(onChange);
+      return true;
+    };
+    if (tryAttach()) return () => { detach?.(); refsMapRef.current = null; };
+    const timer = setInterval(() => { if (tryAttach()) clearInterval(timer); }, 700);
+    return () => { clearInterval(timer); detach?.(); refsMapRef.current = null; };
+  }, [writerSession?.id]);
   const conceptMapSyncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const editLogTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [isClient, setIsClient] = useState(false);
@@ -685,6 +727,109 @@ export default function Home() {
   const [attachPdfTo, setAttachPdfTo] = useState<Article | null>(null);
   // "Edit" on a reference card (its pop-up also holds "Hapus").
   const [editRefOf, setEditRefOf] = useState<Article | null>(null);
+  // Opened by the voice command "hapus referensi X": start on the delete confirmation.
+  const [editRefConfirmDelete, setEditRefConfirmDelete] = useState(false);
+  const openEditRef = (item: Article | null, confirmDelete = false) => {
+    setEditRefConfirmDelete(confirmDelete);
+    setEditRefOf(item);
+  };
+
+  /** Corrected details of an article → its Daftar Pustaka entries. Only the
+   *  details change: number [n], id and order stay, so citations in the text
+   *  keep pointing at the same entry. Same fallbacks as "Cite". */
+  const applyEditedReference = (updated: EditedReference) => {
+    setBibliographyList((prev) => applyEditToBibliography(prev, updated));
+  };
+
+  // ── Referensi Pustaka across collaborators ─────────────────────────────
+  // The reference list comes from the database, so a change made by one
+  // collaborator isn't seen by the others until they reload. Each add / edit
+  // / delete is announced in the shared Yjs doc (map "references", key
+  // "last"); the others re-fetch the list and update their Daftar Pustaka.
+  const refsMapRef = useRef<Y.Map<unknown> | null>(null);
+  const broadcastRefChange = (change: Omit<RefChange, 'by' | 'byName' | 'at'>) => {
+    const map = refsMapRef.current;
+    if (!map) return; // not collaborative: nobody to tell
+    const event: RefChange = {
+      ...change,
+      by: map.doc?.clientID ?? 0,
+      byName: dropdownUser?.name || dropdownUser?.email || 'Kolaborator',
+      at: Date.now(),
+    };
+    map.set('last', event);
+  };
+  const applyRemoteRefChange = (change: RefChange) => {
+    void getArticle();
+    const who = change.byName || 'Kolaborator';
+    const title = change.title ? `"${change.title}"` : 'sebuah referensi';
+    const editingId = editRefOf?.article?.id;
+    const editingIt = !!editingId && (editingId === change.articleId || editingId === change.replacedArticleId);
+    if (change.kind === 'edit' && change.article) {
+      applyEditedReference(change.article);
+      notifications.show({
+        title: 'Referensi diperbarui',
+        message: editingIt
+          ? `${who} baru saja mengubah ${title} yang sedang Anda edit. Kalau Anda menyimpan, isian Anda yang dipakai.`
+          : `${who} mengubah ${title}. Daftar Pustaka ikut diperbarui.`,
+        color: editingIt ? 'yellow' : 'blue',
+        autoClose: editingIt ? false : 5000,
+      });
+    } else if (change.kind === 'delete') {
+      if (editingIt) setEditRefOf(null);
+      notifications.show({
+        title: 'Referensi dihapus',
+        message: `${who} menghapus ${title}. Sitasi yang sudah ada di naskah tetap.`,
+        color: editingIt ? 'red' : 'gray',
+      });
+    } else if (change.kind === 'replace' && change.replacedArticleId) {
+      // "Lampirkan PDF": same reference, new article id.
+      const from = change.replacedArticleId;
+      setBibliographyList((prev) => remapBibliographySource(prev, from, change.articleId));
+      if (editingIt) setEditRefOf(null);
+      notifications.show({ title: 'PDF dilampirkan', message: `${who} melampirkan PDF ke ${title}.`, color: 'teal' });
+    } else if (change.kind === 'add') {
+      notifications.show({ title: 'Referensi baru', message: `${who} menambahkan referensi ke Referensi Pustaka.`, color: 'teal' });
+    }
+  };
+  const applyRemoteRefChangeRef = useRef(applyRemoteRefChange);
+  applyRemoteRefChangeRef.current = applyRemoteRefChange;
+
+  // ── Voice: "kutip / edit / hapus referensi X" (tools in lib/voice/tools.ts) ──
+  const handleReferenceVoiceCommand = async (name: string, args: Record<string, unknown>): Promise<VoiceCommandResult> => {
+    const query = typeof args.reference === 'string' ? args.reference.trim() : '';
+    // The list as shown (search applied), numbered like the cards.
+    const shown = filteredArticles.map((item) => ({
+      id: item.article?.id ?? item.id,
+      title: item.article?.title || item.title,
+      author: item.article?.author,
+      year: item.article?.year,
+      item,
+    }));
+    if (!shown.length) return { ok: false, message: 'Referensi Pustaka masih kosong.' };
+    const match = matchReference(query, shown);
+    if (match.kind === 'none') {
+      return { ok: false, message: `Tidak ada referensi yang cocok dengan "${query}". Sebut potongan judul, nama penulis, tahun, atau nomor urutnya.` };
+    }
+    if (match.kind === 'ambiguous') {
+      const list = match.candidates.map((c) => `${shown.indexOf(c) + 1}. ${c.title}`).join('\n');
+      notifications.show({ title: 'Ada beberapa referensi yang cocok', message: list, color: 'yellow', autoClose: 12000, style: { whiteSpace: 'pre-line' } });
+      return { ok: false, message: `Ada ${match.candidates.length} referensi yang cocok. Ulangi dengan judul yang lebih lengkap atau nomor urutnya.` };
+    }
+    const { item, title } = match.ref;
+    if (name === 'cite_reference') {
+      addArticleToBibliography(item);
+      return { ok: true, message: `Referensi "${title}" dikutip di posisi kursor.` };
+    }
+    if (!item.article) return { ok: false, message: `"${title}" bukan artikel referensi yang bisa diubah.` };
+    openEditRef(item, name === 'delete_reference');
+    return {
+      ok: true,
+      message:
+        name === 'delete_reference'
+          ? `Pop-up hapus untuk "${title}" terbuka. Tekan "Ya, hapus" untuk menghapusnya.`
+          : `Pop-up Edit untuk "${title}" terbuka.`,
+    };
+  };
 
   const sendMessage = () => {
     if (chatInput.trim() === '') return;
@@ -4786,6 +4931,7 @@ const handleSubmitToTeacher = async () => {
                             isFromBrainstorming={isFromBrainstorming}
                             nodesData={article}
                             collaboration={collaborationConfig}
+                            onReferenceCommand={handleReferenceVoiceCommand}
                           />
 
 
@@ -5753,7 +5899,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                             style={{ padding: 0, height: "auto" }}
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              setEditRefOf(item);
+                                              openEditRef(item);
                                             }}
                                           >
                                             Edit
@@ -6270,6 +6416,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                         isFromBrainstorming={isFromBrainstorming}
                         nodesData={article}
                         collaboration={collaborationConfig}
+                        onReferenceCommand={handleReferenceVoiceCommand}
                         statusSlot={editorStatusSlot}
                       />
                     ) : (
@@ -7407,7 +7554,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                         style={{ padding: 0, height: "auto" }}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          setEditRefOf(item);
+                                          openEditRef(item);
                                         }}
                                       >
                                         Edit
@@ -8869,7 +9016,14 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
           // Citations of the old PDF-less reference now point at the new one.
           if (replacedArticleId && articleId) {
             setBibliographyList((prev) =>
-              prev.map((b) => (b.sourceId === replacedArticleId ? { ...b, sourceId: articleId } : b))
+              remapBibliographySource(prev, replacedArticleId, articleId)
+            );
+          }
+          if (articleId) {
+            broadcastRefChange(
+              replacedArticleId
+                ? { kind: 'replace', articleId, replacedArticleId, title: attachPdfTo?.article?.title || attachPdfTo?.title || '' }
+                : { kind: 'add', articleId, title: '' }
             );
           }
           void getArticle();
@@ -8899,34 +9053,21 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
             ? bibliographyList.filter((b) => b.sourceId === editRefOf.article?.id).map((b) => b.number)
             : []
         }
+        startWithDeleteConfirm={editRefConfirmDelete}
         onEdited={(updated) => {
-          // Entries already in the Daftar Pustaka show the corrected details.
-          // Only the details change: number [n], id and order stay the same,
-          // so citations in the text keep pointing at the same entry.
           if (updated) {
-            setBibliographyList((prev) =>
-              prev.map((b) => {
-                if (b.sourceId !== updated.id) return b;
-                const doi = updated.doi?.trim() || undefined;
-                const wasDoiLink = !b.url || /^https?:\/\/(dx\.)?doi\.org\//i.test(b.url);
-                return {
-                  ...b,
-                  title: updated.title?.trim() || b.title,
-                  author: updated.author?.trim() || "Tanpa nama penulis",
-                  year: updated.year?.trim() || "t.t.",
-                  doi,
-                  url: wasDoiLink ? (doi ? `https://doi.org/${doi}` : b.url) : b.url,
-                };
-              })
-            );
+            applyEditedReference(updated);
+            broadcastRefChange({ kind: 'edit', articleId: updated.id, title: updated.title, article: updated });
           }
           void getArticle();
         }}
         onDeleted={(articleId) => {
+          const title = editRefOf?.article?.title || editRefOf?.title || '';
           // Daftar Pustaka entries are kept as they are (they hold their own
           // copy of the details), so existing citations [n] don't change.
           setArticle((prev) => prev.filter((a) => a.article?.id !== articleId));
           setEditRefOf(null);
+          broadcastRefChange({ kind: 'delete', articleId, title });
         }}
       />
 

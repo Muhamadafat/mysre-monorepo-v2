@@ -39,6 +39,14 @@ describe("describeCall", () => {
     expect([...active].sort()).toEqual([...enabled].sort());
   });
 
+  it("maps the Referensi Pustaka commands", () => {
+    expect(describeCall("cite_reference", { reference: "website design" }).intent).toBe("kutip_referensi");
+    expect(describeCall("cite_reference", { reference: "nomor 2" }).target).toBe("dokumen_kursor");
+    expect(describeCall("edit_reference", { reference: "Rahman 2023" }).intent).toBe("edit_referensi");
+    expect(describeCall("delete_reference", { reference: "yang terakhir" }).intent).toBe("hapus_referensi");
+    expect(describeCall("delete_reference", { reference: "x" }).target).toBe("referensi_popup");
+  });
+
   it("names the editor function and executor of every call", () => {
     for (const row of COMMAND_CATALOG) expect(row.fn.trim()).not.toBe("");
     const outline = describeCall("generate_with_ai", { mode: "structure" });
