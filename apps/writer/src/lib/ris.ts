@@ -121,3 +121,91 @@ export function downloadRis(items: RisSource[], title?: string): void {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+
+// ───────────────────────────── RIS import ─────────────────────────────
+
+/** One reference read from a .ris file, in the shape the upload form uses. */
+export interface RisRecord {
+  type: string;
+  title: string;
+  authors: string[];
+  year: string;
+  doi: string;
+  abstract: string;
+  keywords: string[];
+  journal: string;
+  url: string;
+}
+
+const TAG_LINE = /^([A-Z][A-Z0-9])  ?- ?(.*)$/;
+
+/**
+ * Parses a .ris export (Zotero, Mendeley, EndNote, Google Scholar, publisher
+ * sites). Tolerant of BOMs, CRLF, missing ER lines and continuation lines.
+ */
+export function parseRis(text: string): RisRecord[] {
+  const records: RisRecord[] = [];
+  let cur: Record<string, string[]> | null = null;
+  let lastTag = "";
+  const finish = () => {
+    if (cur) {
+      const rec = toRecord(cur);
+      if (rec.title || rec.authors.length || rec.doi) records.push(rec);
+    }
+    cur = null;
+    lastTag = "";
+  };
+  for (const raw of text.replace(/^﻿/, "").split(/\r?\n/)) {
+    const line = raw.replace(/\s+$/, "");
+    const m = line.match(TAG_LINE);
+    if (!m) {
+      // Continuation of the previous value (long abstracts get wrapped).
+      if (cur && lastTag && line.trim()) {
+        const list: string[] = cur[lastTag];
+        list[list.length - 1] += ` ${line.trim()}`;
+      }
+      continue;
+    }
+    const [, tag, value] = m;
+    if (tag === "TY") {
+      finish();
+      cur = { TY: [value.trim()] };
+      lastTag = "TY";
+      continue;
+    }
+    if (tag === "ER") {
+      finish();
+      continue;
+    }
+    if (!cur) cur = {};
+    (cur[tag] ||= []).push(value.trim());
+    lastTag = tag;
+  }
+  finish();
+  return records;
+}
+
+function toRecord(tags: Record<string, string[]>): RisRecord {
+  const first = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = tags[k]?.find((x) => x.trim());
+      if (v) return v.trim();
+    }
+    return "";
+  };
+  const all = (...keys: string[]) => keys.flatMap((k) => tags[k] ?? []).map((x) => x.trim()).filter(Boolean);
+  const doi = first("DO", "DI", "M3")
+    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
+    .replace(/^doi:\s*/i, "");
+  return {
+    type: first("TY") || "GEN",
+    title: first("TI", "T1", "CT", "BT"),
+    authors: all("AU", "A1", "A2", "A3", "A4"),
+    year: first("PY", "Y1", "DA", "Y2").match(/\d{4}/)?.[0] ?? "",
+    doi: /^10\.\S+\/\S+/.test(doi) ? doi : "",
+    abstract: first("AB", "N2"),
+    keywords: all("KW").flatMap((k) => k.split(/\s*;\s*/)).filter(Boolean),
+    journal: first("T2", "JO", "JF", "JA", "J2"),
+    url: first("UR", "L2"),
+  };
+}
