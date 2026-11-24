@@ -143,6 +143,9 @@ interface PlateEditorRef {
   /** The shared Yjs doc while collaboration is on (null otherwise) — the page
    *  keeps small shared values such as the renamed title in `doc.getMap("meta")`. */
   getCollabDoc: () => Y.Doc | null;
+  /** Resolves once the shared doc has its first sync with the server (and the
+   *  first-join reset ran); null when not collaborative / not started yet. */
+  whenCollabReady: () => Promise<void> | null;
   /** Runs one realtime-voice command (see `runVoiceCommand`). */
   runVoiceCommand: (name: string, args?: Record<string, unknown>) => Promise<VoiceCommandResult>;
 }
@@ -661,7 +664,9 @@ function resetRoomOnFirstJoinIfAlone(room: CollaborationRoomHandle, roomId: stri
   doc.transact(() => {
     const content = doc.get("content", Y.XmlText);
     if (content.length > 0) content.delete(0, content.length);
-    for (const name of ["commentThreads", "commentReplies", "wordStats"]) {
+    // The text is wiped, so its citations' shared Daftar Pustaka goes too
+    // (the page restores it from this browser / the newest saved version).
+    for (const name of ["commentThreads", "commentReplies", "wordStats", "bibliography"]) {
       const map = doc.getMap(name);
       [...map.keys()].forEach((key) => map.delete(key));
     }
@@ -2827,6 +2832,7 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
       openLatexModal,
       isCollaborative: () => !!collabRoom,
       getCollabDoc: () => collabRoom?.doc ?? null,
+      whenCollabReady: () => (collabRoom && yjsInitPromise.current ? yjsInitPromise.current.then(() => undefined) : null),
       runVoiceCommand: (name, args) => runVoiceCommand(name, args),
     }));
 

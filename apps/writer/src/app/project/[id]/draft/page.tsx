@@ -18,6 +18,7 @@ import AnnotationPanel from '@/components/AnnotationPanel';
 import ShareDraftModal from '@/components/ShareDraftModal';
 import ReferenceUploadModal from '@/components/ReferenceUploadModal';
 import { matchReference } from '@/lib/referenceMatch';
+import { SharedBibliography } from '@/lib/sharedBibliography';
 import { applyEditToBibliography, remapBibliographySource, type EditedReference } from '@/lib/bibliographyUpdate';
 import type { VoiceCommandResult } from '@/components/PlateEditor';
 import type * as Y from 'yjs';
@@ -707,6 +708,64 @@ export default function Home() {
     const timer = setInterval(() => { if (tryAttach()) clearInterval(timer); }, 700);
     return () => { clearInterval(timer); detach?.(); refsMapRef.current = null; };
   }, [writerSession?.id]);
+  // Share the Daftar Pustaka with collaborators through the Yjs doc. Waits for
+  // the doc's first sync with the server (so an empty-looking list isn't
+  // mistaken for "nobody has cited anything yet").
+  useEffect(() => {
+    if (!writerSession?.id) return;
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    const attach = async () => {
+      const editor = editorRef.current;
+      const doc = editor?.getCollabDoc?.();
+      const ready = editor?.whenCollabReady?.();
+      if (!doc || !ready) return false;
+      await ready.catch(() => {});
+      if (cancelled) return true;
+      const shared = new SharedBibliography<Bibliography>(doc.getMap('bibliography'));
+      sharedBibRef.current = shared;
+      const merged = shared.seed(bibliographyListRef.current);
+      bibliographyListRef.current = merged;
+      setBibliographyListState(merged);
+      const warnDuplicates = () => {
+        const dup = shared.duplicateNumbers();
+        if (dup.length) {
+          notifications.show({
+            title: 'Nomor sitasi bentrok',
+            message: `Nomor ${dup.map((n) => `[${n}]`).join(', ')} dipakai dua referensi karena dikutip bersamaan. Hapus salah satu sitasinya lalu kutip ulang.`,
+            color: 'yellow',
+            autoClose: false,
+          });
+        }
+      };
+      warnDuplicates();
+      const off = shared.onChange((list) => {
+        bibliographyListRef.current = list;
+        setBibliographyListState(list);
+        warnDuplicates();
+      });
+      stop = () => {
+        off();
+        shared.destroy();
+        if (sharedBibRef.current === shared) sharedBibRef.current = null;
+      };
+      return true;
+    };
+    let timer: ReturnType<typeof setInterval> | null = null;
+    void attach().then((done) => {
+      if (done || cancelled) return;
+      timer = setInterval(() => {
+        void attach().then((ok) => {
+          if (ok && timer) clearInterval(timer);
+        });
+      }, 700);
+    });
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+      stop?.();
+    };
+  }, [writerSession?.id]);
   const conceptMapSyncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const editLogTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [isClient, setIsClient] = useState(false);
@@ -849,14 +908,30 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   
   // State untuk daftar pustaka
-  const [bibliographyList, setBibliographyList] = useState<Bibliography[]>([]);
+  const [bibliographyList, setBibliographyListState] = useState<Bibliography[]>([]);
+  // Always the newest list, updated synchronously (state lags a render).
+  const bibliographyListRef = useRef<Bibliography[]>([]);
+  // Shared Daftar Pustaka while collaborating (see lib/sharedBibliography.ts).
+  const sharedBibRef = useRef<SharedBibliography<Bibliography> | null>(null);
+  /**
+   * Every change to the Daftar Pustaka goes through here: the new list is
+   * computed from the newest one right away and, when collaborating, sent to
+   * the shared doc in the same step — so a collaborator's change arriving in
+   * between can't make a local change (e.g. a new citation's entry) get lost.
+   */
+  const setBibliographyList = useCallback((update: Bibliography[] | ((prev: Bibliography[]) => Bibliography[])) => {
+    let next = typeof update === 'function' ? update(bibliographyListRef.current) : update;
+    if (next === bibliographyListRef.current) return;
+    next = sharedBibRef.current?.pushLocal(next) ?? next;
+    bibliographyListRef.current = next;
+    setBibliographyListState(next);
+  }, []);
 
   // State untuk nomor berikutnya dalam daftar pustaka
   const [nextNumber, setNextNumber] = useState(1);
 
   // Ref untuk mencegah sinkronisasi berulang
   const isSyncingRef = useRef(false);
-  const bibliographyListRef = useRef(bibliographyList);
 
   // State untuk konten editor
   // const [content, setContent] = useState(
@@ -918,7 +993,8 @@ export default function Home() {
   }, [aiCheckResult, closeAIResultModal, addActivity]);
 
   useEffect(() => {
-    bibliographyListRef.current = bibliographyList;
+    // (bibliographyListRef is kept current by setBibliographyList itself;
+    // copying the state here could put an older list back.)
     // The next citation number always follows the highest one in use (the
     // manual form used to reuse [1] for every new entry).
     setNextNumber(bibliographyList.reduce((max, item) => Math.max(max, item.number), 0) + 1);
@@ -3282,6 +3358,10 @@ const handleSubmitToTeacher = async () => {
       return;
     }
 
+    // Next free number from the newest list (a collaborator may have cited
+    // something a moment ago that this render hasn't seen yet).
+    const citeNumber = Math.max(nextNumber, bibliographyListRef.current.reduce((max, b) => Math.max(max, b.number), 0) + 1);
+
     // Buat bibliography baru dari artikel
     // Real metadata of the source article (author/year/DOI from ingestion);
     // the old code put the node's "background" text in author and journal
@@ -3291,7 +3371,7 @@ const handleSubmitToTeacher = async () => {
     const newBibliography: Bibliography = {
       id: Date.now().toString(),
       sourceId,
-      number: nextNumber,
+      number: citeNumber,
       author: source?.author?.trim() || "Tanpa nama penulis",
       title: source?.title?.trim() || articleItem.title,
       year: source?.year?.trim() || "t.t.",
@@ -3301,11 +3381,11 @@ const handleSubmitToTeacher = async () => {
     };
 
     setBibliographyList((prev) => [...prev, newBibliography]);
-    editorRef.current?.insertCitation?.(`[${nextNumber}]`);
-    setNextNumber((n) => n + 1);
+    editorRef.current?.insertCitation?.(`[${citeNumber}]`);
+    setNextNumber(citeNumber + 1);
     notifications.show({
       title: "Referensi Baru Dibuat",
-      message: `Referensi untuk "${articleItem.title}" telah dibuat dengan nomor [${nextNumber}] dan dimasukkan ke dalam teks.`,
+      message: `Referensi untuk "${articleItem.title}" telah dibuat dengan nomor [${citeNumber}] dan dimasukkan ke dalam teks.`,
       color: "green",
     });
   };
