@@ -1,18 +1,34 @@
 "use client";
 
 import * as React from "react";
-import { ActionIcon, Alert, Box, Button, Divider, Group, Modal, Progress, SimpleGrid, Stack, Text, TextInput, Textarea, ThemeIcon, Tooltip } from "@mantine/core";
+import { ActionIcon, Alert, Badge, Box, Button, Divider, Group, Modal, Progress, Select, SimpleGrid, Stack, Text, TextInput, Textarea, ThemeIcon, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertCircle, IconCloudUpload, IconFileTypePdf, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { IconAlertCircle, IconCloudUpload, IconFileImport, IconFileTypePdf, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { parseRis, type RisRecord } from "@/lib/ris";
 
 /**
  * Pop-up behind the "+" on "Referensi Pustaka": pick a PDF (click or drag),
  * optionally fill in its details, and upload it through
  * /api/references/upload (which hands it to brain, like uploading there).
+ * The details can be filled from a .ris file (Zotero / Mendeley / EndNote /
+ * Google Scholar export): "Impor RIS", or drop the .ris on the drop zone.
  */
 
 const MAX_MB = 30;
-const emptyMeta = { title: "", author: "", year: "", doi: "", abstract: "" };
+const emptyMeta = { title: "", author: "", year: "", doi: "", abstract: "", keywords: "" };
+
+const isRisFile = (f: File) => /\.ris$/i.test(f.name) || f.type === "application/x-research-info-systems";
+
+function risToMeta(rec: RisRecord): typeof emptyMeta {
+  return {
+    title: rec.title,
+    author: rec.authors.join("; "),
+    year: rec.year,
+    doi: rec.doi,
+    abstract: rec.abstract,
+    keywords: rec.keywords.join(", "),
+  };
+}
 
 export default function ReferenceUploadModal({
   opened,
@@ -31,10 +47,55 @@ export default function ReferenceUploadModal({
   const [error, setError] = React.useState<string | null>(null);
   const [dragging, setDragging] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const risInputRef = React.useRef<HTMLInputElement>(null);
+  // Records read from the last .ris file (one is applied to the form).
+  const [ris, setRis] = React.useState<{ name: string; records: RisRecord[]; index: number } | null>(null);
+
+  const applyRis = (records: RisRecord[], index: number) => {
+    const next = risToMeta(records[index]);
+    // Keep what the user typed in fields the RIS file leaves empty.
+    setMeta((m) => {
+      const merged = { ...m };
+      (Object.keys(next) as (keyof typeof emptyMeta)[]).forEach((k) => {
+        if (next[k]) merged[k] = next[k];
+      });
+      return merged;
+    });
+  };
+
+  const importRis = async (picked: File | null | undefined) => {
+    setError(null);
+    if (!picked) return;
+    if (picked.size > 2 * 1024 * 1024) {
+      setError("File RIS terlalu besar (maks 2 MB).");
+      return;
+    }
+    let records: RisRecord[] = [];
+    try {
+      records = parseRis(await picked.text());
+    } catch {
+      records = [];
+    }
+    if (!records.length) {
+      setError("File ini bukan RIS yang valid (tidak ada entri TY - … ER -).");
+      return;
+    }
+    setRis({ name: picked.name, records, index: 0 });
+    applyRis(records, 0);
+    notifications.show({
+      title: "Data RIS dimuat",
+      message:
+        records.length > 1
+          ? `${records.length} entri ditemukan — pilih entri yang sesuai dengan PDF-nya.`
+          : `Detail "${records[0].title || picked.name}" sudah terisi.`,
+      color: "teal",
+    });
+  };
 
   const reset = () => {
     setFile(null);
     setMeta(emptyMeta);
+    setRis(null);
     setError(null);
     setDragging(false);
   };
@@ -48,8 +109,12 @@ export default function ReferenceUploadModal({
   const pick = (picked: File | null | undefined) => {
     setError(null);
     if (!picked) return;
+    if (isRisFile(picked)) {
+      void importRis(picked);
+      return;
+    }
     if (picked.type !== "application/pdf" && !picked.name.toLowerCase().endsWith(".pdf")) {
-      setError("Hanya file PDF yang bisa diunggah.");
+      setError("Hanya file PDF (atau .ris untuk mengisi detail) yang bisa dipilih.");
       return;
     }
     if (picked.size > MAX_MB * 1024 * 1024) {
@@ -103,6 +168,16 @@ export default function ReferenceUploadModal({
           hidden
           onChange={(e) => {
             pick(e.currentTarget.files?.[0]);
+            e.currentTarget.value = "";
+          }}
+        />
+        <input
+          ref={risInputRef}
+          type="file"
+          accept=".ris,application/x-research-info-systems"
+          hidden
+          onChange={(e) => {
+            void importRis(e.currentTarget.files?.[0]);
             e.currentTarget.value = "";
           }}
         />
@@ -182,13 +257,63 @@ export default function ReferenceUploadModal({
                 Pilih file PDF
               </Button>
               <Text size="xs" c="dimmed">
-                Hanya PDF · maks {MAX_MB} MB
+                PDF · maks {MAX_MB} MB — file .ris juga boleh di-drop untuk mengisi detail
               </Text>
             </Stack>
           </Box>
         )}
 
-        <Divider label="Detail artikel" labelPosition="left" />
+        <Group gap="sm" wrap="nowrap" align="center">
+          <Divider label="Detail artikel" labelPosition="left" style={{ flex: 1 }} />
+          <Tooltip label="Isi otomatis dari file .ris (ekspor Zotero, Mendeley, EndNote, Google Scholar)" withArrow multiline w={240}>
+            <Button
+              size="xs"
+              variant="light"
+              color="teal"
+              radius="xl"
+              leftSection={<IconFileImport size={14} />}
+              onClick={() => risInputRef.current?.click()}
+              disabled={busy}
+            >
+              Impor RIS
+            </Button>
+          </Tooltip>
+        </Group>
+
+        {ris && (
+          <Stack gap={6}>
+            <Group gap={6} wrap="nowrap">
+              <Badge color="teal" variant="light" style={{ textTransform: "none", minWidth: 0 }}>
+                <Text span size="xs" truncate>
+                  Dari {ris.name}
+                </Text>
+              </Badge>
+              <ActionIcon size="sm" variant="subtle" color="gray" aria-label="Lepas data RIS" onClick={() => setRis(null)} disabled={busy}>
+                <IconX size={12} />
+              </ActionIcon>
+            </Group>
+            {ris.records.length > 1 && (
+              <Select
+                label={`Pilih entri (${ris.records.length} di file ini)`}
+                value={String(ris.index)}
+                allowDeselect={false}
+                searchable
+                disabled={busy}
+                data={ris.records.map((r, i) => ({
+                  value: String(i),
+                  label: `${i + 1}. ${r.title || "(tanpa judul)"}${r.year ? ` (${r.year})` : ""}`,
+                }))}
+                onChange={(v) => {
+                  if (v == null) return;
+                  const index = Number(v);
+                  setRis({ ...ris, index });
+                  applyRis(ris.records, index);
+                }}
+                comboboxProps={{ withinPortal: true }}
+              />
+            )}
+          </Stack>
+        )}
 
         <TextInput label="Judul" placeholder="Judul artikel" value={meta.title} onChange={set("title")} disabled={busy} />
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
@@ -196,6 +321,7 @@ export default function ReferenceUploadModal({
           <TextInput label="Tahun" placeholder="2024" value={meta.year} onChange={set("year")} disabled={busy} />
           <TextInput label="DOI" placeholder="10.xxxx/xxxx" value={meta.doi} onChange={set("doi")} disabled={busy} />
         </SimpleGrid>
+        <TextInput label="Kata kunci (opsional)" placeholder="mis. energi surya, desa" value={meta.keywords} onChange={set("keywords")} disabled={busy} />
         <Textarea label="Abstrak (opsional)" placeholder="Ringkasan singkat artikel" autosize minRows={2} maxRows={5} value={meta.abstract} onChange={set("abstract")} disabled={busy} />
 
         {error && (

@@ -51,3 +51,38 @@ describe("RIS export", () => {
     expect(risFileName("")).toBe("daftar-pustaka.ris");
   });
 });
+
+describe("RIS import", () => {
+  it("reads a Zotero-style record with wrapped abstract and several authors", async () => {
+    const { parseRis } = await import("./ris");
+    const text = "﻿TY  - JOUR\r\nAU  - Rahman, Ahmad\r\nAU  - Sari, Dewi\r\nTI  - Energi Surya di Desa\r\nT2  - Jurnal Energi\r\nPY  - 2023/05/01/\r\nDO  - https://doi.org/10.1234/je.2023.7\r\nAB  - Penelitian ini membahas\r\n  panel surya.\r\nKW  - energi; surya\r\nKW  - desa\r\nER  - \r\n";
+    const [rec] = parseRis(text);
+    expect(rec.title).toBe("Energi Surya di Desa");
+    expect(rec.authors).toEqual(["Rahman, Ahmad", "Sari, Dewi"]);
+    expect(rec.year).toBe("2023");
+    expect(rec.doi).toBe("10.1234/je.2023.7");
+    expect(rec.abstract).toBe("Penelitian ini membahas panel surya.");
+    expect(rec.keywords).toEqual(["energi", "surya", "desa"]);
+    expect(rec.journal).toBe("Jurnal Energi");
+  });
+
+  it("reads several records and Mendeley's T1/A1/Y1 tags", async () => {
+    const { parseRis } = await import("./ris");
+    const text = "TY  - JOUR\nT1  - Satu\nA1  - A, B\nY1  - 2020\nER  -\n\nTY  - BOOK\nTI  - Dua\nER  -\n";
+    const recs = parseRis(text);
+    expect(recs.map((r) => r.title)).toEqual(["Satu", "Dua"]);
+    expect(recs[0].year).toBe("2020");
+    expect(recs[0].authors).toEqual(["A, B"]);
+  });
+
+  it("round-trips its own export", async () => {
+    const { parseRis, bibliographyToRis } = await import("./ris");
+    const [rec] = parseRis(bibliographyToRis([{ number: 1, author: "Doe, J.", title: "Judul", year: "2021", journal: "J", doi: "10.1/x" }]));
+    expect(rec).toMatchObject({ title: "Judul", year: "2021", doi: "10.1/x", authors: ["Doe, J."] });
+  });
+
+  it("ignores files that are not RIS", async () => {
+    const { parseRis } = await import("./ris");
+    expect(parseRis("%PDF-1.4 bukan ris")).toEqual([]);
+  });
+});
