@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import { prisma, getServerSession, upsertGraphNode } from "@sre-monorepo/lib/server";
+import { prisma, getServerSession, upsertGraphNode, deleteGraphForArticle } from "@sre-monorepo/lib/server";
 import { canAccessWriterSession } from "@/lib/writerSessionAccess";
 
 /**
@@ -18,6 +18,11 @@ import { canAccessWriterSession } from "@/lib/writerSessionAccess";
  * Without a file (details only, e.g. imported from a .ris export that has no
  * PDF), the reference is saved straight away as an Article + its "article"
  * node — no AI analysis, so it can still be cited with its real author/year.
+ *
+ * `replaceArticleId` ("Lampirkan PDF" on such a reference): the PDF is
+ * uploaded the normal way, then the old PDF-less article is removed, so the
+ * list keeps one entry. The response's `replacedArticleId` lets the page
+ * point existing citations at the new article.
  */
 
 export const maxDuration = 300;
@@ -77,6 +82,17 @@ export async function POST(request: Request) {
   const target = await referenceSessionFor(projectId, String(user.id));
   if ("error" in target) return NextResponse.json({ error: target.error }, { status: target.status });
 
+  const replaceArticleId = field(form, "replaceArticleId", 100);
+  if (replaceArticleId) {
+    const old = await prisma.article.findUnique({ where: { id: replaceArticleId }, select: { sessionId: true, filePath: true } });
+    if (!old || old.sessionId !== target.sessionId) {
+      return NextResponse.json({ error: "Referensi yang mau dilampiri PDF tidak ditemukan di proyek ini." }, { status: 404 });
+    }
+    if (/\.pdf($|\?)/i.test(old.filePath)) {
+      return NextResponse.json({ error: "Referensi ini sudah punya PDF." }, { status: 409 });
+    }
+  }
+
   const brainUrl = (process.env.BRAIN_INTERNAL_URL || process.env.NEXT_PUBLIC_BRAIN_APP_URL || "").replace(/\/$/, "");
   if (!brainUrl) return NextResponse.json({ error: "Alamat aplikasi brain (NEXT_PUBLIC_BRAIN_APP_URL) belum diatur." }, { status: 500 });
 
@@ -111,8 +127,25 @@ export async function POST(request: Request) {
   if (!res.ok) {
     return NextResponse.json({ error: body.error || body.message || `Brain menolak unggahan (${res.status}).` }, { status: res.status === 401 ? 401 : 502 });
   }
+  // "Lampirkan PDF": the new article (with PDF + AI analysis) takes the old
+  // one's place. Notes made on the old one move over first.
+  let replacedArticleId: string | null = null;
+  if (replaceArticleId && body.article?.id && body.article.id !== replaceArticleId) {
+    try {
+      await prisma.$transaction([
+        prisma.annotation.updateMany({ where: { articleId: replaceArticleId }, data: { articleId: body.article.id } }),
+        prisma.article.delete({ where: { id: replaceArticleId } }),
+      ]);
+      await deleteGraphForArticle(replaceArticleId);
+      replacedArticleId = replaceArticleId;
+    } catch (err) {
+      console.error("[references/upload] removing the PDF-less article failed:", err);
+    }
+  }
+
   return NextResponse.json({
     sessionId: target.sessionId,
+    replacedArticleId,
     article: body.article ? { id: body.article.id, title: body.article.title } : null,
     nodeCreated: Boolean(body.parentNode),
     edges: Array.isArray(body.edges) ? body.edges.length : 0,
