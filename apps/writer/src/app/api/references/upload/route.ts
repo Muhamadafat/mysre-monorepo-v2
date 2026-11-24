@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import { prisma, getServerSession } from "@sre-monorepo/lib/server";
+import { prisma, getServerSession, upsertGraphNode, deleteGraphForArticle } from "@sre-monorepo/lib/server";
 import { canAccessWriterSession } from "@/lib/writerSessionAccess";
 
 /**
@@ -14,6 +14,15 @@ import { canAccessWriterSession } from "@/lib/writerSessionAccess";
  * created (owned by the project owner) and linked, so the upload has
  * somewhere to go. Needs brain (NEXT_PUBLIC_BRAIN_APP_URL) and, for the AI
  * part, mcp-sre (PY_URL) running.
+ *
+ * Without a file (details only, e.g. imported from a .ris export that has no
+ * PDF), the reference is saved straight away as an Article + its "article"
+ * node — no AI analysis, so it can still be cited with its real author/year.
+ *
+ * `replaceArticleId` ("Lampirkan PDF" on such a reference): the PDF is
+ * uploaded the normal way, then the old PDF-less article is removed, so the
+ * list keeps one entry. The response's `replacedArticleId` lets the page
+ * point existing citations at the new article.
  */
 
 export const maxDuration = 300;
@@ -61,8 +70,8 @@ export async function POST(request: Request) {
   }
   const file = form.get("file");
   const projectId = String(form.get("projectId") ?? "");
-  if (!(file instanceof File) || !file.size) return NextResponse.json({ error: "Pilih file PDF dulu." }, { status: 400 });
   if (!projectId) return NextResponse.json({ error: "projectId kosong." }, { status: 400 });
+  if (!(file instanceof File) || !file.size) return saveWithoutPdf(form, projectId, String(user.id));
   if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
     return NextResponse.json({ error: "Hanya file PDF yang bisa diunggah." }, { status: 415 });
   }
@@ -72,6 +81,17 @@ export async function POST(request: Request) {
 
   const target = await referenceSessionFor(projectId, String(user.id));
   if ("error" in target) return NextResponse.json({ error: target.error }, { status: target.status });
+
+  const replaceArticleId = field(form, "replaceArticleId", 100);
+  if (replaceArticleId) {
+    const old = await prisma.article.findUnique({ where: { id: replaceArticleId }, select: { sessionId: true, filePath: true } });
+    if (!old || old.sessionId !== target.sessionId) {
+      return NextResponse.json({ error: "Referensi yang mau dilampiri PDF tidak ditemukan di proyek ini." }, { status: 404 });
+    }
+    if (/\.pdf($|\?)/i.test(old.filePath)) {
+      return NextResponse.json({ error: "Referensi ini sudah punya PDF." }, { status: 409 });
+    }
+  }
 
   const brainUrl = (process.env.BRAIN_INTERNAL_URL || process.env.NEXT_PUBLIC_BRAIN_APP_URL || "").replace(/\/$/, "");
   if (!brainUrl) return NextResponse.json({ error: "Alamat aplikasi brain (NEXT_PUBLIC_BRAIN_APP_URL) belum diatur." }, { status: 500 });
@@ -107,11 +127,85 @@ export async function POST(request: Request) {
   if (!res.ok) {
     return NextResponse.json({ error: body.error || body.message || `Brain menolak unggahan (${res.status}).` }, { status: res.status === 401 ? 401 : 502 });
   }
+  // "Lampirkan PDF": the new article (with PDF + AI analysis) takes the old
+  // one's place. Notes made on the old one move over first.
+  let replacedArticleId: string | null = null;
+  if (replaceArticleId && body.article?.id && body.article.id !== replaceArticleId) {
+    try {
+      await prisma.$transaction([
+        prisma.annotation.updateMany({ where: { articleId: replaceArticleId }, data: { articleId: body.article.id } }),
+        prisma.article.delete({ where: { id: replaceArticleId } }),
+      ]);
+      await deleteGraphForArticle(replaceArticleId);
+      replacedArticleId = replaceArticleId;
+    } catch (err) {
+      console.error("[references/upload] removing the PDF-less article failed:", err);
+    }
+  }
+
   return NextResponse.json({
     sessionId: target.sessionId,
+    replacedArticleId,
     article: body.article ? { id: body.article.id, title: body.article.title } : null,
     nodeCreated: Boolean(body.parentNode),
     edges: Array.isArray(body.edges) ? body.edges.length : 0,
     warning: body.degraded ? "Artikel tersimpan, tapi analisis AI sedang tidak tersedia jadi belum muncul di daftar referensi." : null,
+  });
+}
+
+
+/** Text field from the form, trimmed and capped. */
+function field(form: FormData, name: string, max: number): string {
+  const value = form.get(name);
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+/** A reference with details only (no PDF): Article + one "article" node. */
+async function saveWithoutPdf(form: FormData, projectId: string, userId: string) {
+  const title = field(form, "title", 500);
+  if (!title) {
+    return NextResponse.json({ error: "Pilih file PDF, atau isi minimal judulnya (bisa dari Impor RIS)." }, { status: 400 });
+  }
+  const target = await referenceSessionFor(projectId, userId);
+  if ("error" in target) return NextResponse.json({ error: target.error }, { status: target.status });
+
+  const doi = field(form, "doi", 200).replace(/^https?:\/\/(dx\.)?doi\.org\//i, "");
+  const url = field(form, "url", 1000);
+  const abstract = field(form, "abstract", 20000);
+  const link = /^https?:\/\//i.test(url) ? url : doi ? `https://doi.org/${doi}` : "";
+
+  const article = await prisma.article.create({
+    data: {
+      title,
+      filePath: link,
+      userId,
+      sessionId: target.sessionId,
+      author: field(form, "author", 1000) || null,
+      year: field(form, "year", 20) || null,
+      doi: doi || null,
+      abstract: abstract || null,
+      keywords: field(form, "keywords", 1000) || null,
+    },
+  });
+  const node = await prisma.node.create({
+    data: {
+      label: title.length > 80 ? `${title.slice(0, 77)}...` : title,
+      title,
+      type: "article",
+      content: abstract || title,
+      att_background: abstract || null,
+      att_url: link || null,
+      articleId: article.id,
+    },
+  });
+  await upsertGraphNode(node); // ArcadeDB mirror; never throws
+
+  return NextResponse.json({
+    sessionId: target.sessionId,
+    article: { id: article.id, title: article.title },
+    nodeCreated: true,
+    edges: 0,
+    withoutPdf: true,
+    warning: null,
   });
 }

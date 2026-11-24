@@ -163,8 +163,14 @@ interface Article {
       author?: string | null,
       year?: string | null,
       doi?: string | null,
+      filePath?: string | null,
+      abstract?: string | null,
+      keywords?: string | null,
     },
 }
+
+/** True for a reference saved from details only (e.g. RIS without a PDF). */
+const lacksPdf = (item: Article) => Boolean(item.article) && !/\.pdf($|\?)/i.test(item.article?.filePath ?? '');
 
 interface ValidAssignment {
   id: string;
@@ -675,6 +681,8 @@ export default function Home() {
   const [article, setArticle] = useState<Article[]>([]);
   // "+" on "Referensi Pustaka": upload a PDF reference (see ReferenceUploadModal).
   const [referenceUploadOpen, setReferenceUploadOpen] = useState(false);
+  // "Lampirkan PDF" on a reference without one: same modal, attach mode.
+  const [attachPdfTo, setAttachPdfTo] = useState<Article | null>(null);
 
   const sendMessage = () => {
     if (chatInput.trim() === '') return;
@@ -5700,6 +5708,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                           size="compact-sm"
                                           leftSection={<IconExternalLink size={14} />}
                                           style={{ padding: 0, height: "auto" }}
+                                          disabled={!item.att_url}
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             if (item.att_url) {
@@ -5718,6 +5727,21 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                         >
                                           View
                                         </Button>
+                                        {lacksPdf(item) && (
+                                          <Button
+                                            variant="subtle"
+                                            color="teal"
+                                            size="compact-sm"
+                                            leftSection={<IconUpload size={14} />}
+                                            style={{ padding: 0, height: "auto" }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setAttachPdfTo(item);
+                                            }}
+                                          >
+                                            Lampirkan PDF
+                                          </Button>
+                                        )}
 
                                         {/* Tombol AI chat - analisis dengan AI
                                         <Button
@@ -7323,6 +7347,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                       size="compact-sm"
                                       leftSection={<IconExternalLink size={14} />}
                                       style={{ padding: 0, height: "auto" }}
+                                      disabled={!item.att_url}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (item.att_url) {
@@ -7341,6 +7366,21 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                     >
                                       View
                                     </Button>
+                                    {lacksPdf(item) && (
+                                      <Button
+                                        variant="subtle"
+                                        color="teal"
+                                        size="compact-sm"
+                                        leftSection={<IconUpload size={14} />}
+                                        style={{ padding: 0, height: "auto" }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setAttachPdfTo(item);
+                                        }}
+                                      >
+                                        Lampirkan PDF
+                                      </Button>
+                                    )}
 
                                     {/* Tombol AI chat - analisis dengan AI
                                     <Button
@@ -8774,10 +8814,34 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
       />
 
       <ReferenceUploadModal
-        opened={referenceUploadOpen}
-        onClose={() => setReferenceUploadOpen(false)}
+        opened={referenceUploadOpen || !!attachPdfTo}
+        onClose={() => {
+          setReferenceUploadOpen(false);
+          setAttachPdfTo(null);
+        }}
         projectId={writerSession?.id ?? projectId}
-        onUploaded={() => void getArticle()}
+        attachTo={
+          attachPdfTo?.article
+            ? {
+                articleId: attachPdfTo.article.id,
+                title: attachPdfTo.article.title || attachPdfTo.title,
+                author: attachPdfTo.article.author,
+                year: attachPdfTo.article.year,
+                doi: attachPdfTo.article.doi,
+                abstract: attachPdfTo.article.abstract,
+                keywords: attachPdfTo.article.keywords,
+              }
+            : null
+        }
+        onUploaded={({ articleId, replacedArticleId }) => {
+          // Citations of the old PDF-less reference now point at the new one.
+          if (replacedArticleId && articleId) {
+            setBibliographyList((prev) =>
+              prev.map((b) => (b.sourceId === replacedArticleId ? { ...b, sourceId: articleId } : b))
+            );
+          }
+          void getArticle();
+        }}
       />
 
     </AppShell>

@@ -15,7 +15,7 @@ import { parseRis, type RisRecord } from "@/lib/ris";
  */
 
 const MAX_MB = 30;
-const emptyMeta = { title: "", author: "", year: "", doi: "", abstract: "", keywords: "" };
+const emptyMeta = { title: "", author: "", year: "", doi: "", abstract: "", keywords: "", url: "" };
 
 const isRisFile = (f: File) => /\.ris$/i.test(f.name) || f.type === "application/x-research-info-systems";
 
@@ -27,6 +27,7 @@ function risToMeta(rec: RisRecord): typeof emptyMeta {
     doi: rec.doi,
     abstract: rec.abstract,
     keywords: rec.keywords.join(", "),
+    url: rec.url,
   };
 }
 
@@ -35,11 +36,14 @@ export default function ReferenceUploadModal({
   onClose,
   projectId,
   onUploaded,
+  attachTo,
 }: {
   opened: boolean;
   onClose: () => void;
   projectId: string | null | undefined;
-  onUploaded: () => void;
+  onUploaded: (result: { articleId: string | null; replacedArticleId: string | null }) => void;
+  /** "Lampirkan PDF": add a PDF to a reference that was saved without one. */
+  attachTo?: { articleId: string; title: string; author?: string | null; year?: string | null; doi?: string | null; abstract?: string | null; keywords?: string | null } | null;
 }) {
   const [file, setFile] = React.useState<File | null>(null);
   const [meta, setMeta] = React.useState(emptyMeta);
@@ -48,6 +52,19 @@ export default function ReferenceUploadModal({
   const [dragging, setDragging] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const risInputRef = React.useRef<HTMLInputElement>(null);
+  // Attach mode: start from the reference's saved details.
+  React.useEffect(() => {
+    if (!opened || !attachTo) return;
+    setMeta({
+      ...emptyMeta,
+      title: attachTo.title ?? "",
+      author: attachTo.author ?? "",
+      year: attachTo.year ?? "",
+      doi: attachTo.doi ?? "",
+      abstract: attachTo.abstract ?? "",
+      keywords: attachTo.keywords ?? "",
+    });
+  }, [opened, attachTo]);
   // Records read from the last .ris file (one is applied to the form).
   const [ris, setRis] = React.useState<{ name: string; records: RisRecord[]; index: number } | null>(null);
 
@@ -125,13 +142,18 @@ export default function ReferenceUploadModal({
     setMeta((m) => (m.title ? m : { ...m, title: picked.name.replace(/\.pdf$/i, "") }));
   };
 
+  // No PDF (e.g. Google Scholar only gives a .ris): save the details only.
+  const withoutPdf = !file;
+  const canSubmit = Boolean(projectId) && (attachTo ? Boolean(file) : Boolean(file) || Boolean(meta.title.trim()));
+
   const upload = async () => {
-    if (!file || !projectId) return;
+    if (!canSubmit || !projectId) return;
     setBusy(true);
     setError(null);
     const form = new FormData();
-    form.append("file", file);
+    if (file) form.append("file", file);
     form.append("projectId", projectId);
+    if (attachTo) form.append("replaceArticleId", attachTo.articleId);
     Object.entries(meta).forEach(([key, value]) => value.trim() && form.append(key, value.trim()));
     try {
       const res = await fetch("/api/references/upload", { method: "POST", body: form });
@@ -139,10 +161,12 @@ export default function ReferenceUploadModal({
       if (!res.ok) throw new Error(body.error || `Unggah gagal (${res.status}).`);
       notifications.show({
         title: body.warning ? "Artikel tersimpan" : "Referensi ditambahkan",
-        message: body.warning || `"${body.article?.title ?? file.name}" sudah masuk ke Referensi Pustaka.`,
+        message:
+          body.warning ||
+          `"${body.article?.title ?? file?.name ?? meta.title}" sudah masuk ke Referensi Pustaka${body.withoutPdf ? " (tanpa PDF)" : ""}.`,
         color: body.warning ? "yellow" : "green",
       });
-      onUploaded();
+      onUploaded({ articleId: body.article?.id ?? null, replacedArticleId: body.replacedArticleId ?? null });
       setBusy(false);
       reset();
       onClose();
@@ -159,7 +183,7 @@ export default function ReferenceUploadModal({
   };
 
   return (
-    <Modal opened={opened} onClose={close} title={<Text fw={700}>Unggah Referensi Pustaka</Text>} radius="lg" size="lg" closeOnClickOutside={!busy} withCloseButton={!busy}>
+    <Modal opened={opened} onClose={close} title={<Text fw={700}>{attachTo ? "Lampirkan PDF ke Referensi" : "Unggah Referensi Pustaka"}</Text>} radius="lg" size="lg" closeOnClickOutside={!busy} withCloseButton={!busy}>
       <Stack gap="md">
         <input
           ref={inputRef}
@@ -324,6 +348,18 @@ export default function ReferenceUploadModal({
         <TextInput label="Kata kunci (opsional)" placeholder="mis. energi surya, desa" value={meta.keywords} onChange={set("keywords")} disabled={busy} />
         <Textarea label="Abstrak (opsional)" placeholder="Ringkasan singkat artikel" autosize minRows={2} maxRows={5} value={meta.abstract} onChange={set("abstract")} disabled={busy} />
 
+        {attachTo && !file && !busy && (
+          <Alert color="teal" variant="light" icon={<IconFileTypePdf size={16} />}>
+            Pilih PDF untuk "{attachTo.title}". Setelah diunggah, AI membaca isinya dan referensi ini diganti versi ber-PDF
+            (sitasi yang sudah ada tetap tersambung).
+          </Alert>
+        )}
+        {!attachTo && withoutPdf && meta.title.trim() && !busy && (
+          <Alert color="blue" variant="light" icon={<IconAlertCircle size={16} />}>
+            Belum ada PDF. Referensi tetap bisa disimpan dari detail di atas dan langsung bisa di-Cite, tapi tanpa analisis AI
+            isi artikel (AI menulis tidak membaca isinya). Tambahkan PDF kalau ada.
+          </Alert>
+        )}
         {error && (
           <Alert color="red" variant="light" icon={<IconAlertCircle size={16} />}>
             {error}
@@ -333,7 +369,9 @@ export default function ReferenceUploadModal({
           <Stack gap={6}>
             <Progress value={100} animated striped size="sm" radius="xl" />
             <Text size="xs" c="dimmed">
-              Mengunggah dan menganalisis PDF dengan AI… biasanya 30 detik – 2 menit. Jangan tutup halaman ini.
+              {withoutPdf
+                ? "Menyimpan referensi…"
+                : "Mengunggah dan menganalisis PDF dengan AI… biasanya 30 detik – 2 menit. Jangan tutup halaman ini."}
             </Text>
           </Stack>
         )}
@@ -342,8 +380,8 @@ export default function ReferenceUploadModal({
           <Button variant="default" onClick={close} disabled={busy} leftSection={<IconX size={14} />}>
             Batal
           </Button>
-          <Button onClick={upload} loading={busy} disabled={!file || !projectId} leftSection={<IconUpload size={14} />}>
-            Unggah
+          <Button onClick={upload} loading={busy} disabled={!canSubmit} leftSection={<IconUpload size={14} />}>
+            {attachTo ? "Lampirkan & Analisis" : withoutPdf ? "Simpan tanpa PDF" : "Unggah"}
           </Button>
         </Group>
       </Stack>
