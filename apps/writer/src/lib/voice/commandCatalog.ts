@@ -25,7 +25,8 @@ export type CommandTarget =
   | "dokumen_teks_ai"
   | "dokumen_riwayat"
   | "kursor"
-  | "notifikasi";
+  | "notifikasi"
+  | "referensi_popup";
 
 export const TARGET_LABEL: Record<CommandTarget, string> = {
   jendela_ai: "Jendela AI (pratinjau, belum masuk dokumen)",
@@ -37,6 +38,7 @@ export const TARGET_LABEL: Record<CommandTarget, string> = {
   dokumen_riwayat: "Dokumen, riwayat perubahan (undo/redo)",
   kursor: "Posisi kursor / gulir halaman",
   notifikasi: "Notifikasi (tidak menulis ke dokumen)",
+  referensi_popup: "Pop-up Edit Referensi Pustaka (perubahan disimpan setelah user menekan tombol)",
 };
 
 export interface CatalogEntry {
@@ -327,6 +329,39 @@ export const COMMAND_CATALOG: CatalogEntry[] = [
     fn: "callMCPAPI(question)",
     action: "AI menjawab dari artikel referensi project; jawaban tampil di notifikasi (tidak menulis ke dokumen).",
     target: "notifikasi",
+  },
+  {
+    intent: "kutip_referensi",
+    group: "pendukung",
+    command: "Kutip referensi",
+    example: "Kutip referensi website design",
+    keywords: "kutip, sitasi, cite (+ potongan judul / penulis / tahun / nomor urut)",
+    tool: "cite_reference",
+    fn: "matchReference(reference) → addArticleToBibliography(item) (halaman draft)",
+    action: "Artikel yang cocok dikutip: nomor [n] disisipkan di kursor dan masuk Daftar Pustaka. Kalau ada beberapa yang cocok, notifikasi menampilkan pilihannya.",
+    target: "dokumen_kursor",
+  },
+  {
+    intent: "edit_referensi",
+    group: "pendukung",
+    command: "Edit referensi",
+    example: "Edit referensi Rahman 2023",
+    keywords: "edit, ubah, perbaiki data referensi (+ judul / penulis / tahun / nomor urut)",
+    tool: "edit_reference",
+    fn: "matchReference(reference) → setEditRefOf(item) (halaman draft)",
+    action: "Pop-up Edit Referensi Pustaka terbuka untuk artikel itu; perubahan baru tersimpan setelah user menekan 'Simpan perubahan'.",
+    target: "referensi_popup",
+  },
+  {
+    intent: "hapus_referensi",
+    group: "pendukung",
+    command: "Hapus referensi",
+    example: "Hapus referensi yang terakhir",
+    keywords: "hapus, buang referensi (+ judul / penulis / tahun / nomor urut)",
+    tool: "delete_reference",
+    fn: "matchReference(reference) → setEditRefOf(item, konfirmasi hapus) (halaman draft)",
+    action: "Pop-up Edit terbuka dengan konfirmasi hapus; artikel baru terhapus setelah user menekan 'Ya, hapus'. Sitasi [n] di naskah tidak berubah.",
+    target: "referensi_popup",
   },
 
   // ---- Nonaktif: only so runs from before 2026-11-17 still get a description ----

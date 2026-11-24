@@ -45,6 +45,7 @@ export default function ReferenceUploadModal({
   onEdited,
   onDeleted,
   citedAs = [],
+  startWithDeleteConfirm = false,
 }: {
   opened: boolean;
   onClose: () => void;
@@ -59,6 +60,8 @@ export default function ReferenceUploadModal({
   onDeleted?: (articleId: string) => void;
   /** Numbers [n] this reference has in the Daftar Pustaka (shown in the delete warning). */
   citedAs?: number[];
+  /** Open on the delete confirmation (voice command "hapus referensi X"). */
+  startWithDeleteConfirm?: boolean;
 }) {
   const prefill = editOf ?? attachTo ?? null;
   const [file, setFile] = React.useState<File | null>(null);
@@ -72,6 +75,7 @@ export default function ReferenceUploadModal({
   // Attach / edit mode: start from the reference's saved details.
   React.useEffect(() => {
     if (!opened || !prefill) return;
+    setConfirmDelete(Boolean(editOf) && startWithDeleteConfirm);
     setMeta({
       ...emptyMeta,
       title: prefill.title ?? "",

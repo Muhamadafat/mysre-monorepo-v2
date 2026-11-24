@@ -143,6 +143,9 @@ interface PlateEditorRef {
   /** The shared Yjs doc while collaboration is on (null otherwise) — the page
    *  keeps small shared values such as the renamed title in `doc.getMap("meta")`. */
   getCollabDoc: () => Y.Doc | null;
+  /** Resolves once the shared doc has its first sync with the server (and the
+   *  first-join reset ran); null when not collaborative / not started yet. */
+  whenCollabReady: () => Promise<void> | null;
   /** Runs one realtime-voice command (see `runVoiceCommand`). */
   runVoiceCommand: (name: string, args?: Record<string, unknown>) => Promise<VoiceCommandResult>;
 }
@@ -197,6 +200,9 @@ interface PlateEditorProps {
   /** Element the page reserves (next to its view toggle) for the editor's
    * history/autosave indicators. Omitted -> they render in the toolbar. */
   statusSlot?: HTMLElement | null;
+  /** Voice commands about Referensi Pustaka (cite/edit/delete_reference):
+   * the reference list and its pop-up live on the draft page, not here. */
+  onReferenceCommand?: (name: string, args: Record<string, unknown>) => Promise<VoiceCommandResult>;
 }
 
 interface ContinueWritingState {
@@ -658,7 +664,9 @@ function resetRoomOnFirstJoinIfAlone(room: CollaborationRoomHandle, roomId: stri
   doc.transact(() => {
     const content = doc.get("content", Y.XmlText);
     if (content.length > 0) content.delete(0, content.length);
-    for (const name of ["commentThreads", "commentReplies", "wordStats"]) {
+    // The text is wiped, so its citations' shared Daftar Pustaka goes too
+    // (the page restores it from this browser / the newest saved version).
+    for (const name of ["commentThreads", "commentReplies", "wordStats", "bibliography"]) {
       const map = doc.getMap(name);
       [...map.keys()].forEach((key) => map.delete(key));
     }
@@ -744,11 +752,15 @@ function stampAuthorship(node: any, author: string, ai: boolean): any {
 // Main component
 const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
   function PlateEditorComponent(
-    { onContentChange, style, onLogFormula, onLogEdit, mcpContext, writerSession, projectId, isFromBrainstorming, nodesData, collaboration, statusSlot }: PlateEditorProps,
+    { onContentChange, style, onLogFormula, onLogEdit, mcpContext, writerSession, projectId, isFromBrainstorming, nodesData, collaboration, statusSlot, onReferenceCommand }: PlateEditorProps,
     ref
   ) {
     const computedColorScheme = useComputedColorScheme("light");
     const [deleteConfirmationOpened, { open: openDeleteConfirmation, close: closeDeleteConfirmation }] = useDisclosure(false);
+    // Latest page handler for reference voice commands (read at run time, so a
+    // command started earlier never calls a stale handler).
+    const referenceCommandRef = React.useRef(onReferenceCommand);
+    referenceCommandRef.current = onReferenceCommand;
 
     // Yjs doc + PartyKit provider for realtime collaboration, acquired from a
     // ref-counted module-level cache (see acquireCollaborationRoom above) so
@@ -2820,6 +2832,7 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
       openLatexModal,
       isCollaborative: () => !!collabRoom,
       getCollabDoc: () => collabRoom?.doc ?? null,
+      whenCollabReady: () => (collabRoom && yjsInitPromise.current ? yjsInitPromise.current.then(() => undefined) : null),
       runVoiceCommand: (name, args) => runVoiceCommand(name, args),
     }));
 
@@ -4698,6 +4711,14 @@ Jawab singkat (maksimal 4 kalimat) dalam bahasa Indonesia lisan, karena jawaban 
             return answer
               ? { ok: true, message: "Jawaban dari referensi project.", data: { answer: removeDaftarPustakaSection(answer) } }
               : { ok: false, message: "Tidak ada jawaban dari referensi." };
+          }
+
+          case "cite_reference":
+          case "edit_reference":
+          case "delete_reference": {
+            const handler = referenceCommandRef.current;
+            if (!handler) return { ok: false, message: "Referensi Pustaka belum siap." };
+            return handler(name, args);
           }
 
           default:

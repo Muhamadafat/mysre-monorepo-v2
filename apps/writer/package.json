@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:ai": "vitest run --config vitest.ai.config.mts",
     "test:collab": "vitest run --config vitest.collab.config.mts",
+    "test:references": "vitest run --config vitest.references.config.mts",
     "s3:check": "node scripts/s3-check.mjs",
     "voice:db-sync": "vitest run --config vitest.voicedb.config.mts"
   },

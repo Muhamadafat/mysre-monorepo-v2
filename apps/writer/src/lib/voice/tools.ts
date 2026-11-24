@@ -154,6 +154,43 @@ const ALL_VOICE_TOOLS = [
       required: ["question"],
     },
   },
+  {
+    type: "function",
+    name: "cite_reference",
+    description:
+      "Kutip (cite) satu artikel dari Referensi Pustaka: nomor sitasi [n] disisipkan di posisi kursor dan artikel masuk Daftar Pustaka.",
+    parameters: {
+      type: "object",
+      properties: {
+        reference: {
+          type: "string",
+          description: "Penanda artikel seperti diucapkan user: potongan judul, nama penulis, tahun, atau urutan (mis. 'nomor 2', 'yang terakhir').",
+        },
+      },
+      required: ["reference"],
+    },
+  },
+  {
+    type: "function",
+    name: "edit_reference",
+    description: "Buka pop-up Edit untuk satu artikel di Referensi Pustaka (ubah judul, penulis, tahun, DOI, dll.). Tidak menyimpan apa pun sendiri.",
+    parameters: {
+      type: "object",
+      properties: { reference: { type: "string", description: "Penanda artikel (potongan judul, penulis, tahun, atau urutan)." } },
+      required: ["reference"],
+    },
+  },
+  {
+    type: "function",
+    name: "delete_reference",
+    description:
+      "Siapkan penghapusan satu artikel di Referensi Pustaka: pop-up Edit terbuka dengan konfirmasi hapus. Tidak pernah menghapus langsung; user harus menekan 'Ya, hapus'.",
+    parameters: {
+      type: "object",
+      properties: { reference: { type: "string", description: "Penanda artikel (potongan judul, penulis, tahun, atau urutan)." } },
+      required: ["reference"],
+    },
+  },
 ] as const;
 
 /**
@@ -178,6 +215,9 @@ const ENABLED_TOOLS: string[] = [
   "insert_text", // tulis: <teks>
   "get_outline", // daftar judul + jumlah kata
   "ask_references", // tanya ke artikel referensi
+  "cite_reference", // kutip referensi X
+  "edit_reference", // edit referensi X (buka pop-up)
+  "delete_reference", // hapus referensi X (pop-up + konfirmasi, tidak langsung hapus)
   // "read_current_paragraph" stays off: commands run from the history and nothing is read aloud.
 ];
 
@@ -193,7 +233,7 @@ Aturan:
 - Jika tool gagal (ok=false), jelaskan alasannya singkat dan sarankan langkah berikutnya.
 - insert_generated_content untuk kerangka (structure) MENGGANTI seluruh dokumen: tanyakan konfirmasi dulu, dan hanya kirim confirmed=true setelah user jelas setuju.
 - Jika perintah ambigu, tanyakan balik dengan singkat.
-- Perintah utama: buat outline artikel, isi konten artikel, lanjutkan paragraf, dan parafrasekan paragraf (plus masukkan hasilnya, terima/batalkan, ringkas dokumen, undo/redo, pindah ke bagian, tanya referensi). Jika user meminta hal lain, katakan dengan sopan bahwa perintah itu belum tersedia lalu sebutkan perintah utama.`;
+- Perintah utama: buat outline artikel, isi konten artikel, lanjutkan paragraf, dan parafrasekan paragraf (plus masukkan hasilnya, terima/batalkan, ringkas dokumen, undo/redo, pindah ke bagian, tanya referensi, kutip/edit/hapus referensi). Jika user meminta hal lain, katakan dengan sopan bahwa perintah itu belum tersedia lalu sebutkan perintah utama.`;
 
 /**
  * Command mode during the session: like dictation, the model only listens.
@@ -222,7 +262,8 @@ Aturan:
 - "perbaiki / buat lebih formal / persingkat / perpanjang / terjemahkan paragraf" = rewrite_paragraph dengan instruction sesuai ucapan user.
 - "pindah/ke bagian X", "ke awal", "ke akhir" = go_to.
 - Pertanyaan tentang isi artikel/referensi = ask_references (bukan menulis ke dokumen).
-- Jika kalimat bukan perintah yang tersedia (obrolan, perintah lain), JANGAN panggil tool; balas satu kalimat singkat bahwa perintah itu tidak dikenali dan sebutkan beberapa contoh perintah: buat outline artikel, isi konten artikel, lanjutkan paragraf, parafrasekan paragraf, masukkan hasilnya, terima/batalkan, ringkas dokumen, undo, pindah ke bagian, tanya referensi.`;
+- "kutip / sitasi / cite referensi X" = cite_reference; "edit / ubah / perbaiki data referensi X" = edit_reference; "hapus / buang referensi X" = delete_reference. Isi reference dengan penanda artikel yang diucapkan user (potongan judul, penulis, tahun, atau "nomor 2"/"yang terakhir"), tanpa kata kerja-nya. "perbaiki paragraf" tetap rewrite_paragraph.
+- Jika kalimat bukan perintah yang tersedia (obrolan, perintah lain), JANGAN panggil tool; balas satu kalimat singkat bahwa perintah itu tidak dikenali dan sebutkan beberapa contoh perintah: buat outline artikel, isi konten artikel, lanjutkan paragraf, parafrasekan paragraf, masukkan hasilnya, terima/batalkan, ringkas dokumen, undo, pindah ke bagian, tanya referensi, kutip referensi.`;
 
 /** Write (dictation) mode: the model is never asked to answer, only to listen. */
 export const DICTATION_INSTRUCTIONS = `Mode dikte. Jangan menjawab dan jangan memanggil tool; ucapan user hanya ditranskripsi lalu diketik ke dokumen.`;
