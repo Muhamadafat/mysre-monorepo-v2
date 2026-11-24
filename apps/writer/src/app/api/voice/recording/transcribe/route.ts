@@ -11,6 +11,7 @@ import {
   MAX_TRANSCRIBE_BYTES,
   TRANSCRIBE_LIMITS,
   TranscribeError,
+  isPromptEcho,
   estimateTranscribeUsd,
   speechToText,
   sttNeedsOpenAiKey,
@@ -42,6 +43,8 @@ const startOfToday = () => {
   d.setHours(0, 0, 0, 0);
   return d;
 };
+
+const STT_PROMPT = "Percakapan bahasa Indonesia tentang penulisan karya ilmiah: draf, paragraf, outline, referensi, artikel.";
 
 export async function POST(request: Request) {
   const session = await getServerSession();
@@ -130,7 +133,7 @@ export async function POST(request: Request) {
       apiKey,
       model,
       language: "id",
-      prompt: "Percakapan bahasa Indonesia tentang penulisan karya ilmiah: draf, paragraf, outline, referensi, artikel.",
+      prompt: STT_PROMPT,
       safetyIdentifier: createHash("sha256").update(String(user.id)).digest("hex"),
     });
   } catch (err) {
@@ -166,6 +169,9 @@ export async function POST(request: Request) {
     })
     .catch(err => console.error("[voice/transcribe] usage log failed:", err));
 
+  // No speech → OpenAI may answer with the hint prompt's own words; that is
+  // not something the user said (and must never run as a command).
+  if (isPromptEcho(result.text, STT_PROMPT)) result = { ...result, text: "" };
   const aiTranscript = { text: result.text, model: result.model || model, createdAt: new Date().toISOString() };
   const updated: RecordingMeta = { ...meta, aiTranscript };
   // "Rekam dulu" recordings arrive without a live transcript: this text is it,

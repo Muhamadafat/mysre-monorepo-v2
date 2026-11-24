@@ -167,3 +167,25 @@ export async function speechToText(options: Parameters<typeof transcribeAudio>[0
       throw new TranscribeError(`Layanan speech-to-text "${provider}" belum dipasang di server (STT_PROVIDER).`, 501);
   }
 }
+
+/**
+ * True when the "transcript" is only the hint prompt echoed back. OpenAI's
+ * speech-to-text does this for recordings with no speech (silence, a hum,
+ * background noise): it returns the prompt's own word list, e.g. "draf,
+ * paragraf, outline, referensi, artikel." In Mode Perintah that fake text
+ * would then be run as commands, so callers treat it as "nothing heard".
+ */
+export function isPromptEcho(text: string, prompt: string | undefined): boolean {
+  if (!prompt) return false;
+  const words = (value: string) =>
+    value
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      .filter(Boolean);
+  const said = words(text);
+  if (!said.length) return false;
+  const hint = new Set(words(prompt));
+  return said.every((word) => hint.has(word));
+}
