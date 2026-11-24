@@ -4,8 +4,10 @@
 
 import { pickAndInsertImage } from "@/components/plate/kit";
 import './animations.css';
+import './mobile.css';
 import ConceptMap from '@/components/ConceptMap';
 import { buildConceptMap } from '@/lib/conceptMap';
+import { downloadRis } from '@/lib/ris';
 import dynamic from 'next/dynamic';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -200,6 +202,13 @@ interface Bibliography {
   conference?: string; // Nama konferensi (opsional)
   medium?: string; // Media publikasi (opsional)
   createdAt: Date; // Tanggal dibuat
+}
+
+/** "Draft: <project>" — without doubling the prefix when the project name already has it. */
+function draftTitleFor(title: string | undefined | null): string {
+  const clean = (title || '').trim();
+  if (!clean) return 'Draft: Artikel';
+  return /^draft\s*:/i.test(clean) ? clean : `Draft: ${clean}`;
 }
 
 interface HeadingItem {
@@ -488,7 +497,7 @@ export default function Home() {
 
         console.log("✅ WriterSession berhasil:", result);
         setWriterSession(result.writerSession);
-        setFileName(`Draft: ${result.writerSession?.title || 'Artikel'}`);
+        setFileName(draftTitleFor(result.writerSession?.title));
         setWriterSessionInitialized(true);
         
       } catch (error) {
@@ -571,6 +580,8 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("chat");
   const isMobile = useMediaQuery('(max-width: 768px)');
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  // Mobile shows one screen at a time; the bottom bar switches between them.
+  const [mobileView, setMobileView] = useState<'outline' | 'tulis' | 'panel'>('tulis');
   // Between phone and full desktop (small laptops, split-screen windows) the
   // three fixed-width columns don't fit side by side — panels shrink and the
   // outline starts collapsed there (its toggle still opens it).
@@ -580,6 +591,74 @@ export default function Home() {
     setLeftPanelCollapsed(!!isTablet && !isMobile);
   }, [isTablet, isMobile]);
   const [fileName, setFileName] = useState("");
+  // Title the user typed themselves (rename). While set it wins over the
+  // auto title (first H1 / "Tidak ada judul"); empty = back to automatic.
+  // Shared live with collaborators through the Yjs doc's "meta" map (which
+  // PartyKit persists) and saved as the project title in the database so the
+  // dashboard shows the new name too.
+  const manualTitleRef = useRef<string | null>(null);
+  const handleContentChangeRef = useRef<((content: any[]) => void) | null>(null);
+  const titleSaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const titleMetaRef = useRef<import('yjs').Map<unknown> | null>(null);
+  const handleTitleRename = useCallback((value: string) => {
+    setFileName(value);
+    const clean = value.trim();
+    manualTitleRef.current = clean ? value : null;
+    try {
+      const meta = titleMetaRef.current;
+      if (meta) {
+        if (clean) meta.set('title', value);
+        else meta.delete('title');
+      }
+    } catch { /* doc destroyed */ }
+    clearTimeout(titleSaveTimer.current);
+    const sessionId = writerSession?.id;
+    if (!clean || !sessionId) return;
+    titleSaveTimer.current = setTimeout(() => {
+      fetch(`/api/writer-sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: clean.slice(0, 200) }),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(String(res.status));
+          setWriterSession((prev: any) => (prev ? { ...prev, title: clean.slice(0, 200) } : prev));
+        })
+        .catch(() => {
+          notifications.show({ title: 'Judul belum tersimpan', message: 'Gagal menyimpan judul ke server, coba lagi.', color: 'red' });
+        });
+    }, 800);
+  }, [writerSession?.id]);
+  // Hook the title up to the shared doc once the editor's collab room exists
+  // (the editor loads lazily, so look for it until it shows up).
+  useEffect(() => {
+    if (!writerSession?.id) return;
+    let detach: (() => void) | null = null;
+    const tryAttach = () => {
+      const doc = editorRef.current?.getCollabDoc?.();
+      if (!doc) return false;
+      const meta = doc.getMap('meta');
+      titleMetaRef.current = meta;
+      const apply = () => {
+        const shared = meta.get('title');
+        if (typeof shared === 'string' && shared.trim()) {
+          manualTitleRef.current = shared;
+          setFileName(shared);
+        } else if (manualTitleRef.current !== null) {
+          manualTitleRef.current = null;
+          const ed = editorRef.current?.getEditor();
+          if (ed) handleContentChangeRef.current?.(ed.document);
+        }
+      };
+      apply();
+      meta.observe(apply);
+      detach = () => meta.unobserve(apply);
+      return true;
+    };
+    if (tryAttach()) return () => detach?.();
+    const timer = setInterval(() => { if (tryAttach()) clearInterval(timer); }, 700);
+    return () => { clearInterval(timer); detach?.(); titleMetaRef.current = null; };
+  }, [writerSession?.id]);
   const conceptMapSyncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const editLogTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [isClient, setIsClient] = useState(false);
@@ -3508,6 +3587,7 @@ const handleSubmitToTeacher = async () => {
 
   // Function to navigate to specific heading in editor
   const navigateToHeading = (headingId: string, headingText: string) => {
+    if (isSmallScreen) setMobileView('tulis');
     console.log('🎯 OUTLINE NAVIGATION - Attempting to navigate to:', { headingId, headingText });
     
     try {
@@ -3582,6 +3662,7 @@ const handleSubmitToTeacher = async () => {
   };
 
   const handleContentChange = (content: any[]) => {
+    handleContentChangeRef.current = handleContentChange;
     console.log('🔄 CONTENT CHANGE - Received content update:', content.length, 'blocks');
     setEditorContent(content);
 
@@ -3658,12 +3739,14 @@ const handleSubmitToTeacher = async () => {
     // judul" for an empty canvas. (This used to be skipped entirely whenever
     // the editor had any words — an early `return` above it — so each tab
     // kept whatever title its own history happened to leave behind.)
-    if (!hasAnyContent) {
+    if (manualTitleRef.current) {
+      setFileName(manualTitleRef.current);
+    } else if (!hasAnyContent) {
       setFileName("📝 Tidak ada judul");
     } else if (firstH1Title) {
       setFileName(firstH1Title);
     } else {
-      setFileName(`Draft: ${writerSession?.title || 'Artikel'}`);
+      setFileName(draftTitleFor(writerSession?.title));
     }
         // const plainText = extractTextFromBlockNote(content);
         // setContent(plainText);
@@ -3707,16 +3790,16 @@ const handleSubmitToTeacher = async () => {
 
   return (
     <AppShell
-      header={{ height: 90 }}
-      padding="md"
+      header={{ height: isMobile ? 60 : 90 }}
+      padding={isMobile ? 8 : "md"}
     >
       <AppShell.Header
         style={{
           backgroundColor:
               computedColorScheme === "dark" ? "#1a1b1e" : "white",
             borderBottom: `1px solid ${computedColorScheme === 'dark' ? '#2a2a2a' : '#e0e0e0'}`,
-            paddingLeft: rem(16),
-            paddingRight: rem(16),
+            paddingLeft: rem(isMobile ? 10 : 16),
+            paddingRight: rem(isMobile ? 10 : 16),
         }}
       >
         <Container 
@@ -3739,22 +3822,22 @@ const handleSubmitToTeacher = async () => {
               <Image
                 src='/images/logoSRE_Tulis.png'
                 alt="Logo SRE"
-                h={60}
+                h={isMobile ? 38 : 60}
                 w="auto"
                 fit="contain"
                 style={{ objectFit: 'contain' }}
               />
-              <div style={{
+              {!isMobile && <div style={{
                 width: '1px',
                 height: '40px',
                 backgroundColor: computedColorScheme === 'dark' ? '#444' : '#ddd',
                 marginLeft: '10px',
                 marginRight: '10px'
               }}
-              />
+              />}
             </Group>
 
-            <div style={{ flexGrow: 1, flexShrink: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
+            <div style={{ display: isMobile ? 'none' : undefined, flexGrow: 1, flexShrink: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
               {navUser ? (
                 <div style={{ lineHeight: 1.3 }}>
                   <Text
@@ -3778,7 +3861,7 @@ const handleSubmitToTeacher = async () => {
               )}
             </div>
 
-            <Group gap="sm" style={{ flexShrink: 0, whiteSpace: 'nowrap' }} suppressHydrationWarning>
+            <Group gap={isMobile ? 6 : "sm"} style={{ flexShrink: 0, whiteSpace: 'nowrap' }} suppressHydrationWarning>
               <Tooltip
                 label="Panduan Penggunaan"
               >
@@ -3813,6 +3896,7 @@ const handleSubmitToTeacher = async () => {
                 </ActionIcon>
               </Tooltip>
 
+              {!isMobile && (<>
               <Tooltip label="Akses Cepat Draft (Ctrl + Shift + D)">
                 <ActionIcon
                   variant="light"
@@ -3853,6 +3937,7 @@ const handleSubmitToTeacher = async () => {
                   <IconSettings size={18} />
                 </ActionIcon>
               </Tooltip>
+              </>)}
 
               <Menu shadow="lg" width={220} position="bottom-end" offset={10}>
                 <Menu.Target>
@@ -3887,6 +3972,14 @@ const handleSubmitToTeacher = async () => {
                     <Text size="sm" fw={600}>{(dropdownUser?.name)?.split('@')[0]}</Text>
                     <Text size="xs" c="dimmed">{dropdownUser?.email}</Text>
                   </Menu.Item>
+                  {isMobile && (
+                    <>
+                      <Menu.Divider />
+                      <Menu.Item leftSection={<IconFileText size={16} />} onClick={() => setDraftQuickAccessOpened(true)}>
+                        Akses cepat draft
+                      </Menu.Item>
+                    </>
+                  )}
                   <Menu.Divider />
                   <Menu.Item 
                       leftSection={<IconLogout size={16} />}
@@ -4168,9 +4261,12 @@ const handleSubmitToTeacher = async () => {
           </Tabs.Panel>
         </Tabs>
       </Modal>
-      <AppShell.Main style={{ position: "relative", height: "100vh", overflow: "hidden" }}>
+      <AppShell.Main
+        className={isMobile ? "writer-mobile-main" : undefined}
+        style={{ position: "relative", height: isMobile ? "100dvh" : "100vh", overflow: "hidden" }}
+      >
          
-        <div style={{ position: "relative", zIndex: 11, height: "100%" }}>
+        <div style={{ position: "relative", zIndex: 11, height: "100%", display: isMobile ? "flex" : undefined, flexDirection: "column" }}>
           <Flex
             direction={isMobile ? "column" : "row"}
             justify="space-between"
@@ -4201,20 +4297,20 @@ const handleSubmitToTeacher = async () => {
             <Box
               data-onboarding-tour-id="panel-kiri-tour" 
               style={{
-                width: leftPanelCollapsed ? 0 : (isMobile ? '100%' : isTablet ? 240 : 280),
+                width: isMobile ? '100%' : leftPanelCollapsed ? 0 : (isTablet ? 240 : 280),
                 flexShrink: 0,
                 transition: 'width 0.3s ease, padding 0.3s ease',
-                visibility: leftPanelCollapsed ? 'hidden' : 'visible',
-                minHeight: isMobile ? 200 : 'auto',
-                flexGrow: 0,
+                visibility: !isMobile && leftPanelCollapsed ? 'hidden' : 'visible',
+                minHeight: isMobile ? 0 : 'auto',
+                flexGrow: isMobile ? 1 : 0,
                 // flexBasis: 280,
                 border: `1px solid ${computedColorScheme === 'dark' ? '#404040' : '#e9ecef'}`,
                 borderRadius: '12px', // Lebih rounded
                 backgroundColor: computedColorScheme === 'dark' ? '#1a1b1e' : '#ffffff',
-                padding: leftPanelCollapsed ? 0 : '20px', // Padding lebih besar
-                display: 'flex',
+                padding: isMobile ? '14px' : leftPanelCollapsed ? 0 : '20px', // Padding lebih besar
+                display: isMobile && mobileView !== 'outline' ? 'none' : 'flex',
                 flexDirection: 'column',
-                maxHeight: 'calc(100vh - 140px)',
+                maxHeight: isMobile ? 'none' : 'calc(100vh - 140px)',
                 overflow: 'hidden', // Ubah ke hidden untuk container utama
                 boxSizing: "border-box",
                 boxShadow: computedColorScheme === 'dark' 
@@ -4246,7 +4342,7 @@ const handleSubmitToTeacher = async () => {
                   <Tooltip label="Tutup Outline" position="bottom">
                     <ActionIcon
                       variant="default"
-                      onClick={() => setLeftPanelCollapsed(true)}
+                      onClick={() => (isMobile ? setMobileView('tulis') : setLeftPanelCollapsed(true))}
                       style={{ transition: 'all 0.2s ease' }}
                       styles={{ root: { '&:hover': { transform: 'scale(1.16)' } } }}
                     >
@@ -4259,7 +4355,18 @@ const handleSubmitToTeacher = async () => {
                 {/* Title Input dengan styling yang diperbaiki */}
                 <TextInput
                   value={fileName}
-                  onChange={(e) => setFileName(e.currentTarget.value)}
+                  onChange={(e) => handleTitleRename(e.currentTarget.value)}
+                  onFocus={(e) => {
+                    // Placeholder title: select it so typing replaces it.
+                    if (!manualTitleRef.current) e.currentTarget.select();
+                  }}
+                  onBlur={() => {
+                    // Left empty → back to the automatic title (first H1 / project).
+                    if (manualTitleRef.current) return;
+                    const ed = editorRef.current?.getEditor();
+                    if (ed) handleContentChange(ed.document);
+                  }}
+                  aria-label="Judul artikel (bisa diganti)"
                   variant="filled"
                   size="md"
                   placeholder="Judul artikel..."
@@ -4620,33 +4727,33 @@ const handleSubmitToTeacher = async () => {
             </Box>
 
             {isSmallScreen ? (
-              <ScrollArea style={{ flex: 1 }}>
-                <Stack gap="md" style={{ width: "100%"}}>
-                  <Box style={{
+              // Mobile: one screen at a time (Outline / Tulis / Panel), picked
+              // from the bottom bar. Panels are hidden, never unmounted, so the
+              // editor, its collab room and the voice assistant stay alive.
+              <Box style={{ flex: 1, minHeight: 0, width: '100%', display: mobileView === 'outline' ? 'none' : 'flex', flexDirection: 'column' }}>
+                  <Box
+                    className="writer-mobile-pane"
+                    style={{
+                    display: mobileView === 'tulis' ? 'flex' : 'none',
+                    flexDirection: 'column',
+                    flex: 1,
+                    minHeight: 0,
                     width: '100%',
-                    flexGrow: 1,
-                    Height: 1500,
-                    padding: 6,
                     boxSizing: 'border-box',
-                    backgroundColor: computedColorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
-                    borderRadius: 8,
-                    overflow: 'auto',
                   }}>
                     {/* Panel Tengah */}
                     <Box
                       style={{
-                        width: isMobile ? '100%' : 280,
-                        border: '1px solid #ccc',
-                        borderRadius: '8px',
-                        backgroundColor: computedColorScheme === 'dark' ? '#2a2a2a' : '#f9f9f9',
-                        padding: 10,
-                        flexGrow: 1,
+                        width: '100%',
+                        border: `1px solid ${computedColorScheme === 'dark' ? '#3a3a3a' : '#e3e6ea'}`,
+                        borderRadius: '12px',
+                        backgroundColor: computedColorScheme === 'dark' ? '#1f1f22' : '#ffffff',
+                        padding: 8,
+                        flex: 1,
                         display: 'flex',
                         flexDirection: 'column',
-                        overflow: 'auto',
-                        maxHeight: 'calc(100vh - 140px)',
-                        height: '100%',
-                        minHeight: isMobile ? 200 : 'auto',
+                        overflow: 'hidden',
+                        minHeight: 0,
                         minWidth: 0,
                         boxSizing: "border-box",
                       }}
@@ -4827,8 +4934,8 @@ const handleSubmitToTeacher = async () => {
                           )}
                       </Box>
 
-                      {/* Action Buttons */}
-                      <Group justify="flex-end" mt="sm" gap={isTablet ? "xs" : "md"} wrap="wrap">
+                      {/* Action Buttons (mobile: one row of three) */}
+                      <Group className="writer-mobile-actions" justify="flex-end" mt={6} gap={6} wrap="nowrap">
                         <Button
                           variant="outline"
                           color="blue"
@@ -4840,8 +4947,8 @@ const handleSubmitToTeacher = async () => {
                             )
                           }
                           radius="md"
-                          size={isTablet ? "sm" : "md"}
-                          px={isTablet ? 14 : 24}
+                          size="sm"
+                          px={8}
                           onClick={handleSaveDraft}
                           style={{
                             transition: 'all 0.2s ease',
@@ -4850,7 +4957,7 @@ const handleSubmitToTeacher = async () => {
                           disabled={isScanning || loading}
                           loading={loading}
                         >
-                          {loading ? 'Menyimpan...' : 'Simpan Versi'}
+                          {loading ? 'Menyimpan…' : 'Versi'}
                         </Button>
 
                         <Button
@@ -4858,13 +4965,13 @@ const handleSubmitToTeacher = async () => {
                           color="grape"
                           leftSection={<IconUsers size={18} />}
                           radius="md"
-                          size={isTablet ? "sm" : "md"}
+                          size="sm"
                           disabled={!writerSession?.id}
                           onClick={() => setShareModalOpened(true)}
                           style={{ transition: 'all 0.2s ease' }}
                           styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
                         >
-                          Kolaborator
+                          Kolab
                         </Button>
 
                         <Button
@@ -4878,8 +4985,8 @@ const handleSubmitToTeacher = async () => {
                             )
                           }
                           radius="md"
-                          size={isTablet ? "sm" : "md"}
-                          px={isTablet ? 14 : 24}
+                          size="sm"
+                          px={8}
                           onClick={handleFinalSave}
                           style={{
                             transition: 'all 0.2s ease',
@@ -4887,34 +4994,34 @@ const handleSubmitToTeacher = async () => {
                           styles={{ root: { '&:hover': { transform: 'translateY(-3px)' } } }}
                           disabled={isScanning}
                         >
-                          {isScanning ? "AI Checker..." : "Simpan Final"}
+                          {isScanning ? "Cek AI…" : "Final"}
                         </Button>
                       </Group>
                     </Box>
                   </Box>
-                  <Box style={{
+                  <Box
+                    className="writer-mobile-pane"
+                    style={{
+                    display: mobileView === 'panel' ? 'flex' : 'none',
+                    flexDirection: 'column',
+                    flex: 1,
+                    minHeight: 0,
                     width: '100%',
-                    height: 800,
-                    padding: 6,
                     boxSizing: 'border-box',
-                    backgroundColor: computedColorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
-                    borderRadius: 8,
-                    overflow: 'auto',
                   }}>
                     {/* Panel Kanan */}
                     <Box
                       style={{
-                        width: isMobile ? "100%" : isTablet ? 260 : 300,
-                        border: "1px solid #ccc",
-                        borderRadius: "8px",
-                        backgroundColor: computedColorScheme === "dark" ? "#2a2a2a" : "#f9f9f9",
-                        padding: "16px",
+                        width: "100%",
+                        border: `1px solid ${computedColorScheme === 'dark' ? '#3a3a3a' : '#e3e6ea'}`,
+                        borderRadius: "12px",
+                        backgroundColor: computedColorScheme === "dark" ? "#1f1f22" : "#ffffff",
+                        padding: "12px",
                         display: "flex",
                         flexDirection: "column",
                         justifyContent: "flex-start",
-                        maxHeight: "calc(100vh - 140px)", // samakan tinggi dengan panel tengah
-                        height: "100%",              // 🟢 FIX INI
-                        minHeight: isMobile ? 200 : 'auto',
+                        flex: 1,
+                        minHeight: 0,
                         overflow: "auto",
                         boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
                         boxSizing: "border-box",
@@ -5823,6 +5930,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                   <Text size="sm" fw={600} c="#007BFF">
                                     Preview Daftar Pustaka
                                   </Text>
+                                  <Group gap={4} wrap="nowrap">
                                   {/* Tombol copy ke clipboard */}
                                   <Tooltip label="Salin bibliografi">
                                     <ActionIcon
@@ -5832,12 +5940,24 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                         navigator.clipboard.writeText(
                                           generateFullBibliography()
                                         );
-                                        alert("Daftar pustaka disalin ke clipboard!");
+                                        notifications.show({ title: "Disalin", message: "Daftar pustaka disalin ke clipboard.", color: "teal" });
                                       }}
                                     >
                                       <IconFileText size={16} />
                                     </ActionIcon>
                                   </Tooltip>
+                                  <Tooltip label="Unduh RIS (Zotero / Mendeley / EndNote)">
+                                    <Button
+                                      variant="light"
+                                      color="teal"
+                                      size="compact-xs"
+                                      leftSection={<IconDownload size={14} />}
+                                      onClick={() => downloadRis(bibliographyList, fileName)}
+                                    >
+                                      RIS
+                                    </Button>
+                                  </Tooltip>
+                                  </Group>
                                 </Group>
 
                                 {/* Area preview bibliography terformat */}
@@ -6002,8 +6122,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                       </ScrollArea>
                     </Box>
                   </Box>
-                </Stack>
-              </ScrollArea>
+              </Box>
             ) : (
               <Split 
                 className="split"
@@ -7434,8 +7553,9 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                               <Text size="sm" fw={600} c="#007BFF">
                                 Preview Daftar Pustaka
                               </Text>
+                              <Group gap={4} wrap="nowrap">
                               {/* Tombol copy ke clipboard */}
-                              <Tooltip label="Copy bibliography">
+                              <Tooltip label="Salin bibliografi">
                                 <ActionIcon
                                   variant="subtle"
                                   size="sm"
@@ -7443,12 +7563,24 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                     navigator.clipboard.writeText(
                                       generateFullBibliography()
                                     );
-                                    alert("Daftar pustaka disalin ke clipboard!");
+                                    notifications.show({ title: "Disalin", message: "Daftar pustaka disalin ke clipboard.", color: "teal" });
                                   }}
                                 >
                                   <IconFileText size={16} />
                                 </ActionIcon>
                               </Tooltip>
+                              <Tooltip label="Unduh RIS (Zotero / Mendeley / EndNote)">
+                                <Button
+                                  variant="light"
+                                  color="teal"
+                                  size="compact-xs"
+                                  leftSection={<IconDownload size={14} />}
+                                  onClick={() => downloadRis(bibliographyList, fileName)}
+                                >
+                                  RIS
+                                </Button>
+                              </Tooltip>
+                              </Group>
                             </Group>
 
                             {/* Area preview bibliography terformat */}
@@ -8456,6 +8588,40 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
             }
           }
         `}</style>
+
+        {/* Mobile bottom bar: switch between Outline, the editor and the
+            side panel (references, bibliography, history, notes). */}
+        {isMobile && (
+          <nav
+            className="writer-mobile-nav"
+            aria-label="Navigasi writer"
+            data-scheme={computedColorScheme}
+          >
+            {([
+              { key: 'outline', label: 'Outline', icon: <IconList size={20} /> },
+              { key: 'tulis', label: 'Tulis', icon: <IconEdit size={20} /> },
+              { key: 'panel', label: 'Referensi', icon: <IconBooks size={20} /> },
+            ] as const).map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className="writer-mobile-nav-btn"
+                data-active={mobileView === item.key || undefined}
+                aria-current={mobileView === item.key ? 'page' : undefined}
+                onClick={() => setMobileView(item.key)}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+                {item.key === 'outline' && headings.length > 0 && (
+                  <span className="writer-mobile-nav-count">{headings.length}</span>
+                )}
+                {item.key === 'panel' && bibliographyList.length > 0 && (
+                  <span className="writer-mobile-nav-count">{bibliographyList.length}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+        )}
       </AppShell.Main>
 
       {/* Activity Log Modal */}

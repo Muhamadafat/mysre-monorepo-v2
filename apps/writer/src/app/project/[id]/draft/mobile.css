@@ -1,0 +1,136 @@
+/* ───────────────────────── Writer: mobile (≤ 768px) ─────────────────────────
+   The draft page shows one screen at a time there (Outline / Tulis /
+   Referensi) and a bottom bar to switch. */
+.writer-mobile-main {
+  padding-bottom: calc(66px + env(safe-area-inset-bottom)) !important;
+}
+
+.writer-mobile-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 190;
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid #e6e8eb;
+  box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.06);
+}
+.writer-mobile-nav[data-scheme="dark"] {
+  background: rgba(26, 27, 30, 0.94);
+  border-top-color: #2c2e33;
+}
+
+.writer-mobile-nav-btn {
+  position: relative;
+  flex: 1;
+  max-width: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 50px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #6b7280;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.writer-mobile-nav-btn[data-active] {
+  color: #0b6bff;
+  background: rgba(11, 107, 255, 0.1);
+}
+.writer-mobile-nav[data-scheme="dark"] .writer-mobile-nav-btn { color: #9ca3af; }
+.writer-mobile-nav[data-scheme="dark"] .writer-mobile-nav-btn[data-active] {
+  color: #6ea8ff;
+  background: rgba(110, 168, 255, 0.14);
+}
+.writer-mobile-nav-count {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 8px);
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #0b6bff;
+  color: #fff;
+  font-size: 10px;
+  line-height: 17px;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  /* Editor toolbar: one row you swipe sideways instead of 4 wrapped rows. */
+  .editor-toolbar {
+    padding: 6px !important;
+    margin-bottom: 8px !important;
+    border-radius: 12px !important;
+  }
+  .editor-toolbar-row {
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+  }
+  .editor-toolbar-tools {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+    mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+  }
+  .editor-toolbar-tools::-webkit-scrollbar { display: none; }
+  .editor-toolbar-tools > *,
+  .writer-format-toolbar > * { flex-shrink: 0; }
+  .writer-format-toolbar .writer-tool {
+    width: 34px;
+    height: 34px;
+  }
+  /* 16px stops iOS Safari from zooming in when an input gets focus. */
+  .writer-mobile-main input,
+  .writer-mobile-main textarea,
+  .writer-mobile-main [contenteditable="true"] {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* History "1/1" + saved tick: compact, never stacked. */
+  .editor-status {
+    flex-shrink: 0;
+    gap: 6px !important;
+  }
+  .editor-status > div:first-child {
+    padding: 2px 8px !important;
+  }
+  .editor-status > div:first-child > div:last-child {
+    display: none !important; /* the progress bar */
+  }
+
+  .writer-mobile-actions > * {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Toasts sit above the bottom bar, not on top of it. */
+  .mantine-Notifications-root[data-position^="bottom"] {
+    bottom: calc(76px + env(safe-area-inset-bottom)) !important;
+  }
+}

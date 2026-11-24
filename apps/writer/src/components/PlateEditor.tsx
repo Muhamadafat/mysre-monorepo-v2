@@ -140,6 +140,9 @@ interface PlateEditorRef {
   canRedo: () => boolean;
   openLatexModal: () => void;
   isCollaborative: () => boolean;
+  /** The shared Yjs doc while collaboration is on (null otherwise) — the page
+   *  keeps small shared values such as the renamed title in `doc.getMap("meta")`. */
+  getCollabDoc: () => Y.Doc | null;
   /** Runs one realtime-voice command (see `runVoiceCommand`). */
   runVoiceCommand: (name: string, args?: Record<string, unknown>) => Promise<VoiceCommandResult>;
 }
@@ -2816,6 +2819,7 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
       canRedo,
       openLatexModal,
       isCollaborative: () => !!collabRoom,
+      getCollabDoc: () => collabRoom?.doc ?? null,
       runVoiceCommand: (name, args) => runVoiceCommand(name, args),
     }));
 
@@ -6395,7 +6399,7 @@ INSTRUKSI:
     // page's "Peta Konsep / Editor Teks" toggle when the page provides a
     // slot for them (frees up the editor toolbar row), else inline.
     const statusIndicators = (
-    <Group gap="sm">
+    <Group gap="sm" wrap="nowrap" className="editor-status">
       {/* History indicator with progress */}
       <div style={{
         display: 'flex',
@@ -6619,8 +6623,8 @@ INSTRUKSI:
               overflowX: 'auto'
             }}
           >
-            <Group gap="sm" justify="space-between" wrap="wrap" style={{ minWidth: 0 }}>
-              <Group gap="xs">
+            <Group gap="sm" justify="space-between" wrap="wrap" style={{ minWidth: 0 }} className="editor-toolbar-row">
+              <Group gap="xs" className="editor-toolbar-tools">
                 <Tooltip
                   label={`Undo (Ctrl+Z)${canUndo() ? ` - ${undoRedoState.history.length - undoRedoState.currentIndex - 1} langkah tersedia` : ''}`}
                   position="bottom"
@@ -6812,448 +6816,22 @@ INSTRUKSI:
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}>
             <style>{`
-              /* GLOBAL AGGRESSIVE RESPONSIVE FIXES */
-              
-              /* Prevent zoom on input focus (mobile) */
+              /* Mobile: only what the editor itself needs. (A block of global
+                 "!important" overrides used to live here — it forced every
+                 button to 48px, wrapped every Group, padded closed modals and
+                 zeroed the AppShell header offset, which is what made the
+                 writer look broken on phones. Page layout is in
+                 app/project/[id]/draft/mobile.css now.) */
               @media (max-width: 768px) {
                 input[type="text"],
-                input[type="email"], 
+                input[type="email"],
                 input[type="password"],
                 textarea,
                 select {
                   font-size: 16px !important;
-                  transform: scale(1) !important;
-                }
-                
-                /* Fix entire layout structure */
-                .mantine-AppShell-root {
-                  display: flex !important;
-                  flex-direction: column !important;
-                }
-                
-                .mantine-AppShell-navbar {
-                  position: fixed !important;
-                  top: 0 !important;
-                  left: -280px !important;
-                  width: 280px !important;
-                  height: 100vh !important;
-                  z-index: 9999 !important;
-                  transition: left 0.3s ease !important;
-                  background: white !important;
-                  border-right: 1px solid #e9ecef !important;
-                }
-                
-                .mantine-AppShell-navbar[data-opened="true"] {
-                  left: 0 !important;
-                }
-                
-                .mantine-AppShell-main {
-                  padding: 8px !important;
-                  margin-left: 0 !important;
-                  width: 100% !important;
-                  max-width: 100vw !important;
-                  box-sizing: border-box !important;
-                }
-                
-                .mantine-AppShell-aside {
-                  position: fixed !important;
-                  top: 0 !important;
-                  right: -100vw !important;
-                  width: 100vw !important;
-                  height: 100vh !important;
-                  z-index: 9998 !important;
-                  transition: right 0.3s ease !important;
-                  background: white !important;
-                  overflow-y: auto !important;
-                }
-                
-                .mantine-AppShell-aside[data-opened="true"] {
-                  right: 0 !important;
-                }
-                
-                /* Header responsive */
-                .mantine-AppShell-header {
-                  padding: 8px 16px !important;
-                }
-                
-                .mantine-AppShell-header .mantine-Group-root {
-                  gap: 8px !important;
-                }
-                
-                .mantine-AppShell-header .mantine-Text-root {
-                  font-size: 16px !important;
                 }
               }
-              
-              @media (max-width: 480px) {
-                /* Extra mobile fixes */
-                .mantine-AppShell-navbar {
-                  width: 260px !important;
-                  left: -260px !important;
-                }
-                
-                .mantine-AppShell-main {
-                  padding: 4px !important;
-                }
-                
-                .mantine-AppShell-header {
-                  padding: 4px 8px !important;
-                }
-                
-                .mantine-AppShell-header .mantine-Text-root {
-                  font-size: 14px !important;
-                }
-                
-                .mantine-AppShell-header .mantine-ActionIcon-root {
-                  min-width: 36px !important;
-                  min-height: 36px !important;
-                }
-              }
-              
-              /* Touch-friendly improvements */
-              * {
-                -webkit-tap-highlight-color: rgba(59, 130, 246, 0.3) !important;
-                -webkit-touch-callout: none !important;
-              }
-              
-              /* Prevent horizontal scroll */
-              html, body {
-                overflow-x: hidden !important;
-                max-width: 100vw !important;
-              }
-              
-              /* Page layout improvements */
-              @media (max-width: 768px) {
-                /* Left sidebar improvements */
-                [data-testid="sidebar-left"],
-                .sidebar-left {
-                  position: fixed !important;
-                  top: 0 !important;
-                  left: -100% !important;
-                  width: 280px !important;
-                  height: 100vh !important;
-                  z-index: 9999 !important;
-                  transition: left 0.3s ease !important;
-                  background: rgba(255, 255, 255, 0.98) !important;
-                  backdrop-filter: blur(10px) !important;
-                  border-right: 2px solid rgba(59, 130, 246, 0.1) !important;
-                  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1) !important;
-                }
-                
-                [data-testid="sidebar-left"][data-opened="true"],
-                .sidebar-left.opened {
-                  left: 0 !important;
-                }
-                
-                /* Right panel improvements */
-                [data-testid="sidebar-right"],
-                .sidebar-right {
-                  position: fixed !important;
-                  top: 0 !important;
-                  right: -100% !important;
-                  width: 100vw !important;
-                  height: 100vh !important;
-                  z-index: 9998 !important;
-                  transition: right 0.3s ease !important;
-                  background: rgba(255, 255, 255, 0.98) !important;
-                  backdrop-filter: blur(10px) !important;
-                  border-left: 2px solid rgba(59, 130, 246, 0.1) !important;
-                  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1) !important;
-                  overflow-y: auto !important;
-                }
-                
-                [data-testid="sidebar-right"][data-opened="true"],
-                .sidebar-right.opened {
-                  right: 0 !important;
-                }
-                
-                /* Main content area */
-                .main-content,
-                [data-testid="main-content"] {
-                  width: 100% !important;
-                  max-width: 100vw !important;
-                  margin: 0 !important;
-                  padding: 8px !important;
-                  box-sizing: border-box !important;
-                }
-              }
-              
-              @media (max-width: 480px) {
-                /* Mobile specific adjustments */
-                [data-testid="sidebar-left"],
-                .sidebar-left {
-                  width: 260px !important;
-                }
-                
-                .main-content,
-                [data-testid="main-content"] {
-                  padding: 4px !important;
-                }
-              }
-              
-              /* Global Mobile-First Responsive Overrides */
-              @media (max-width: 768px) {
-                /* Cards and Papers - Mobile Optimized */
-                .mantine-Paper-root {
-                  margin: 2px !important;
-                  padding: 12px !important;
-                  border-radius: 12px !important;
-                  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
-                }
-                
-                /* Reference cards in sidebar */
-                .mantine-Paper-root:has(.reference-item),
-                [data-testid*="reference"] .mantine-Paper-root {
-                  margin: 4px 8px !important;
-                  padding: 16px !important;
-                  min-height: 80px !important;
-                }
-                
-                /* Button improvements for mobile */
-                .mantine-Button-root {
-                  min-height: 48px !important;
-                  padding: 12px 20px !important;
-                  font-size: 14px !important;
-                  font-weight: 600 !important;
-                  border-radius: 12px !important;
-                  touch-action: manipulation !important;
-                }
-                
-                .mantine-ActionIcon-root {
-                  min-width: 48px !important;
-                  min-height: 48px !important;
-                  border-radius: 12px !important;
-                  touch-action: manipulation !important;
-                }
-                
-                /* Text improvements */
-                .mantine-Text-root {
-                  font-size: 14px !important;
-                  line-height: 1.5 !important;
-                }
-                
-                .mantine-Title-root {
-                  font-size: 18px !important;
-                  line-height: 1.3 !important;
-                }
-                
-                /* Input and form improvements */
-                .mantine-Input-root,
-                .mantine-Textarea-root {
-                  min-height: 48px !important;
-                  font-size: 16px !important;
-                  border-radius: 12px !important;
-                }
-                
-                .mantine-TextInput-input,
-                .mantine-Textarea-input {
-                  padding: 12px 16px !important;
-                }
-                
-                /* Search input specific */
-                .mantine-Spotlight-root,
-                [data-testid*="search"] input {
-                  font-size: 16px !important;
-                  min-height: 48px !important;
-                  padding: 12px 16px !important;
-                }
-                
-                /* Group and Stack spacing */
-                .mantine-Group-root {
-                  gap: 12px !important;
-                  flex-wrap: wrap !important;
-                }
-                
-                .mantine-Stack-root {
-                  gap: 12px !important;
-                }
-                
-                /* Editor toolbar specific */
-                .editor-toolbar .mantine-Group-root {
-                  gap: 8px !important;
-                  flex-direction: row !important;
-                  justify-content: space-between !important;
-                  align-items: center !important;
-                }
-                
-                .editor-toolbar .mantine-Group-root > .mantine-Group-root {
-                  justify-content: center !important;
-                  flex-wrap: wrap !important;
-                  gap: 8px !important;
-                }
-                
-                /* Modal improvements */
-                .mantine-Modal-root {
-                  padding: 16px !important;
-                }
-                
-                .mantine-Modal-content {
-                  max-height: calc(100vh - 32px) !important;
-                  margin: 0 !important;
-                  border-radius: 16px !important;
-                  max-width: calc(100vw - 32px) !important;
-                }
-                
-                .mantine-Modal-body {
-                  padding: 20px !important;
-                }
-                
-                .mantine-Modal-header {
-                  padding: 16px 20px !important;
-                  border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
-                }
-                
-                /* Drawer improvements for sidebars */
-                .mantine-Drawer-content {
-                  border-radius: 0 !important;
-                }
-                
-                .mantine-Drawer-body {
-                  padding: 16px !important;
-                }
-                
-                .mantine-Drawer-header {
-                  padding: 16px !important;
-                  border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
-                }
-              }
-              
-              @media (max-width: 480px) {
-                /* Extra aggressive mobile styling */
-                body {
-                  overflow-x: hidden !important;
-                }
-                
-                .mantine-AppShell-root {
-                  min-width: 100vw !important;
-                  overflow-x: hidden !important;
-                }
-                
-                /* Mobile optimized cards */
-                .mantine-Paper-root {
-                  margin: 4px !important;
-                  padding: 12px !important;
-                  border-radius: 10px !important;
-                  min-height: 60px !important;
-                }
-                
-                /* Outline Article card specific */
-                .mantine-Paper-root:has([data-testid*="outline"]),
-                .outline-card {
-                  margin: 8px !important;
-                  padding: 16px !important;
-                  min-height: 100px !important;
-                  border: 2px solid rgba(59, 130, 246, 0.2) !important;
-                  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(147, 197, 253, 0.05)) !important;
-                }
-                
-                /* Reference cards */
-                .reference-card,
-                [data-testid*="reference"] {
-                  margin: 6px 4px !important;
-                  padding: 12px !important;
-                  min-height: 70px !important;
-                  border-left: 4px solid #3b82f6 !important;
-                }
-                
-                .mantine-Button-root {
-                  min-height: 44px !important;
-                  padding: 10px 16px !important;
-                  font-size: 14px !important;
-                  font-weight: 600 !important;
-                  border-radius: 10px !important;
-                }
-                
-                .mantine-ActionIcon-root {
-                  min-width: 44px !important;
-                  min-height: 44px !important;
-                  border-radius: 10px !important;
-                }
-                
-                /* Text sizing for mobile */
-                .mantine-Text-root {
-                  font-size: 13px !important;
-                  line-height: 1.4 !important;
-                }
-                
-                .mantine-Title-root {
-                  font-size: 16px !important;
-                  line-height: 1.3 !important;
-                }
-                
-                /* Mobile input improvements */
-                .mantine-Input-root,
-                .mantine-Textarea-root {
-                  min-height: 44px !important;
-                  font-size: 16px !important;
-                  border-radius: 10px !important;
-                }
-                
-                .mantine-TextInput-input,
-                .mantine-Textarea-input {
-                  padding: 10px 14px !important;
-                }
-                
-                /* Search input */
-                .mantine-Spotlight-root,
-                [data-testid*="search"] input {
-                  font-size: 16px !important;
-                  min-height: 44px !important;
-                  padding: 10px 14px !important;
-                  border-radius: 10px !important;
-                }
-                
-                /* Spacing adjustments */
-                .mantine-Group-root {
-                  gap: 8px !important;
-                }
-                
-                .mantine-Stack-root {
-                  gap: 8px !important;
-                }
-                
-                /* Modal mobile */
-                .mantine-Modal-content {
-                  width: 100vw !important;
-                  height: 100vh !important;
-                  max-width: none !important;
-                  max-height: none !important;
-                  margin: 0 !important;
-                  border-radius: 0 !important;
-                }
-                
-                .mantine-Modal-body {
-                  padding: 16px !important;
-                  max-height: calc(100vh - 60px) !important;
-                  overflow-y: auto !important;
-                }
-                
-                .mantine-Modal-header {
-                  padding: 12px 16px !important;
-                  flex-shrink: 0 !important;
-                }
-                
-                /* Tooltip mobile */
-                .mantine-Tooltip-tooltip {
-                  font-size: 11px !important;
-                  padding: 6px 10px !important;
-                  max-width: 250px !important;
-                  border-radius: 8px !important;
-                }
-                
-                /* Save buttons at bottom */
-                .save-buttons,
-                [data-testid*="save"] {
-                  position: sticky !important;
-                  bottom: 0 !important;
-                  background: rgba(255, 255, 255, 0.95) !important;
-                  backdrop-filter: blur(10px) !important;
-                  padding: 12px !important;
-                  border-top: 1px solid rgba(0, 0, 0, 0.1) !important;
-                  z-index: 100 !important;
-                }
-              }
-              
+
               /* BlockNote Editor Mobile Responsive Overrides */
               .ProseMirror {
                 font-size: 16px !important;
@@ -7276,45 +6854,13 @@ INSTRUKSI:
                 }
               }
               
-              /* AI Modal Mobile Responsive */
+              /* Modals never wider than the phone screen. */
               @media (max-width: 768px) {
                 .mantine-Modal-content {
-                  width: calc(100vw - 16px) !important;
-                  max-width: none !important;
-                  margin: 8px !important;
-                  max-height: calc(100vh - 16px) !important;
-                }
-                
-                .mantine-Modal-body {
-                  padding: 12px !important;
-                  max-height: calc(100vh - 120px) !important;
-                  overflow-y: auto !important;
-                }
-                
-                .mantine-Modal-header {
-                  padding: 12px !important;
-                  flex-shrink: 0 !important;
+                  max-width: calc(100vw - 16px) !important;
                 }
               }
-              
-              @media (max-width: 480px) {
-                .mantine-Modal-content {
-                  width: 100vw !important;
-                  height: 100vh !important;
-                  margin: 0 !important;
-                  border-radius: 0 !important;
-                }
-                
-                .mantine-Modal-body {
-                  padding: 8px !important;
-                  max-height: calc(100vh - 80px) !important;
-                }
-                
-                .mantine-Modal-header {
-                  padding: 8px !important;
-                }
-              }
-              
+
               /* Try targeting ALL possible floating elements */
               * {
                 --bn-formatting-toolbar-padding: 2px 4px !important;

@@ -88,3 +88,17 @@ describe("speechToText (STT_PROVIDER)", () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe("isPromptEcho", () => {
+  const prompt = "Percakapan bahasa Indonesia tentang penulisan karya ilmiah: draf, paragraf, outline, referensi, artikel.";
+  it("flags the prompt's word list returned for a recording with no speech", async () => {
+    const { isPromptEcho } = await import("./transcribe");
+    expect(isPromptEcho("draf, paragraf, outline, referensi, artikel.", prompt)).toBe(true);
+    expect(isPromptEcho("Draf paragraf", prompt)).toBe(true);
+  });
+  it("keeps real speech, even when it uses some of the same words", async () => {
+    const { isPromptEcho } = await import("./transcribe");
+    expect(isPromptEcho("buat outline artikel tentang energi surya", prompt)).toBe(false);
+    expect(isPromptEcho("", prompt)).toBe(false);
+  });
+});
