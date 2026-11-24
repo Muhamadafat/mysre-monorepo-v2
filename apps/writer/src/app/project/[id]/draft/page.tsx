@@ -6228,9 +6228,13 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                 </Group>
 
                                 {/* Area preview bibliography terformat */}
-                                <ScrollArea
+                                {/* Autosize: grows with the list up to `mah`, then scrolls (a
+                                    plain ScrollArea ignores maxHeight in style and just clips). */}
+                                <ScrollArea.Autosize
+                                  mah={320}
+                                  type="auto"
+                                  offsetScrollbars
                                   style={{
-                                    maxHeight: "120px",
                                     border: "1px solid #ddd",
                                     borderRadius: "6px",
                                     padding: "8px",
@@ -6246,11 +6250,13 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                       fontFamily: "monospace",
                                       lineHeight: 1.4,
                                       whiteSpace: "pre-wrap",
+                                      // Long PDF/DOI links wrap instead of scrolling sideways.
+                                      overflowWrap: "anywhere",
                                     }}
                                   >
                                     {generateFullBibliography()}
                                   </Text>
-                                </ScrollArea>
+                                </ScrollArea.Autosize>
                               </>
                             )}
 
@@ -7883,9 +7889,13 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                             </Group>
 
                             {/* Area preview bibliography terformat */}
-                            <ScrollArea
+                            {/* Autosize: grows with the list up to `mah`, then scrolls (a
+                                plain ScrollArea ignores maxHeight in style and just clips). */}
+                            <ScrollArea.Autosize
+                              mah={320}
+                              type="auto"
+                              offsetScrollbars
                               style={{
-                                maxHeight: "120px",
                                 border: "1px solid #ddd",
                                 borderRadius: "6px",
                                 padding: "8px",
@@ -7901,11 +7911,13 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                   fontFamily: "monospace",
                                   lineHeight: 1.4,
                                   whiteSpace: "pre-wrap",
+                                  // Long PDF/DOI links wrap instead of scrolling sideways.
+                                  overflowWrap: "anywhere",
                                 }}
                               >
                                 {generateFullBibliography()}
                               </Text>
-                            </ScrollArea>
+                            </ScrollArea.Autosize>
                           </>
                         )}
 
