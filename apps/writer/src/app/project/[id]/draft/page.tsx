@@ -683,6 +683,28 @@ export default function Home() {
   const [referenceUploadOpen, setReferenceUploadOpen] = useState(false);
   // "Lampirkan PDF" on a reference without one: same modal, attach mode.
   const [attachPdfTo, setAttachPdfTo] = useState<Article | null>(null);
+  // "Edit" / "Hapus" on a reference card.
+  const [editRefOf, setEditRefOf] = useState<Article | null>(null);
+  const [deleteRefOf, setDeleteRefOf] = useState<Article | null>(null);
+  const [deletingRef, setDeletingRef] = useState(false);
+
+  const deleteReference = async () => {
+    const articleId = deleteRefOf?.article?.id;
+    if (!articleId) return;
+    setDeletingRef(true);
+    try {
+      const res = await fetch(`/api/references/${encodeURIComponent(articleId)}`, { method: 'DELETE' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Gagal menghapus (${res.status}).`);
+      setArticle((prev) => prev.filter((a) => a.article?.id !== articleId));
+      notifications.show({ title: 'Referensi dihapus', message: `"${deleteRefOf?.article?.title || deleteRefOf?.title}" sudah dihapus dari Referensi Pustaka.`, color: 'green' });
+      setDeleteRefOf(null);
+    } catch (err) {
+      notifications.show({ title: 'Gagal menghapus', message: err instanceof Error ? err.message : 'Gagal menghapus referensi.', color: 'red' });
+    } finally {
+      setDeletingRef(false);
+    }
+  };
 
   const sendMessage = () => {
     if (chatInput.trim() === '') return;
@@ -5742,6 +5764,36 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                             Lampirkan PDF
                                           </Button>
                                         )}
+                                        {item.article && (
+                                          <Button
+                                            variant="subtle"
+                                            color="gray"
+                                            size="compact-sm"
+                                            leftSection={<IconEdit size={14} />}
+                                            style={{ padding: 0, height: "auto" }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditRefOf(item);
+                                            }}
+                                          >
+                                            Edit
+                                          </Button>
+                                        )}
+                                        {item.article && (
+                                          <Button
+                                            variant="subtle"
+                                            color="red"
+                                            size="compact-sm"
+                                            leftSection={<IconTrash size={14} />}
+                                            style={{ padding: 0, height: "auto" }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setDeleteRefOf(item);
+                                            }}
+                                          >
+                                            Hapus
+                                          </Button>
+                                        )}
 
                                         {/* Tombol AI chat - analisis dengan AI
                                         <Button
@@ -7381,6 +7433,36 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                         Lampirkan PDF
                                       </Button>
                                     )}
+                                    {item.article && (
+                                      <Button
+                                        variant="subtle"
+                                        color="gray"
+                                        size="compact-sm"
+                                        leftSection={<IconEdit size={14} />}
+                                        style={{ padding: 0, height: "auto" }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditRefOf(item);
+                                        }}
+                                      >
+                                        Edit
+                                      </Button>
+                                    )}
+                                    {item.article && (
+                                      <Button
+                                        variant="subtle"
+                                        color="red"
+                                        size="compact-sm"
+                                        leftSection={<IconTrash size={14} />}
+                                        style={{ padding: 0, height: "auto" }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setDeleteRefOf(item);
+                                        }}
+                                      >
+                                        Hapus
+                                      </Button>
+                                    )}
 
                                     {/* Tombol AI chat - analisis dengan AI
                                     <Button
@@ -8843,6 +8925,70 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
           void getArticle();
         }}
       />
+
+      <ReferenceUploadModal
+        opened={!!editRefOf?.article}
+        onClose={() => setEditRefOf(null)}
+        projectId={writerSession?.id ?? projectId}
+        editOf={
+          editRefOf?.article
+            ? {
+                articleId: editRefOf.article.id,
+                title: editRefOf.article.title || editRefOf.title,
+                author: editRefOf.article.author,
+                year: editRefOf.article.year,
+                doi: editRefOf.article.doi,
+                abstract: editRefOf.article.abstract,
+                keywords: editRefOf.article.keywords,
+              }
+            : null
+        }
+        onUploaded={() => {}}
+        onEdited={(updated) => {
+          // Entries already in the Daftar Pustaka show the corrected details too.
+          if (updated) {
+            setBibliographyList((prev) =>
+              prev.map((b) =>
+                b.sourceId === updated.id
+                  ? {
+                      ...b,
+                      title: updated.title,
+                      author: updated.author?.trim() || b.author,
+                      year: updated.year?.trim() || b.year,
+                      doi: updated.doi || undefined,
+                    }
+                  : b
+              )
+            );
+          }
+          void getArticle();
+        }}
+      />
+
+      <Modal
+        opened={!!deleteRefOf}
+        onClose={() => !deletingRef && setDeleteRefOf(null)}
+        title={<Text fw={700}>Hapus referensi?</Text>}
+        radius="lg"
+        centered
+        closeOnClickOutside={!deletingRef}
+        withCloseButton={!deletingRef}
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            &quot;{deleteRefOf?.article?.title || deleteRefOf?.title}&quot; akan dihapus dari Referensi Pustaka beserta node peta
+            konsep dan anotasinya. Sitasi yang sudah ada di naskah tidak ikut terhapus.
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" onClick={() => setDeleteRefOf(null)} disabled={deletingRef}>
+              Batal
+            </Button>
+            <Button color="red" leftSection={<IconTrash size={14} />} loading={deletingRef} onClick={deleteReference}>
+              Hapus
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
     </AppShell>
   );

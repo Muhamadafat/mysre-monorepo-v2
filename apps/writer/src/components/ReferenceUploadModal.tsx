@@ -3,7 +3,7 @@
 import * as React from "react";
 import { ActionIcon, Alert, Badge, Box, Button, Divider, Group, Modal, Progress, Select, SimpleGrid, Stack, Text, TextInput, Textarea, ThemeIcon, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertCircle, IconCloudUpload, IconFileImport, IconFileTypePdf, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { IconAlertCircle, IconCloudUpload, IconDeviceFloppy, IconFileImport, IconFileTypePdf, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { parseRis, type RisRecord } from "@/lib/ris";
 
 /**
@@ -12,6 +12,8 @@ import { parseRis, type RisRecord } from "@/lib/ris";
  * /api/references/upload (which hands it to brain, like uploading there).
  * The details can be filled from a .ris file (Zotero / Mendeley / EndNote /
  * Google Scholar export): "Impor RIS", or drop the .ris on the drop zone.
+ * With `editOf` ("Edit" on a reference card) the same form edits an existing
+ * reference's details (PATCH /api/references/:articleId), without the PDF zone.
  */
 
 const MAX_MB = 30;
@@ -31,20 +33,28 @@ function risToMeta(rec: RisRecord): typeof emptyMeta {
   };
 }
 
+type RefDetails = { articleId: string; title: string; author?: string | null; year?: string | null; doi?: string | null; abstract?: string | null; keywords?: string | null };
+
 export default function ReferenceUploadModal({
   opened,
   onClose,
   projectId,
   onUploaded,
   attachTo,
+  editOf,
+  onEdited,
 }: {
   opened: boolean;
   onClose: () => void;
   projectId: string | null | undefined;
   onUploaded: (result: { articleId: string | null; replacedArticleId: string | null }) => void;
   /** "Lampirkan PDF": add a PDF to a reference that was saved without one. */
-  attachTo?: { articleId: string; title: string; author?: string | null; year?: string | null; doi?: string | null; abstract?: string | null; keywords?: string | null } | null;
+  attachTo?: RefDetails | null;
+  /** "Edit": change the details of an existing reference. */
+  editOf?: RefDetails | null;
+  onEdited?: (article: { id: string; title: string; author: string | null; year: string | null; doi: string | null }) => void;
 }) {
+  const prefill = editOf ?? attachTo ?? null;
   const [file, setFile] = React.useState<File | null>(null);
   const [meta, setMeta] = React.useState(emptyMeta);
   const [busy, setBusy] = React.useState(false);
@@ -52,19 +62,22 @@ export default function ReferenceUploadModal({
   const [dragging, setDragging] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const risInputRef = React.useRef<HTMLInputElement>(null);
-  // Attach mode: start from the reference's saved details.
+  // Attach / edit mode: start from the reference's saved details.
   React.useEffect(() => {
-    if (!opened || !attachTo) return;
+    if (!opened || !prefill) return;
     setMeta({
       ...emptyMeta,
-      title: attachTo.title ?? "",
-      author: attachTo.author ?? "",
-      year: attachTo.year ?? "",
-      doi: attachTo.doi ?? "",
-      abstract: attachTo.abstract ?? "",
-      keywords: attachTo.keywords ?? "",
+      title: prefill.title ?? "",
+      author: prefill.author ?? "",
+      year: prefill.year ?? "",
+      doi: prefill.doi ?? "",
+      abstract: prefill.abstract ?? "",
+      keywords: prefill.keywords ?? "",
     });
-  }, [opened, attachTo]);
+    // Only when the modal opens for a reference: the page passes a fresh
+    // object every render, and re-running would wipe what the user typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened, prefill?.articleId]);
   // Records read from the last .ris file (one is applied to the form).
   const [ris, setRis] = React.useState<{ name: string; records: RisRecord[]; index: number } | null>(null);
 
@@ -144,9 +157,37 @@ export default function ReferenceUploadModal({
 
   // No PDF (e.g. Google Scholar only gives a .ris): save the details only.
   const withoutPdf = !file;
-  const canSubmit = Boolean(projectId) && (attachTo ? Boolean(file) : Boolean(file) || Boolean(meta.title.trim()));
+  const canSubmit = editOf
+    ? Boolean(meta.title.trim())
+    : Boolean(projectId) && (attachTo ? Boolean(file) : Boolean(file) || Boolean(meta.title.trim()));
+
+  const saveEdit = async () => {
+    if (!editOf || !meta.title.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { title, author, year, doi, abstract, keywords } = meta;
+      const details = { title, author, year, doi, abstract, keywords };
+      const res = await fetch(`/api/references/${encodeURIComponent(editOf.articleId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(details),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Gagal menyimpan (${res.status}).`);
+      notifications.show({ title: "Referensi diperbarui", message: `"${body.article?.title ?? meta.title}" sudah disimpan.`, color: "green" });
+      onEdited?.(body.article);
+      setBusy(false);
+      reset();
+      onClose();
+    } catch (err) {
+      setBusy(false);
+      setError(err instanceof Error ? err.message : "Gagal menyimpan.");
+    }
+  };
 
   const upload = async () => {
+    if (editOf) return saveEdit();
     if (!canSubmit || !projectId) return;
     setBusy(true);
     setError(null);
@@ -183,7 +224,7 @@ export default function ReferenceUploadModal({
   };
 
   return (
-    <Modal opened={opened} onClose={close} title={<Text fw={700}>{attachTo ? "Lampirkan PDF ke Referensi" : "Unggah Referensi Pustaka"}</Text>} radius="lg" size="lg" closeOnClickOutside={!busy} withCloseButton={!busy}>
+    <Modal opened={opened} onClose={close} title={<Text fw={700}>{editOf ? "Edit Referensi Pustaka" : attachTo ? "Lampirkan PDF ke Referensi" : "Unggah Referensi Pustaka"}</Text>} radius="lg" size="lg" closeOnClickOutside={!busy} withCloseButton={!busy}>
       <Stack gap="md">
         <input
           ref={inputRef}
@@ -205,7 +246,7 @@ export default function ReferenceUploadModal({
             e.currentTarget.value = "";
           }}
         />
-        {file ? (
+        {editOf ? null : file ? (
           <Group
             gap="sm"
             wrap="nowrap"
@@ -354,7 +395,7 @@ export default function ReferenceUploadModal({
             (sitasi yang sudah ada tetap tersambung).
           </Alert>
         )}
-        {!attachTo && withoutPdf && meta.title.trim() && !busy && (
+        {!attachTo && !editOf && withoutPdf && meta.title.trim() && !busy && (
           <Alert color="blue" variant="light" icon={<IconAlertCircle size={16} />}>
             Belum ada PDF. Referensi tetap bisa disimpan dari detail di atas dan langsung bisa di-Cite, tapi tanpa analisis AI
             isi artikel (AI menulis tidak membaca isinya). Tambahkan PDF kalau ada.
@@ -369,7 +410,7 @@ export default function ReferenceUploadModal({
           <Stack gap={6}>
             <Progress value={100} animated striped size="sm" radius="xl" />
             <Text size="xs" c="dimmed">
-              {withoutPdf
+              {editOf || withoutPdf
                 ? "Menyimpan referensi…"
                 : "Mengunggah dan menganalisis PDF dengan AI… biasanya 30 detik – 2 menit. Jangan tutup halaman ini."}
             </Text>
@@ -380,8 +421,8 @@ export default function ReferenceUploadModal({
           <Button variant="default" onClick={close} disabled={busy} leftSection={<IconX size={14} />}>
             Batal
           </Button>
-          <Button onClick={upload} loading={busy} disabled={!canSubmit} leftSection={<IconUpload size={14} />}>
-            {attachTo ? "Lampirkan & Analisis" : withoutPdf ? "Simpan tanpa PDF" : "Unggah"}
+          <Button onClick={upload} loading={busy} disabled={!canSubmit} leftSection={editOf ? <IconDeviceFloppy size={14} /> : <IconUpload size={14} />}>
+            {editOf ? "Simpan perubahan" : attachTo ? "Lampirkan & Analisis" : withoutPdf ? "Simpan tanpa PDF" : "Unggah"}
           </Button>
         </Group>
       </Stack>
