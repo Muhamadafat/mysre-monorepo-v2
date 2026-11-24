@@ -683,28 +683,8 @@ export default function Home() {
   const [referenceUploadOpen, setReferenceUploadOpen] = useState(false);
   // "Lampirkan PDF" on a reference without one: same modal, attach mode.
   const [attachPdfTo, setAttachPdfTo] = useState<Article | null>(null);
-  // "Edit" / "Hapus" on a reference card.
+  // "Edit" on a reference card (its pop-up also holds "Hapus").
   const [editRefOf, setEditRefOf] = useState<Article | null>(null);
-  const [deleteRefOf, setDeleteRefOf] = useState<Article | null>(null);
-  const [deletingRef, setDeletingRef] = useState(false);
-
-  const deleteReference = async () => {
-    const articleId = deleteRefOf?.article?.id;
-    if (!articleId) return;
-    setDeletingRef(true);
-    try {
-      const res = await fetch(`/api/references/${encodeURIComponent(articleId)}`, { method: 'DELETE' });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `Gagal menghapus (${res.status}).`);
-      setArticle((prev) => prev.filter((a) => a.article?.id !== articleId));
-      notifications.show({ title: 'Referensi dihapus', message: `"${deleteRefOf?.article?.title || deleteRefOf?.title}" sudah dihapus dari Referensi Pustaka.`, color: 'green' });
-      setDeleteRefOf(null);
-    } catch (err) {
-      notifications.show({ title: 'Gagal menghapus', message: err instanceof Error ? err.message : 'Gagal menghapus referensi.', color: 'red' });
-    } finally {
-      setDeletingRef(false);
-    }
-  };
 
   const sendMessage = () => {
     if (chatInput.trim() === '') return;
@@ -5779,21 +5759,6 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                             Edit
                                           </Button>
                                         )}
-                                        {item.article && (
-                                          <Button
-                                            variant="subtle"
-                                            color="red"
-                                            size="compact-sm"
-                                            leftSection={<IconTrash size={14} />}
-                                            style={{ padding: 0, height: "auto" }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setDeleteRefOf(item);
-                                            }}
-                                          >
-                                            Hapus
-                                          </Button>
-                                        )}
 
                                         {/* Tombol AI chat - analisis dengan AI
                                         <Button
@@ -7448,21 +7413,6 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                         Edit
                                       </Button>
                                     )}
-                                    {item.article && (
-                                      <Button
-                                        variant="subtle"
-                                        color="red"
-                                        size="compact-sm"
-                                        leftSection={<IconTrash size={14} />}
-                                        style={{ padding: 0, height: "auto" }}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setDeleteRefOf(item);
-                                        }}
-                                      >
-                                        Hapus
-                                      </Button>
-                                    )}
 
                                     {/* Tombol AI chat - analisis dengan AI
                                     <Button
@@ -8944,51 +8894,42 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
             : null
         }
         onUploaded={() => {}}
+        citedAs={
+          editRefOf?.article
+            ? bibliographyList.filter((b) => b.sourceId === editRefOf.article?.id).map((b) => b.number)
+            : []
+        }
         onEdited={(updated) => {
-          // Entries already in the Daftar Pustaka show the corrected details too.
+          // Entries already in the Daftar Pustaka show the corrected details.
+          // Only the details change: number [n], id and order stay the same,
+          // so citations in the text keep pointing at the same entry.
           if (updated) {
             setBibliographyList((prev) =>
-              prev.map((b) =>
-                b.sourceId === updated.id
-                  ? {
-                      ...b,
-                      title: updated.title,
-                      author: updated.author?.trim() || b.author,
-                      year: updated.year?.trim() || b.year,
-                      doi: updated.doi || undefined,
-                    }
-                  : b
-              )
+              prev.map((b) => {
+                if (b.sourceId !== updated.id) return b;
+                const doi = updated.doi?.trim() || undefined;
+                const wasDoiLink = !b.url || /^https?:\/\/(dx\.)?doi\.org\//i.test(b.url);
+                return {
+                  ...b,
+                  title: updated.title?.trim() || b.title,
+                  author: updated.author?.trim() || "Tanpa nama penulis",
+                  year: updated.year?.trim() || "t.t.",
+                  doi,
+                  url: wasDoiLink ? (doi ? `https://doi.org/${doi}` : b.url) : b.url,
+                };
+              })
             );
           }
           void getArticle();
         }}
+        onDeleted={(articleId) => {
+          // Daftar Pustaka entries are kept as they are (they hold their own
+          // copy of the details), so existing citations [n] don't change.
+          setArticle((prev) => prev.filter((a) => a.article?.id !== articleId));
+          setEditRefOf(null);
+        }}
       />
 
-      <Modal
-        opened={!!deleteRefOf}
-        onClose={() => !deletingRef && setDeleteRefOf(null)}
-        title={<Text fw={700}>Hapus referensi?</Text>}
-        radius="lg"
-        centered
-        closeOnClickOutside={!deletingRef}
-        withCloseButton={!deletingRef}
-      >
-        <Stack gap="md">
-          <Text size="sm">
-            &quot;{deleteRefOf?.article?.title || deleteRefOf?.title}&quot; akan dihapus dari Referensi Pustaka beserta node peta
-            konsep dan anotasinya. Sitasi yang sudah ada di naskah tidak ikut terhapus.
-          </Text>
-          <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={() => setDeleteRefOf(null)} disabled={deletingRef}>
-              Batal
-            </Button>
-            <Button color="red" leftSection={<IconTrash size={14} />} loading={deletingRef} onClick={deleteReference}>
-              Hapus
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
 
     </AppShell>
   );
