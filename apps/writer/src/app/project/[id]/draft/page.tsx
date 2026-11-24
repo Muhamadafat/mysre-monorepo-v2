@@ -5700,6 +5700,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                           size="compact-sm"
                                           leftSection={<IconExternalLink size={14} />}
                                           style={{ padding: 0, height: "auto" }}
+                                          disabled={!item.att_url}
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             if (item.att_url) {
@@ -7323,6 +7324,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                       size="compact-sm"
                                       leftSection={<IconExternalLink size={14} />}
                                       style={{ padding: 0, height: "auto" }}
+                                      disabled={!item.att_url}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (item.att_url) {

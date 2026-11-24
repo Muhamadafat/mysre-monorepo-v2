@@ -15,7 +15,7 @@ import { parseRis, type RisRecord } from "@/lib/ris";
  */
 
 const MAX_MB = 30;
-const emptyMeta = { title: "", author: "", year: "", doi: "", abstract: "", keywords: "" };
+const emptyMeta = { title: "", author: "", year: "", doi: "", abstract: "", keywords: "", url: "" };
 
 const isRisFile = (f: File) => /\.ris$/i.test(f.name) || f.type === "application/x-research-info-systems";
 
@@ -27,6 +27,7 @@ function risToMeta(rec: RisRecord): typeof emptyMeta {
     doi: rec.doi,
     abstract: rec.abstract,
     keywords: rec.keywords.join(", "),
+    url: rec.url,
   };
 }
 
@@ -125,12 +126,16 @@ export default function ReferenceUploadModal({
     setMeta((m) => (m.title ? m : { ...m, title: picked.name.replace(/\.pdf$/i, "") }));
   };
 
+  // No PDF (e.g. Google Scholar only gives a .ris): save the details only.
+  const withoutPdf = !file;
+  const canSubmit = Boolean(projectId) && (Boolean(file) || Boolean(meta.title.trim()));
+
   const upload = async () => {
-    if (!file || !projectId) return;
+    if (!canSubmit || !projectId) return;
     setBusy(true);
     setError(null);
     const form = new FormData();
-    form.append("file", file);
+    if (file) form.append("file", file);
     form.append("projectId", projectId);
     Object.entries(meta).forEach(([key, value]) => value.trim() && form.append(key, value.trim()));
     try {
@@ -139,7 +144,9 @@ export default function ReferenceUploadModal({
       if (!res.ok) throw new Error(body.error || `Unggah gagal (${res.status}).`);
       notifications.show({
         title: body.warning ? "Artikel tersimpan" : "Referensi ditambahkan",
-        message: body.warning || `"${body.article?.title ?? file.name}" sudah masuk ke Referensi Pustaka.`,
+        message:
+          body.warning ||
+          `"${body.article?.title ?? file?.name ?? meta.title}" sudah masuk ke Referensi Pustaka${body.withoutPdf ? " (tanpa PDF)" : ""}.`,
         color: body.warning ? "yellow" : "green",
       });
       onUploaded();
@@ -324,6 +331,12 @@ export default function ReferenceUploadModal({
         <TextInput label="Kata kunci (opsional)" placeholder="mis. energi surya, desa" value={meta.keywords} onChange={set("keywords")} disabled={busy} />
         <Textarea label="Abstrak (opsional)" placeholder="Ringkasan singkat artikel" autosize minRows={2} maxRows={5} value={meta.abstract} onChange={set("abstract")} disabled={busy} />
 
+        {withoutPdf && meta.title.trim() && !busy && (
+          <Alert color="blue" variant="light" icon={<IconAlertCircle size={16} />}>
+            Belum ada PDF. Referensi tetap bisa disimpan dari detail di atas dan langsung bisa di-Cite, tapi tanpa analisis AI
+            isi artikel (AI menulis tidak membaca isinya). Tambahkan PDF kalau ada.
+          </Alert>
+        )}
         {error && (
           <Alert color="red" variant="light" icon={<IconAlertCircle size={16} />}>
             {error}
@@ -333,7 +346,9 @@ export default function ReferenceUploadModal({
           <Stack gap={6}>
             <Progress value={100} animated striped size="sm" radius="xl" />
             <Text size="xs" c="dimmed">
-              Mengunggah dan menganalisis PDF dengan AI… biasanya 30 detik – 2 menit. Jangan tutup halaman ini.
+              {withoutPdf
+                ? "Menyimpan referensi…"
+                : "Mengunggah dan menganalisis PDF dengan AI… biasanya 30 detik – 2 menit. Jangan tutup halaman ini."}
             </Text>
           </Stack>
         )}
@@ -342,8 +357,8 @@ export default function ReferenceUploadModal({
           <Button variant="default" onClick={close} disabled={busy} leftSection={<IconX size={14} />}>
             Batal
           </Button>
-          <Button onClick={upload} loading={busy} disabled={!file || !projectId} leftSection={<IconUpload size={14} />}>
-            Unggah
+          <Button onClick={upload} loading={busy} disabled={!canSubmit} leftSection={<IconUpload size={14} />}>
+            {withoutPdf ? "Simpan tanpa PDF" : "Unggah"}
           </Button>
         </Group>
       </Stack>
