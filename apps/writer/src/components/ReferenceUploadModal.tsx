@@ -43,6 +43,8 @@ export default function ReferenceUploadModal({
   attachTo,
   editOf,
   onEdited,
+  onDeleted,
+  citedAs = [],
 }: {
   opened: boolean;
   onClose: () => void;
@@ -53,6 +55,10 @@ export default function ReferenceUploadModal({
   /** "Edit": change the details of an existing reference. */
   editOf?: RefDetails | null;
   onEdited?: (article: { id: string; title: string; author: string | null; year: string | null; doi: string | null }) => void;
+  /** "Hapus referensi" inside the edit pop-up. */
+  onDeleted?: (articleId: string) => void;
+  /** Numbers [n] this reference has in the Daftar Pustaka (shown in the delete warning). */
+  citedAs?: number[];
 }) {
   const prefill = editOf ?? attachTo ?? null;
   const [file, setFile] = React.useState<File | null>(null);
@@ -60,6 +66,7 @@ export default function ReferenceUploadModal({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [dragging, setDragging] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const risInputRef = React.useRef<HTMLInputElement>(null);
   // Attach / edit mode: start from the reference's saved details.
@@ -128,6 +135,7 @@ export default function ReferenceUploadModal({
     setRis(null);
     setError(null);
     setDragging(false);
+    setConfirmDelete(false);
   };
 
   const close = () => {
@@ -183,6 +191,26 @@ export default function ReferenceUploadModal({
     } catch (err) {
       setBusy(false);
       setError(err instanceof Error ? err.message : "Gagal menyimpan.");
+    }
+  };
+
+  const deleteRef = async () => {
+    if (!editOf) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/references/${encodeURIComponent(editOf.articleId)}`, { method: "DELETE" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Gagal menghapus (${res.status}).`);
+      notifications.show({ title: "Referensi dihapus", message: `"${editOf.title}" sudah dihapus dari Referensi Pustaka.`, color: "green" });
+      onDeleted?.(editOf.articleId);
+      setBusy(false);
+      reset();
+      onClose();
+    } catch (err) {
+      setBusy(false);
+      setConfirmDelete(false);
+      setError(err instanceof Error ? err.message : "Gagal menghapus.");
     }
   };
 
@@ -417,11 +445,44 @@ export default function ReferenceUploadModal({
           </Stack>
         )}
 
+        {editOf && confirmDelete && (
+          <Alert color="red" variant="light" icon={<IconTrash size={16} />} title="Hapus referensi ini?">
+            <Stack gap={6}>
+              <Text size="sm">
+                Artikel, node peta konsep, dan anotasinya dihapus permanen.
+                {citedAs.length > 0
+                  ? ` Referensi ini sudah dikutip sebagai ${citedAs.map((n) => `[${n}]`).join(", ")}: sitasi di naskah dan entrinya di Daftar Pustaka tetap ada, tidak berubah.`
+                  : " Sitasi di naskah tidak terpengaruh."}
+              </Text>
+              <Group gap="sm">
+                <Button size="xs" color="red" onClick={deleteRef} loading={busy} leftSection={<IconTrash size={14} />}>
+                  Ya, hapus
+                </Button>
+                <Button size="xs" variant="default" onClick={() => setConfirmDelete(false)} disabled={busy}>
+                  Tidak jadi
+                </Button>
+              </Group>
+            </Stack>
+          </Alert>
+        )}
+
         <Group justify="flex-end" gap="sm">
+          {editOf && (
+            <Button
+              variant="subtle"
+              color="red"
+              mr="auto"
+              leftSection={<IconTrash size={14} />}
+              onClick={() => setConfirmDelete(true)}
+              disabled={busy || confirmDelete}
+            >
+              Hapus referensi
+            </Button>
+          )}
           <Button variant="default" onClick={close} disabled={busy} leftSection={<IconX size={14} />}>
             Batal
           </Button>
-          <Button onClick={upload} loading={busy} disabled={!canSubmit} leftSection={editOf ? <IconDeviceFloppy size={14} /> : <IconUpload size={14} />}>
+          <Button onClick={upload} loading={busy && !confirmDelete} disabled={!canSubmit || (busy && confirmDelete)} leftSection={editOf ? <IconDeviceFloppy size={14} /> : <IconUpload size={14} />}>
             {editOf ? "Simpan perubahan" : attachTo ? "Lampirkan & Analisis" : withoutPdf ? "Simpan tanpa PDF" : "Unggah"}
           </Button>
         </Group>
