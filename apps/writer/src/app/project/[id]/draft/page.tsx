@@ -8,10 +8,10 @@ import './mobile.css';
 import ConceptMap from '@/components/ConceptMap';
 import { buildConceptMap } from '@/lib/conceptMap';
 import { downloadRis } from '@/lib/ris';
-import { citableUrl, cleanReferenceTitle } from '@/lib/referenceText';
+import { citableUrl, cleanReferenceTitle, italicHtml, italicParts, stripItalicMarks } from '@/lib/referenceText';
 import dynamic from 'next/dynamic';
 import { notifications } from '@mantine/notifications';
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react';
 import type { PartialBlock } from "@/lib/plateCompat/types";
 import { ExtendedEdge, ExtendedNode } from '@/types'
 import type { PlateEditorRef } from '@/components/PlateEditor';
@@ -2298,6 +2298,22 @@ const handleSubmitToTeacher = async () => {
           `[${bibliography.number}] ${formatBibliography(bibliography)}`
       )
       .join("\n\n");
+  };
+
+  /** Copies the Daftar Pustaka: HTML with real italics (Word / Docs), plain text without the "*". */
+  const copyBibliography = () => {
+    const text = generateFullBibliography();
+    const plain = stripItalicMarks(text);
+    const write =
+      typeof ClipboardItem !== "undefined" && navigator.clipboard?.write
+        ? navigator.clipboard.write([
+            new ClipboardItem({
+              "text/html": new Blob([italicHtml(text)], { type: "text/html" }),
+              "text/plain": new Blob([plain], { type: "text/plain" }),
+            }),
+          ])
+        : Promise.reject(new Error("no rich clipboard"));
+    void write.catch(() => navigator.clipboard.writeText(plain));
   };
 
   const editorRef = useRef<PlateEditorRef>(null);
@@ -6207,9 +6223,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                       variant="subtle"
                                       size="sm"
                                       onClick={() => {
-                                        navigator.clipboard.writeText(
-                                          generateFullBibliography()
-                                        );
+                                        copyBibliography();
                                         notifications.show({ title: "Disalin", message: "Daftar pustaka disalin ke clipboard.", color: "teal" });
                                       }}
                                     >
@@ -6257,7 +6271,7 @@ Ringkasan dari pembahasan ${draftTitle.toLowerCase()} beserta rekomendasi untuk 
                                       overflowWrap: "anywhere",
                                     }}
                                   >
-                                    {generateFullBibliography()}
+                                    <ItalicText text={generateFullBibliography()} />
                                   </Text>
                                 </ScrollArea.Autosize>
                               </>
@@ -7868,9 +7882,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                   variant="subtle"
                                   size="sm"
                                   onClick={() => {
-                                    navigator.clipboard.writeText(
-                                      generateFullBibliography()
-                                    );
+                                    copyBibliography();
                                     notifications.show({ title: "Disalin", message: "Daftar pustaka disalin ke clipboard.", color: "teal" });
                                   }}
                                 >
@@ -7918,7 +7930,7 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                                   overflowWrap: "anywhere",
                                 }}
                               >
-                                {generateFullBibliography()}
+                                <ItalicText text={generateFullBibliography()} />
                               </Text>
                             </ScrollArea.Autosize>
                           </>
@@ -8821,12 +8833,12 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
                   </Text>
                   <Text size="xs" style={{ fontFamily: "monospace" }}>
                     [{editingBibliography?.number || nextNumber}]{" "}
-                    {formatBibliography({
+                    <ItalicText text={formatBibliography({
                       id: "",
                       number: editingBibliography?.number || nextNumber,
                       ...bibliographyForm,
                       createdAt: new Date(),
-                    } as Bibliography)}
+                    } as Bibliography)} />
                   </Text>
                 </Paper>
               )}
@@ -9168,5 +9180,16 @@ ${topic} merupakan skill yang sangat valuable dalam dunia teknologi modern. Deng
 
 
     </AppShell>
+  );
+}
+
+/** Daftar Pustaka text with its "*…*" marks shown as italics (not as asterisks). */
+function ItalicText({ text }: { text: string }) {
+  return (
+    <>
+      {italicParts(text).map((part, i) =>
+        part.italic ? <em key={i}>{part.text}</em> : <Fragment key={i}>{part.text}</Fragment>
+      )}
+    </>
   );
 }

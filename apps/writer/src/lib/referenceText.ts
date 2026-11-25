@@ -28,3 +28,50 @@ export function citableUrl(url: string | null | undefined): string | undefined {
 export function cleanReferenceTitle(title: string): string {
   return title.replace(/\.pdf\s*$/i, "").replace(/\s{2,}/g, " ").trim() || title;
 }
+
+/**
+ * The formatted Daftar Pustaka marks italics Markdown-style ("*Title*", as
+ * APA italicises titles and journals). These turn that into what is shown
+ * or copied, so the asterisks themselves never reach the reader.
+ */
+export interface TextPart {
+  text: string;
+  italic: boolean;
+}
+
+const ITALIC = /\*([^*\n]+)\*/g;
+
+/** "A. *Title*. B" → [{A.}, {Title, italic}, {. B}] */
+export function italicParts(text: string): TextPart[] {
+  const parts: TextPart[] = [];
+  let last = 0;
+  for (const m of text.matchAll(ITALIC)) {
+    if (m.index! > last) parts.push({ text: text.slice(last, m.index), italic: false });
+    parts.push({ text: m[1], italic: true });
+    last = m.index! + m[0].length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last), italic: false });
+  return parts;
+}
+
+/** Plain text: the asterisks dropped. */
+export function stripItalicMarks(text: string): string {
+  return text.replace(ITALIC, "$1");
+}
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** HTML for the clipboard (Word / Google Docs keep the italics); blank lines → paragraphs. */
+export function italicHtml(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map(
+      (para) =>
+        `<p>${italicParts(para)
+          .map((p) => (p.italic ? `<i>${escapeHtml(p.text)}</i>` : escapeHtml(p.text)))
+          .join("")
+          .replace(/\n/g, "<br>")}</p>`,
+    )
+    .join("");
+}
