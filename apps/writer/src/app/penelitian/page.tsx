@@ -904,10 +904,18 @@ function RecordingsTab({ portfolio }: { portfolio: Portfolio }) {
 }
 
 function RecordingCard({ r }: { r: Recording }) {
+  // Mode Perintah logs speech as "user" lines; Mode Menulis logs what got
+  // typed as "tool" lines "Menulis: …" (same rule as RecordingHistory).
   const said = r.transcript
-    .filter((t) => t.role === "user")
-    .map((t) => t.text)
-    .join(" ");
+    .flatMap((t) => {
+      if (t.role === "user") return [t.text];
+      const dictated =
+        t.role === "tool" ? t.text.match(/^Menulis: ([\s\S]+)/) : null;
+      return dictated ? [dictated[1]] : [];
+    })
+    .join(" ")
+    .trim();
+  const aiText = r.aiTranscript?.trim() || "";
   const status = r.command
     ? (STATUS[r.command.status] ?? { label: r.command.status, color: "gray" })
     : null;
@@ -961,18 +969,18 @@ function RecordingCard({ r }: { r: Recording }) {
         </Group>
       </Group>
       <audio controls preload="none" src={r.url} className="adm-audio" />
-      {said ? (
+      {said || aiText ? (
         <Text size="sm" mt={4} className="adm-quote">
-          “{said}”
+          “{said || aiText}”
         </Text>
       ) : (
         <Text size="xs" c="dimmed" mt={4}>
-          Tidak ada transkrip langsung.
+          Belum ada transkrip untuk rekaman ini.
         </Text>
       )}
-      {r.aiTranscript && (
+      {said && aiText && aiText !== said && (
         <Text size="xs" c="dimmed" mt={4}>
-          <b>Transkrip AI:</b> {r.aiTranscript}
+          <b>Transkrip AI:</b> {aiText}
         </Text>
       )}
       {r.command && r.command.actions.length > 0 && (
