@@ -5,6 +5,8 @@
  * every tag line is `XX  - value` (two letters, two spaces, dash, space).
  */
 
+import { citableUrl, cleanReferenceTitle } from "./referenceText";
+
 export interface RisSource {
   number?: number;
   author?: string;
@@ -59,14 +61,14 @@ function risType(item: RisSource): string {
   if (t.includes("web") || t.includes("online")) return "ELEC";
   if (item.journal) return "JOUR";
   if (item.publisher || item.edition) return "BOOK";
-  if (item.url && !item.doi) return "ELEC";
+  if (citableUrl(item.url) && !item.doi) return "ELEC";
   return "GEN";
 }
 
 export function itemToRis(item: RisSource): string {
   const lines: string[] = [`TY  - ${risType(item)}`];
   for (const a of splitAuthors(item.author)) lines.push(...tag("AU", a));
-  lines.push(...tag("TI", item.title));
+  lines.push(...tag("TI", item.title ? cleanReferenceTitle(item.title) : item.title));
   const year = (item.year ?? "").match(/\d{4}/)?.[0];
   lines.push(...tag("PY", year));
   lines.push(...tag("T2", item.journal || item.conference));
@@ -83,7 +85,7 @@ export function itemToRis(item: RisSource): string {
   lines.push(...tag("ET", item.edition));
   const doi = (item.doi ?? "").replace(/^https?:\/\/(dx\.)?doi\.org\//i, "").trim();
   lines.push(...tag("DO", doi));
-  lines.push(...tag("UR", item.url || (doi ? `https://doi.org/${doi}` : "")));
+  lines.push(...tag("UR", citableUrl(item.url) || (doi ? `https://doi.org/${doi}` : "")));
   lines.push(...tag("Y2", item.accessDate));
   if (item.number != null) lines.push(...tag("N1", `Sitasi [${item.number}]`));
   lines.push("ER  - ");
