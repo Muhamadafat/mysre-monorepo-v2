@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { citableUrl, cleanReferenceTitle, isUploadedFileUrl } from "./referenceText";
+import { citableUrl, cleanReferenceTitle, isUploadedFileUrl, italicHtml, italicParts, stripItalicMarks } from "./referenceText";
 
 describe("referenceText", () => {
   it("treats uploaded PDFs as internal links", () => {
@@ -19,5 +19,28 @@ describe("referenceText", () => {
   it("drops .pdf from file-name titles", () => {
     expect(cleanReferenceTitle("Enhancing EFL students  academic writing.pdf")).toBe("Enhancing EFL students academic writing");
     expect(cleanReferenceTitle("A normal title")).toBe("A normal title");
+  });
+});
+
+describe("italic marks in the Daftar Pustaka", () => {
+  const entry = "Sadri (2026). *A Comparative Study*. *Jurnal X*, 4(2).";
+
+  it("splits text into plain and italic parts", () => {
+    expect(italicParts(entry)).toEqual([
+      { text: "Sadri (2026). ", italic: false },
+      { text: "A Comparative Study", italic: true },
+      { text: ". ", italic: false },
+      { text: "Jurnal X", italic: true },
+      { text: ", 4(2).", italic: false },
+    ]);
+    expect(italicParts("no marks")).toEqual([{ text: "no marks", italic: false }]);
+  });
+
+  it("copies as plain text without asterisks", () => {
+    expect(stripItalicMarks(entry)).toBe("Sadri (2026). A Comparative Study. Jurnal X, 4(2).");
+  });
+
+  it("copies as HTML with <i> and one paragraph per entry", () => {
+    expect(italicHtml("[1] *A* & b\n\n[2] c")).toBe("<p>[1] <i>A</i> &amp; b</p><p>[2] c</p>");
   });
 });
