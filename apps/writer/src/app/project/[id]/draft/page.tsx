@@ -8,6 +8,7 @@ import './mobile.css';
 import ConceptMap from '@/components/ConceptMap';
 import { buildConceptMap } from '@/lib/conceptMap';
 import { downloadRis } from '@/lib/ris';
+import { citableUrl, cleanReferenceTitle } from '@/lib/referenceText';
 import dynamic from 'next/dynamic';
 import { notifications } from '@mantine/notifications';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -2248,17 +2249,18 @@ const handleSubmitToTeacher = async () => {
   const formatBibliography = (bibliography: Bibliography) => {
     const {
       author,
-      title,
       year,
       publisher,
       journal,
       volume,
       issue,
       pages,
-      url,
       doi,
       city,
     } = bibliography;
+    // Uploaded-PDF links are the app's storage, not a source to cite.
+    const url = citableUrl(bibliography.url);
+    const title = cleanReferenceTitle(bibliography.title);
 
     let formatted = `${author} (${year}). *${title}*.`;
 
@@ -3373,9 +3375,10 @@ const handleSubmitToTeacher = async () => {
       sourceId,
       number: citeNumber,
       author: source?.author?.trim() || "Tanpa nama penulis",
-      title: source?.title?.trim() || articleItem.title,
+      title: cleanReferenceTitle(source?.title?.trim() || articleItem.title),
       year: source?.year?.trim() || "t.t.",
-      url: articleItem.att_url || (doi ? `https://doi.org/${doi.replace(/^https?:\/\/(dx\.)?doi\.org\//, "")}` : undefined),
+      // The DOI link only: att_url is the uploaded PDF on brain, not a citable source.
+      url: doi ? `https://doi.org/${doi.replace(/^https?:\/\/(dx\.)?doi\.org\//, "")}` : citableUrl(articleItem.att_url),
       doi,
       createdAt: new Date(),
     };
