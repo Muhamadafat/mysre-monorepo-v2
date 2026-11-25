@@ -617,26 +617,12 @@ function waitForProviderSync(provider: YPartyKitProvider): Promise<void> {
 }
 
 /**
- * The editor canvas starts EMPTY on every page load (user-requested) —
- * the PartyKit room persists the Y.Doc, so without this a refresh would
- * bring the previous text straight back. Named versions are kept in
- * Postgres via "Simpan Versi", not in the live room.
- *
- * Only done when nobody else is in the room right now: if a collaborator is
- * mid-session, wiping the shared document would delete their live work, so
- * a refreshing user just rejoins it instead. Runs once per room per page
- * load (tracked on `window`, so a dev Fast Refresh re-running this module
- * doesn't wipe the canvas again), and before the editor binds to the doc,
- * so the clear is a plain Y-level reset rather than a stream of editor ops.
- */
-/**
  * Guarantees the shared document holds at least one (empty) paragraph
  * before the editor binds to it.
  *
  * @platejs/yjs's own init only seeds an EMPTY room, and it decides
  * "empty" by `sharedRoot._start == null` — but a room whose content was
- * deleted (cleared by resetRoomOnFirstJoinIfAlone below, or emptied in an
- * earlier session) still has tombstoned items, so `_start` is set and it
+ * deleted (emptied in an earlier session) still has tombstoned items, so `_start` is set and it
  * skips seeding. Plate then fills the editor with a default paragraph
  * directly in memory, with no operation that ever reaches Yjs, so the
  * editor holds a block the Y.Doc doesn't — and the very first keystroke
@@ -647,29 +633,6 @@ function ensureRoomHasContent(doc: Y.Doc) {
   if (content.length > 0) return;
   doc.transact(() => {
     content.applyDelta(slateNodesToInsertDelta(blockNoteBlocksToPlateValue([]) as any));
-  });
-}
-
-function resetRoomOnFirstJoinIfAlone(room: CollaborationRoomHandle, roomId: string) {
-  const w = window as unknown as { __writerResetRooms?: Set<string> };
-  const resetRooms = (w.__writerResetRooms ||= new Set<string>());
-  if (resetRooms.has(roomId)) return;
-  resetRooms.add(roomId);
-
-  const awareness = room.provider.awareness;
-  const othersOnline = [...awareness.getStates().keys()].some((clientId) => clientId !== awareness.clientID);
-  if (othersOnline) return;
-
-  const { doc } = room;
-  doc.transact(() => {
-    const content = doc.get("content", Y.XmlText);
-    if (content.length > 0) content.delete(0, content.length);
-    // The text is wiped, so its citations' shared Daftar Pustaka goes too
-    // (the page restores it from this browser / the newest saved version).
-    for (const name of ["commentThreads", "commentReplies", "wordStats", "bibliography"]) {
-      const map = doc.getMap(name);
-      [...map.keys()].forEach((key) => map.delete(key));
-    }
   });
 }
 
@@ -1167,11 +1130,13 @@ const PlateEditorComponent = forwardRef<PlateEditorRef, PlateEditorProps>(
           // let init skip its wait via autoConnect: false — the provider is
           // already connected by acquireCollaborationRoom.
           await waitForProviderSync(collabRoom.provider);
-          resetRoomOnFirstJoinIfAlone(collabRoom, roomId);
+          // The PartyKit room keeps the document, so a refresh shows the
+          // text and outline exactly as they were (it used to be wiped on
+          // every page load; users lost their work on refresh).
           ensureRoomHasContent(collabRoom.doc);
           await yjsApi.init({
             id: roomId,
-            // A brand-new (or just-reset) room gets seeded with one empty
+            // A brand-new (or emptied) room gets seeded with one empty
             // paragraph — safe to pass a real value here now that
             // `sharedType` above (not this value) is what decides whether
             // that seeding goes through the crypto-hashing path or the plain
